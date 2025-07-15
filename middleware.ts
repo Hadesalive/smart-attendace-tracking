@@ -3,6 +3,12 @@ import { createClient } from '@/lib/supabase/middleware'
 
 export async function middleware(request: NextRequest) {
   try {
+    // Log environment variables for debugging purposes
+    const supUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? 'MISSING';
+    const supAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? 'MISSING';
+    console.log(`Middleware Env URL: ${supUrl.substring(0, 20)}...`);
+    console.log(`Middleware Env Key: ${supAnonKey.substring(0, 5)}...${supAnonKey.slice(-5)}`);
+
     const { supabase, response } = createClient(request)
 
     // This will refresh the session cookie if it's expired.
