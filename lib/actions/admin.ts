@@ -222,7 +222,27 @@ export async function createSession(prevState: any, formData: FormData) {
 
   const supabase = supabaseAdmin;
 
-  const { error } = await supabase.from('attendance_sessions').insert(validatedFields.data);
+  const { session_date, start_time, end_time, ...rest } = validatedFields.data;
+
+  // Combine date and time to create a local Date object, then convert to UTC.
+  // This ensures all timestamps are stored in a consistent timezone.
+  const getUTCDateTime = (dateStr: string, timeStr: string) => {
+    const localDateTime = new Date(`${dateStr}T${timeStr}`);
+    return {
+      date: localDateTime.toISOString().split('T')[0], // YYYY-MM-DD in UTC
+      time: localDateTime.toISOString().split('T')[1], // HH:mm:ss.sssZ in UTC
+    };
+  };
+
+  const utcStart = getUTCDateTime(session_date, start_time);
+  const utcEnd = getUTCDateTime(session_date, end_time);
+
+  const { error } = await supabase.from('attendance_sessions').insert({
+    ...rest,
+    session_date: utcStart.date,
+    start_time: utcStart.time,
+    end_time: utcEnd.time,
+  });
 
   if (error) {
     return {
