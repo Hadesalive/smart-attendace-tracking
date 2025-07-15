@@ -1,5 +1,6 @@
 "use server"
 
+import { supabaseAdmin } from "../supabase/admin"
 import { createClient } from "@supabase/supabase-js"
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
@@ -38,10 +39,7 @@ export async function createUser(prevState: any, formData: FormData) {
 
   const { email, password, fullName, role } = validatedFields.data
 
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY!
-  )
+  const supabase = supabaseAdmin
 
   try {
     const { data: authData, error: authError } = await supabase.auth.admin.createUser({
@@ -86,10 +84,7 @@ export async function createCourse(prevState: any, formData: FormData) {
 
   const { courseName, courseCode, lecturerId } = validatedFields.data
 
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY!
-  )
+  const supabase = supabaseAdmin
 
   const { error } = await supabase.from("courses").insert({
     course_name: courseName,
@@ -119,10 +114,7 @@ export async function updateCourse(prevState: any, formData: FormData) {
 
   const { courseName, courseCode, lecturerId } = validatedFields.data
 
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY!
-  )
+  const supabase = supabaseAdmin
 
   const { error } = await supabase
     .from("courses")
@@ -142,10 +134,7 @@ export async function updateCourse(prevState: any, formData: FormData) {
 }
 
 export async function deleteCourse(courseId: string) {
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY!
-  )
+  const supabase = supabaseAdmin
   const { error } = await supabase.from("courses").delete().eq("id", courseId)
 
   if (error) {
@@ -169,10 +158,7 @@ export async function createEnrollment(prevState: any, formData: FormData) {
 
   const { studentId, courseId } = validatedFields.data
 
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY!
-  )
+  const supabase = supabaseAdmin
 
   const { error } = await supabase.from("enrollments").insert({
     student_id: studentId,
@@ -192,10 +178,7 @@ export async function createEnrollment(prevState: any, formData: FormData) {
 }
 
 export async function deleteEnrollment(enrollmentId: string) {
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY!
-  )
+  const supabase = supabaseAdmin
   const { error } = await supabase.from("enrollments").delete().eq("id", enrollmentId)
 
   if (error) {
@@ -237,10 +220,7 @@ export async function createSession(prevState: any, formData: FormData) {
     };
   }
 
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY!
-  );
+  const supabase = supabaseAdmin;
 
   const { error } = await supabase.from('attendance_sessions').insert(validatedFields.data);
 
