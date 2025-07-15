@@ -29,7 +29,9 @@ export default function LoginForm() {
     if (error) {
       setError(error.message)
     } else if (data.user) {
-      router.push("/dashboard")
+      // We are using a hard refresh here to ensure the new session cookie is sent to the server
+      // and the middleware can correctly validate the user.
+      window.location.href = "/dashboard"
     }
 
     setLoading(false)
