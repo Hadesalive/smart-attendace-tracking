@@ -18,8 +18,10 @@ Deno.serve(async (req: Request) => {
 
   try {
     const supabase = createClient(
-      Deno.env.get('NEXT_PUBLIC_SUPABASE_URL') ?? '',
-      Deno.env.get('NEXT_PUBLIC_SUPABASE_ANON_KEY') ?? '',
+      // These are automatically set in the Supabase Edge Function environment
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+      // Pass the user's auth token to the database
       { global: { headers: { Authorization: req.headers.get('Authorization')! } } }
     )
 
@@ -86,9 +88,10 @@ Deno.serve(async (req: Request) => {
     })
   } catch (e: unknown) {
     const error = e as Error;
+    console.error('Function Error:', error.message); // Log the specific error
     return new Response(JSON.stringify({ error: error.message }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 400,
-    })
+    });
   }
 })
