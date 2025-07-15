@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import 'jsr:@supabase/functions-js/edge-runtime.d.ts'
+import '@supabase/functions-js/edge-runtime.d.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -32,7 +32,7 @@ Deno.serve(async (req: Request) => {
     // 1. Check if the session is valid and active
     const { data: session, error: sessionError } = await supabase
       .from('attendance_sessions')
-      .select('id, start_time, end_time, course_id')
+      .select('id, session_date, start_time, end_time, course_id')
       .eq('id', session_id)
       .single()
 
@@ -40,11 +40,12 @@ Deno.serve(async (req: Request) => {
     if (!session) throw new Error('Invalid or expired session.')
 
     const now = new Date()
-    const startTime = new Date(session.start_time)
-    const endTime = new Date(session.end_time)
+    // Combine date and time strings to create valid ISO 8601 strings for accurate parsing
+    const startTime = new Date(`${session.session_date}T${session.start_time}`)
+    const endTime = new Date(`${session.session_date}T${session.end_time}`)
 
     if (now < startTime || now > endTime) {
-      throw new Error('Attendance can only be marked within the session time.')
+      throw new Error(`Attendance can only be marked within the session time. Current time: ${now.toISOString()}, Session start: ${startTime.toISOString()}, Session end: ${endTime.toISOString()}`)
     }
 
     // 2. Check if the student is enrolled in the course for this session

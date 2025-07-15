@@ -45,7 +45,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "1.0.4",
-    "date-fns": "4.1.0",
+    "date-fns": "^3.6.0",
     "dotenv": "^17.2.0",
     "embla-carousel-react": "8.5.1",
     "input-otp": "1.4.1",
@@ -61,6 +61,7 @@
     "react-resizable-panels": "^2.1.7",
     "recharts": "latest",
     "sonner": "^1.7.1",
+    "supabase": "^2.31.4",
     "tailwind-merge": "^2.5.5",
     "tailwindcss-animate": "^1.0.7",
     "tsx": "^4.20.3",
@@ -68,6 +69,7 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@supabase/functions-js": "^2.4.5",
     "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19",
