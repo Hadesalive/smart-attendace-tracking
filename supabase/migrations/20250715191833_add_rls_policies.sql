@@ -19,10 +19,22 @@ DROP POLICY IF EXISTS "Students can view sessions for their enrolled courses." O
 DROP POLICY IF EXISTS "Students can manage their own attendance records." ON public.attendance_records;
 DROP POLICY IF EXISTS "Lecturers can view attendance records for their sessions." ON public.attendance_records;
 
--- 1. Users Table Policy
--- Users should only be able to see their own user record.
+-- 1. Users Table Policies
+-- Users can view their own profile.
 CREATE POLICY "Users can view their own data." ON public.users
   FOR SELECT USING (auth.uid() = id);
+
+-- Lecturers can view the profiles of students enrolled in their courses.
+CREATE POLICY "Lecturers can view their students." ON public.users
+  FOR SELECT USING (
+    (get_user_role(auth.uid()) = 'lecturer') AND
+    EXISTS (
+      SELECT 1
+      FROM enrollments e
+      JOIN courses c ON e.course_id = c.id
+      WHERE c.lecturer_id = auth.uid() AND e.student_id = users.id
+    )
+  );
 
 -- 2. Courses Table Policies
 -- Lecturers can see any course they are assigned to.
