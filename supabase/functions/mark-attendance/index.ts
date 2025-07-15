@@ -18,8 +18,8 @@ Deno.serve(async (req: Request) => {
 
   try {
     const supabase = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+      Deno.env.get('NEXT_PUBLIC_SUPABASE_URL') ?? '',
+      Deno.env.get('NEXT_PUBLIC_SUPABASE_ANON_KEY') ?? '',
       { global: { headers: { Authorization: req.headers.get('Authorization')! } } }
     )
 
@@ -29,7 +29,7 @@ Deno.serve(async (req: Request) => {
       throw new Error('Missing session_id or student_id in the request body.')
     }
 
-    // 1. Check if the session is valid and active
+    // 1. Check if the session is valid and active (triggering deployment)
     const { data: session, error: sessionError } = await supabase
       .from('attendance_sessions')
       .select('id, session_date, start_time, end_time, course_id')
