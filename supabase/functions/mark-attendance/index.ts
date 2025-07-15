@@ -78,6 +78,7 @@ Deno.serve(async (req: Request) => {
       student_id,
       status: 'present',
       marked_at: new Date().toISOString(),
+      method_used: 'qr_code', // Fulfill the not-null constraint
     })
 
     if (insertError) throw new Error(`Failed to mark attendance: ${insertError.message}`)
