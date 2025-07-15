@@ -9,6 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { BookOpen, Calendar, CheckCircle, QrCode, Camera } from "lucide-react"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import QrScannerComponent from "@/components/attendance/qr-scanner"
+import { SessionStatusBadge } from "@/components/ui/session-status-badge"
 import { supabase } from "@/lib/supabase"
 
 interface StudentStats {
@@ -27,7 +28,7 @@ export default function StudentDashboard({ userId }: { userId: string }) {
   })
   const [enrolledCourses, setEnrolledCourses] = useState<any[]>([])
   const [recentAttendance, setRecentAttendance] = useState<any[]>([])
-  const [upcomingSessions, setUpcomingSessions] = useState<any[]>([])
+  const [sessions, setSessions] = useState<any[]>([])
   const [isQrScannerOpen, setQrScannerOpen] = useState(false)
 
   useEffect(() => {
@@ -59,21 +60,18 @@ export default function StudentDashboard({ userId }: { userId: string }) {
       .order("marked_at", { ascending: false })
       .limit(10)
 
-    // Fetch upcoming sessions for enrolled courses
+    // Fetch all sessions for enrolled courses
     const courseIds = enrollments?.map((e) => e.course_id) || []
-    const today = new Date().toISOString().split("T")[0]
-
-    const { data: upcoming } = await supabase
+    
+    const { data: allSessions } = await supabase
       .from("attendance_sessions")
       .select(`
         *,
         courses(course_code, course_name)
       `)
       .in("course_id", courseIds)
-      .gte("session_date", today)
-      .eq("is_active", true)
-      .order("session_date", { ascending: true })
-      .limit(5)
+      .order("session_date", { ascending: false })
+      .order("start_time", { ascending: false })
 
     // Calculate stats
     const attendanceRate = attendance?.length ? (attendance.length / 20) * 100 : 0 // Simplified calculation
@@ -87,7 +85,7 @@ export default function StudentDashboard({ userId }: { userId: string }) {
 
     setEnrolledCourses(enrollments || [])
     setRecentAttendance(attendance || [])
-    setUpcomingSessions(upcoming || [])
+    setSessions(allSessions || [])
   }
 
   return (
@@ -165,11 +163,13 @@ export default function StudentDashboard({ userId }: { userId: string }) {
         </Card>
       </div>
 
-      {/* Upcoming Sessions */}
+      {/* All Sessions */}
       <Card>
         <CardHeader>
-          <CardTitle>Upcoming Sessions</CardTitle>
-          <CardDescription>Sessions you need to attend</CardDescription>
+          <CardTitle>All Sessions</CardTitle>
+          <CardDescription>
+            View all your upcoming, active, and past sessions.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <Table>
@@ -177,39 +177,41 @@ export default function StudentDashboard({ userId }: { userId: string }) {
               <TableRow>
                 <TableHead>Course</TableHead>
                 <TableHead>Session</TableHead>
-                <TableHead>Date</TableHead>
-                <TableHead>Time</TableHead>
-                <TableHead>Actions</TableHead>
+                <TableHead>Date & Time</TableHead>
+                <TableHead>Status</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {upcomingSessions.map((session) => (
-                <TableRow key={session.id}>
-                  <TableCell>
-                    <div>
-                      <div className="font-medium">{session.courses?.course_code}</div>
-                      <div className="text-sm text-muted-foreground">{session.courses?.course_name}</div>
-                    </div>
-                  </TableCell>
-                  <TableCell>{session.session_name}</TableCell>
-                  <TableCell>{new Date(session.session_date).toLocaleDateString()}</TableCell>
-                  <TableCell>
-                    {session.start_time} - {session.end_time}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex gap-2">
-                      <Button size="sm" variant="outline">
-                        <QrCode className="h-4 w-4 mr-1" />
-                        QR
-                      </Button>
-                      <Button size="sm" variant="outline">
-                        <Camera className="h-4 w-4 mr-1" />
-                        Face
-                      </Button>
-                    </div>
+              {sessions.length > 0 ? (
+                sessions.map((session) => (
+                  <TableRow key={session.id}>
+                    <TableCell>
+                      <div className="font-medium">{session.courses.course_name}</div>
+                      <div className="text-sm text-muted-foreground">{session.courses.course_code}</div>
+                    </TableCell>
+                    <TableCell>{session.session_name}</TableCell>
+                    <TableCell>
+                      <div>{new Date(session.session_date).toLocaleDateString()}</div>
+                      <div className="text-sm text-muted-foreground">
+                        {new Date(`${session.session_date}T${session.start_time}`).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - 
+                        {new Date(`${session.session_date}T${session.end_time}`).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <SessionStatusBadge 
+                        startTime={`${session.session_date}T${session.start_time}`} 
+                        endTime={`${session.session_date}T${session.end_time}`} 
+                      />
+                    </TableCell>
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={4} className="text-center">
+                    No sessions found for your enrolled courses.
                   </TableCell>
                 </TableRow>
-              ))}
+              )}
             </TableBody>
           </Table>
         </CardContent>

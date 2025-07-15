@@ -9,6 +9,7 @@ import { BookOpen, Calendar, Users, QrCode, Camera, Plus } from "lucide-react"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import CreateSessionForm from "@/components/attendance/create-session-form"
 import SessionQrCodeDialog from "@/components/attendance/session-qr-code-dialog"
+import { SessionStatusBadge } from "@/components/ui/session-status-badge"
 import { supabase } from "@/lib/supabase"
 
 interface LecturerStats {
@@ -26,7 +27,7 @@ export default function LecturerDashboard({ userId }: { userId: string }) {
     averageAttendance: 0,
   })
   const [courses, setCourses] = useState<any[]>([])
-  const [todaySessions, setTodaySessions] = useState<any[]>([])
+  const [sessions, setSessions] = useState<any[]>([])
   const [isCreateSessionOpen, setCreateSessionOpen] = useState(false)
   const [selectedSession, setSelectedSession] = useState<any | null>(null)
   const [isQrDialogOpen, setQrDialogOpen] = useState(false)
@@ -45,16 +46,20 @@ export default function LecturerDashboard({ userId }: { userId: string }) {
       `)
       .eq("lecturer_id", userId)
 
-    // Fetch today's sessions
-    const today = new Date().toISOString().split("T")[0]
-    const { data: sessions } = await supabase
+    // Fetch all sessions for the lecturer, ordered by date
+    const { data: allSessions } = await supabase
       .from("attendance_sessions")
       .select(`
         *,
         courses(course_name, course_code)
       `)
       .eq("lecturer_id", userId)
-      .eq("session_date", today)
+      .order("session_date", { ascending: false })
+      .order("start_time", { ascending: false })
+
+    // Calculate stats
+    const today = new Date().toISOString().split("T")[0]
+    const todaySessionsCount = allSessions?.filter(s => s.session_date === today).length || 0
 
     // Calculate stats
     const totalStudents = lecturerCourses?.reduce((sum, course) => sum + (course.enrollments?.length || 0), 0) || 0
@@ -62,12 +67,12 @@ export default function LecturerDashboard({ userId }: { userId: string }) {
     setStats({
       totalCourses: lecturerCourses?.length || 0,
       totalStudents,
-      todaySessions: sessions?.length || 0,
+      todaySessions: todaySessionsCount,
       averageAttendance: 78.5, // This would be calculated from actual attendance data
     })
 
     setCourses(lecturerCourses || [])
-    setTodaySessions(sessions || [])
+    setSessions(allSessions || [])
   }
 
   const startAttendanceSession = async (courseId: string) => {
@@ -151,11 +156,11 @@ export default function LecturerDashboard({ userId }: { userId: string }) {
         </Card>
       </div>
 
-      {/* Today's Sessions */}
+      {/* All Sessions */}
       <Card>
         <CardHeader>
-          <CardTitle>Today's Sessions</CardTitle>
-          <CardDescription>Manage attendance for today's classes</CardDescription>
+          <CardTitle>All Sessions</CardTitle>
+          <CardDescription>View and manage all your attendance sessions.</CardDescription>
         </CardHeader>
         <CardContent>
           <Table>
@@ -163,50 +168,55 @@ export default function LecturerDashboard({ userId }: { userId: string }) {
               <TableRow>
                 <TableHead>Course</TableHead>
                 <TableHead>Session</TableHead>
-                <TableHead>Time</TableHead>
+                <TableHead>Date & Time</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead>Actions</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {todaySessions.map((session) => (
-                <TableRow key={session.id}>
-                  <TableCell>
-                    <div>
-                      <div className="font-medium">{session.courses?.course_code}</div>
-                      <div className="text-sm text-muted-foreground">{session.courses?.course_name}</div>
-                    </div>
-                  </TableCell>
-                  <TableCell>{session.session_name}</TableCell>
-                  <TableCell>
-                    {session.start_time} - {session.end_time}
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={session.is_active ? "default" : "secondary"}>
-                      {session.is_active ? "Active" : "Completed"}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex gap-2">
+              {sessions.length > 0 ? (
+                sessions.map(session => (
+                  <TableRow key={session.id}>
+                    <TableCell>
+                      <div className="font-medium">{session.courses.course_name}</div>
+                      <div className="text-sm text-muted-foreground">{session.courses.course_code}</div>
+                    </TableCell>
+                    <TableCell>{session.session_name}</TableCell>
+                    <TableCell>
+                      <div>{new Date(session.session_date).toLocaleDateString()}</div>
+                      <div className="text-sm text-muted-foreground">
+                        {new Date(`${session.session_date}T${session.start_time}`).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - 
+                        {new Date(`${session.session_date}T${session.end_time}`).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <SessionStatusBadge 
+                        startTime={`${session.session_date}T${session.start_time}`} 
+                        endTime={`${session.session_date}T${session.end_time}`} 
+                      />
+                    </TableCell>
+                    <TableCell className="text-right">
                       <Button
-                        size="sm"
                         variant="outline"
+                        size="sm"
                         onClick={() => {
                           setSelectedSession(session)
                           setQrDialogOpen(true)
                         }}
                       >
-                        <QrCode className="h-4 w-4 mr-1" />
-                        QR
+                        <QrCode className="h-4 w-4 mr-2" />
+                        Show QR
                       </Button>
-                      <Button size="sm" variant="outline">
-                        <Camera className="h-4 w-4 mr-1" />
-                        Face
-                      </Button>
-                    </div>
+                    </TableCell>
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={5} className="text-center">
+                    You have not created any sessions yet.
                   </TableCell>
                 </TableRow>
-              ))}
+              )}
             </TableBody>
           </Table>
         </CardContent>
