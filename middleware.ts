@@ -6,22 +6,30 @@ export async function middleware(request: NextRequest) {
     const { supabase, response } = createClient(request)
 
     // This will refresh the session cookie if it's expired.
-    const { data: { session } } = await supabase.auth.getSession()
+    console.log('Middleware: Checking session...');
+    const { data: { session } } = await supabase.auth.getSession();
 
-    // If the user is not logged in and is trying to access a protected route,
-    // redirect them to the home page.
-    if (!session && request.nextUrl.pathname.startsWith('/dashboard')) {
-      const url = request.nextUrl.clone()
-      url.pathname = '/'
-      return NextResponse.redirect(url)
+    if (!session) {
+      console.log('Middleware: No session found.');
+      if (request.nextUrl.pathname.startsWith('/dashboard')) {
+        console.log('Middleware: Path is /dashboard, redirecting to /');
+        const url = request.nextUrl.clone();
+        url.pathname = '/';
+        return NextResponse.redirect(url);
+      }
+    } else {
+      console.log('Middleware: Session found for user:', session.user.email);
     }
 
-    return response
+    console.log('Middleware: Proceeding to requested path:', request.nextUrl.pathname);
+    return response;
   } catch (e) {
+    const error = e as Error;
+    console.error('Middleware Error:', error.message);
     // If you are here, a Supabase client could not be created!
     // This is likely because you have not set up your Supabase environment variables.
     // Check the `README.md` for more details.
-    return NextResponse.next({ request: { headers: request.headers } })
+    return NextResponse.next({ request: { headers: request.headers } });
   }
 }
 
