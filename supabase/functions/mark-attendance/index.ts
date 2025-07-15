@@ -1,0 +1,93 @@
+import { createClient } from '@supabase/supabase-js'
+import 'jsr:@supabase/functions-js/edge-runtime.d.ts'
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+}
+
+interface RequestBody {
+  session_id: string;
+  student_id: string;
+}
+
+Deno.serve(async (req: Request) => {
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders })
+  }
+
+  try {
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+      { global: { headers: { Authorization: req.headers.get('Authorization')! } } }
+    )
+
+    const { session_id, student_id }: RequestBody = await req.json()
+
+    if (!session_id || !student_id) {
+      throw new Error('Missing session_id or student_id in the request body.')
+    }
+
+    // 1. Check if the session is valid and active
+    const { data: session, error: sessionError } = await supabase
+      .from('attendance_sessions')
+      .select('id, start_time, end_time, course_id')
+      .eq('id', session_id)
+      .single()
+
+    if (sessionError) throw new Error(`Session validation error: ${sessionError.message}`)
+    if (!session) throw new Error('Invalid or expired session.')
+
+    const now = new Date()
+    const startTime = new Date(session.start_time)
+    const endTime = new Date(session.end_time)
+
+    if (now < startTime || now > endTime) {
+      throw new Error('Attendance can only be marked within the session time.')
+    }
+
+    // 2. Check if the student is enrolled in the course for this session
+    const { data: enrollment, error: enrollmentError } = await supabase
+      .from('enrollments')
+      .select('id')
+      .eq('student_id', student_id)
+      .eq('course_id', session.course_id)
+      .single()
+
+    if (enrollmentError) throw new Error(`Enrollment check error: ${enrollmentError.message}`)
+    if (!enrollment) throw new Error('You are not enrolled in this course.')
+
+    // 3. Check if attendance has already been marked (prevent duplicates)
+    const { data: existingAttendance, error: existingAttendanceError } = await supabase
+      .from('attendance_records')
+      .select('id')
+      .eq('session_id', session_id)
+      .eq('student_id', student_id)
+      .maybeSingle()
+
+    if (existingAttendanceError) throw new Error(`Duplicate check error: ${existingAttendanceError.message}`)
+    if (existingAttendance) throw new Error('Attendance has already been marked for this session.')
+
+    // 4. Insert the new attendance record
+    const { error: insertError } = await supabase.from('attendance_records').insert({
+      session_id,
+      student_id,
+      status: 'present',
+      marked_at: new Date().toISOString(),
+    })
+
+    if (insertError) throw new Error(`Failed to mark attendance: ${insertError.message}`)
+
+    return new Response(JSON.stringify({ message: 'Attendance marked successfully!' }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 200,
+    })
+  } catch (e: unknown) {
+    const error = e as Error;
+    return new Response(JSON.stringify({ error: error.message }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 400,
+    })
+  }
+})

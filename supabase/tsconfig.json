@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    // Tells TypeScript to use the Deno type definitions
+    "types": ["https://esm.sh/@supabase/functions-js/src/edge-runtime.d.ts"],
+    // Standard modern TypeScript settings
+    "target": "esnext",
+    "module": "esnext",
+    "moduleResolution": "node",
+    "lib": ["esnext", "dom"],
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  // Ensures this config only applies to your functions
+  "include": ["./functions/**/*.ts"],
+  "exclude": ["node_modules"]
+}
