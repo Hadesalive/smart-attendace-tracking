@@ -56,7 +56,7 @@ Deno.serve(async (req: Request) => {
       .select('id')
       .eq('student_id', student_id)
       .eq('course_id', session.course_id)
-      .single()
+      .maybeSingle()
 
     if (enrollmentError) throw new Error(`Enrollment check error: ${enrollmentError.message}`)
     if (!enrollment) throw new Error('You are not enrolled in this course.')
