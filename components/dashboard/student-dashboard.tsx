@@ -43,7 +43,7 @@ export default function StudentDashboard({ userId }: { userId: string }) {
         *,
         courses(*)
       `)
-      .eq("student_id", userId)
+      // RLS policy handles filtering by student_id automatically
 
     // Fetch recent attendance records
     const { data: attendance } = await supabase
@@ -56,20 +56,17 @@ export default function StudentDashboard({ userId }: { userId: string }) {
           courses(course_code, course_name)
         )
       `)
-      .eq("student_id", userId)
+      // RLS policy handles filtering by student_id automatically
       .order("marked_at", { ascending: false })
       .limit(10)
 
-    // Fetch all sessions for enrolled courses
-    const courseIds = enrollments?.map((e) => e.course_id) || []
-    
+    // Fetch all sessions for enrolled courses. RLS automatically filters these.
     const { data: allSessions } = await supabase
       .from("attendance_sessions")
       .select(`
         *,
         courses(course_code, course_name)
       `)
-      .in("course_id", courseIds)
       .order("session_date", { ascending: false })
       .order("start_time", { ascending: false })
 

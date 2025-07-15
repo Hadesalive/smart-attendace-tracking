@@ -44,7 +44,7 @@ export default function LecturerDashboard({ userId }: { userId: string }) {
         *,
         enrollments(count)
       `)
-      .eq("lecturer_id", userId)
+      // RLS policy handles filtering by lecturer_id automatically
 
     // Fetch all sessions for the lecturer, ordered by date
     const { data: allSessions } = await supabase
@@ -53,7 +53,7 @@ export default function LecturerDashboard({ userId }: { userId: string }) {
         *,
         courses(course_name, course_code)
       `)
-      .eq("lecturer_id", userId)
+      // RLS policy handles filtering by lecturer_id automatically
       .order("session_date", { ascending: false })
       .order("start_time", { ascending: false })
 
