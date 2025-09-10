@@ -1,11 +1,39 @@
 "use client"
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Progress } from "@/components/ui/progress"
-import { AcademicCapIcon, PlusIcon, ClockIcon, CheckCircleIcon, DocumentTextIcon } from "@heroicons/react/24/outline"
+import React, { useState, useEffect, useCallback, useMemo } from "react"
+import { motion } from "framer-motion"
+import { 
+  Box, 
+  Typography, 
+  Card, 
+  CardContent, 
+  Button, 
+  Chip,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Paper,
+  Grid,
+  IconButton,
+  Menu,
+  MenuItem,
+  Avatar,
+  LinearProgress,
+  Divider
+} from "@mui/material"
+import { 
+  AcademicCapIcon, 
+  PlusIcon, 
+  ClockIcon, 
+  CheckCircleIcon, 
+  DocumentTextIcon,
+  EllipsisVerticalIcon,
+  CalendarDaysIcon,
+  ChartBarIcon
+} from "@heroicons/react/24/outline"
 import { formatDate, formatNumber } from "@/lib/utils"
 
 export default function HomeworkPage() {

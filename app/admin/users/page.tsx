@@ -21,28 +21,31 @@ import {
   Menu,
   MenuItem,
   Avatar,
-  LinearProgress,
-  Divider,
+  TextField,
+  InputAdornment,
   Dialog,
   DialogTitle,
   DialogContent,
-  DialogActions
+  DialogActions,
+  Divider,
+  Tabs,
+  Tab,
+  Box as TabPanel
 } from "@mui/material"
 import { 
   UsersIcon, 
-  BookOpenIcon, 
-  CalendarDaysIcon, 
-  ChartPieIcon, 
   PlusIcon, 
-  Cog6ToothIcon,
+  MagnifyingGlassIcon,
+  FunnelIcon,
   EllipsisVerticalIcon,
-  TrendingUpIcon,
-  UserGroupIcon,
-  AcademicCapIcon
+  UserIcon,
+  AcademicCapIcon,
+  Cog6ToothIcon,
+  TrashIcon,
+  PencilIcon,
+  EyeIcon
 } from "@heroicons/react/24/outline"
 import { formatDate, formatNumber } from "@/lib/utils"
-import CourseManagement from "@/components/admin/course-management"
-import EnrollmentManagement from "@/components/admin/enrollment-management"
 import { AddUserForm } from "@/components/admin/add-user-form"
 import { supabase } from "@/lib/supabase"
 
@@ -60,100 +63,95 @@ const ANIMATION_CONFIG = {
 } as const
 
 const STATS_CARDS = [
-  { label: "Total Users", value: 0, icon: UsersIcon, color: "#8b5cf6", trend: "+12% from last month" },
-  { label: "Total Courses", value: 0, icon: BookOpenIcon, color: "#10b981", trend: "+3 new this semester" },
-  { label: "Active Sessions", value: 0, icon: CalendarDaysIcon, color: "#f59e0b", trend: "+8% from last week" },
-  { label: "Attendance Rate", value: "0%", icon: TrendingUpIcon, color: "#06b6d4", trend: "+2.1% from last month" }
+  { label: "Total Users", value: 0, icon: UsersIcon, color: "#8b5cf6" },
+  { label: "Students", value: 0, icon: AcademicCapIcon, color: "#10b981" },
+  { label: "Lecturers", value: 0, icon: UserIcon, color: "#f59e0b" },
+  { label: "Admins", value: 0, icon: Cog6ToothIcon, color: "#ef4444" }
 ] as const
 
-const QUICK_ACTIONS = [
-  { name: "Manage Users", description: "Add, edit, or remove users", icon: UserGroupIcon, color: "#8b5cf6", href: "/admin/users" },
-  { name: "Course Management", description: "Oversee all courses", icon: BookOpenIcon, color: "#10b981", href: "/admin/courses" },
-  { name: "Session Monitoring", description: "Monitor attendance sessions", icon: CalendarDaysIcon, color: "#f59e0b", href: "/admin/sessions" },
-  { name: "System Reports", description: "Generate comprehensive reports", icon: ChartPieIcon, color: "#06b6d4", href: "/admin/reports" }
-] as const
+const ROLE_COLORS = {
+  student: "#10b981",
+  lecturer: "#f59e0b", 
+  admin: "#ef4444"
+} as const
 
-interface DashboardStats {
+// ============================================================================
+// INTERFACES
+// ============================================================================
+
+interface User {
+  id: string
+  full_name: string
+  email: string
+  role: 'student' | 'lecturer' | 'admin'
+  created_at: string
+  last_login?: string
+  status: 'active' | 'inactive'
+}
+
+interface UserStats {
   totalUsers: number
-  totalCourses: number
-  totalSessions: number
-  attendanceRate: number
+  students: number
+  lecturers: number
+  admins: number
 }
 
 // ============================================================================
 // MAIN COMPONENT
 // ============================================================================
 
-export default function AdminDashboard() {
+export default function UsersPage() {
   // ============================================================================
   // STATE & HOOKS
   // ============================================================================
   
-  const [stats, setStats] = useState<DashboardStats>({
+  const [users, setUsers] = useState<User[]>([])
+  const [stats, setStats] = useState<UserStats>({
     totalUsers: 0,
-    totalCourses: 0,
-    totalSessions: 0,
-    attendanceRate: 0,
+    students: 0,
+    lecturers: 0,
+    admins: 0
   })
-  const [recentSessions, setRecentSessions] = useState<any[]>([])
-  const [isAddUserOpen, setAddUserOpen] = useState(false)
+  const [searchTerm, setSearchTerm] = useState("")
+  const [selectedRole, setSelectedRole] = useState<string>("all")
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null)
+  const [selectedUser, setSelectedUser] = useState<User | null>(null)
+  const [isAddUserOpen, setAddUserOpen] = useState(false)
+  const [isEditUserOpen, setEditUserOpen] = useState(false)
+  const [isDeleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [loading, setLoading] = useState(true)
 
   // ============================================================================
   // DATA FETCHING
   // ============================================================================
 
   useEffect(() => {
-    fetchDashboardData()
+    fetchUsers()
   }, [])
 
-  const fetchDashboardData = useCallback(async () => {
+  const fetchUsers = useCallback(async () => {
     try {
-      // Fetch stats in parallel
-      const [userRes, courseRes, sessionRes, attendanceRes, completedSessionsRes] = await Promise.all([
-        supabase.from("users").select("*", { count: "exact", head: true }),
-        supabase.from("courses").select("*", { count: "exact", head: true }),
-        supabase.from("attendance_sessions").select("*", { count: "exact", head: true }),
-        supabase.from("attendance_records").select("id", { count: "exact", head: true }),
-        supabase.from("attendance_sessions").select("course_id").eq("is_active", false),
-      ])
-
-      const totalAttendanceRecords = attendanceRes.count || 0
-      const completedSessions = completedSessionsRes.data || []
-
-      let totalExpectedAttendees = 0
-      if (completedSessions.length > 0) {
-        const courseIds = completedSessions.map((s) => s.course_id)
-        const { count } = await supabase
-          .from("enrollments")
-          .select("*", { count: "exact", head: true })
-          .in("course_id", courseIds)
-        totalExpectedAttendees = count || 0
-      }
-
-      const attendanceRate = totalExpectedAttendees > 0
-          ? parseFloat(((totalAttendanceRecords / totalExpectedAttendees) * 100).toFixed(1))
-          : 0
-
-      // Fetch recent sessions for the table
-      const { data: sessions } = await supabase
-        .from("attendance_sessions")
-        .select(`*,
-          courses(course_name, course_code),
-          users(full_name)`)
+      setLoading(true)
+      const { data: users, error } = await supabase
+        .from("users")
+        .select("*")
         .order("created_at", { ascending: false })
-        .limit(5)
 
-      setStats({
-        totalUsers: userRes.count || 0,
-        totalCourses: courseRes.count || 0,
-        totalSessions: sessionRes.count || 0,
-        attendanceRate: attendanceRate,
-      })
+      if (error) throw error
 
-      setRecentSessions(sessions || [])
+      setUsers(users || [])
+      
+      // Calculate stats
+      const totalUsers = users?.length || 0
+      const students = users?.filter(u => u.role === 'student').length || 0
+      const lecturers = users?.filter(u => u.role === 'lecturer').length || 0
+      const admins = users?.filter(u => u.role === 'admin').length || 0
+
+      setStats({ totalUsers, students, lecturers, admins })
     } catch (error) {
-      console.error("Error fetching dashboard data:", error)
+      console.error("Error fetching users:", error)
+    } finally {
+      setLoading(false)
     }
   }, [])
 
@@ -161,18 +159,53 @@ export default function AdminDashboard() {
   // EVENT HANDLERS
   // ============================================================================
 
-  const handleMenuOpen = useCallback((event: React.MouseEvent<HTMLElement>) => {
+  const handleMenuOpen = useCallback((event: React.MouseEvent<HTMLElement>, user: User) => {
     setAnchorEl(event.currentTarget)
+    setSelectedUser(user)
   }, [])
 
   const handleMenuClose = useCallback(() => {
     setAnchorEl(null)
+    setSelectedUser(null)
   }, [])
 
   const handleAddUserSuccess = useCallback(() => {
-    fetchDashboardData()
+    fetchUsers()
     setAddUserOpen(false)
-  }, [fetchDashboardData])
+  }, [fetchUsers])
+
+  const handleEditUser = useCallback(() => {
+    setEditUserOpen(true)
+    handleMenuClose()
+  }, [handleMenuClose])
+
+  const handleDeleteUser = useCallback(() => {
+    setDeleteConfirmOpen(true)
+    handleMenuClose()
+  }, [handleMenuClose])
+
+  const confirmDeleteUser = useCallback(async () => {
+    if (!selectedUser) return
+
+    try {
+      const { error } = await supabase
+        .from("users")
+        .delete()
+        .eq("id", selectedUser.id)
+
+      if (error) throw error
+
+      fetchUsers()
+      setDeleteConfirmOpen(false)
+      setSelectedUser(null)
+    } catch (error) {
+      console.error("Error deleting user:", error)
+    }
+  }, [selectedUser, fetchUsers])
+
+  const handleRoleChange = useCallback((event: React.SyntheticEvent, newValue: string) => {
+    setSelectedRole(newValue)
+  }, [])
 
   // ============================================================================
   // MEMOIZED VALUES
@@ -182,11 +215,43 @@ export default function AdminDashboard() {
     return STATS_CARDS.map(card => ({
       ...card,
       value: card.label === "Total Users" ? stats.totalUsers :
-             card.label === "Total Courses" ? stats.totalCourses :
-             card.label === "Active Sessions" ? stats.totalSessions :
-             `${stats.attendanceRate}%`
+             card.label === "Students" ? stats.students :
+             card.label === "Lecturers" ? stats.lecturers :
+             stats.admins
     }))
   }, [stats])
+
+  const filteredUsers = useMemo(() => {
+    let filtered = users
+
+    // Filter by search term
+    if (searchTerm) {
+      filtered = filtered.filter(user => 
+        user.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        user.email.toLowerCase().includes(searchTerm.toLowerCase())
+      )
+    }
+
+    // Filter by role
+    if (selectedRole !== "all") {
+      filtered = filtered.filter(user => user.role === selectedRole)
+    }
+
+    return filtered
+  }, [users, searchTerm, selectedRole])
+
+  const getRoleIcon = useCallback((role: string) => {
+    switch (role) {
+      case 'student':
+        return <AcademicCapIcon style={{ width: 16, height: 16 }} />
+      case 'lecturer':
+        return <UserIcon style={{ width: 16, height: 16 }} />
+      case 'admin':
+        return <Cog6ToothIcon style={{ width: 16, height: 16 }} />
+      default:
+        return <UserIcon style={{ width: 16, height: 16 }} />
+    }
+  }, [])
 
   // ============================================================================
   // RENDER
@@ -220,7 +285,7 @@ export default function AdminDashboard() {
                 mb: 1
               }}
             >
-              Admin Dashboard
+              User Management
             </Typography>
             <Typography 
               variant="body1" 
@@ -230,13 +295,13 @@ export default function AdminDashboard() {
                 fontSize: "1rem"
               }}
             >
-              System overview and management controls
+              Manage system users, roles, and permissions
             </Typography>
           </Box>
           <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
             <Button
               variant="outlined"
-              startIcon={<Cog6ToothIcon className="h-4 w-4" />}
+              startIcon={<FunnelIcon className="h-4 w-4" />}
               sx={{
                 borderColor: "#e5e7eb",
                 color: "#374151",
@@ -245,7 +310,7 @@ export default function AdminDashboard() {
                 "&:hover": { borderColor: "#d1d5db", backgroundColor: "#f9fafb" }
               }}
             >
-              Settings
+              Filter
             </Button>
             <Button
               variant="contained"
@@ -317,21 +382,10 @@ export default function AdminDashboard() {
                       sx={{ 
                         fontFamily: "DM Sans", 
                         color: "#6b7280",
-                        fontSize: "0.875rem",
-                        mb: 1
+                        fontSize: "0.875rem"
                       }}
                     >
                       {stat.label}
-                    </Typography>
-                    <Typography 
-                      variant="caption" 
-                      sx={{ 
-                        fontFamily: "DM Sans", 
-                        color: "#10b981",
-                        fontSize: "0.75rem"
-                      }}
-                    >
-                      {stat.trend}
                     </Typography>
                   </CardContent>
                 </Card>
@@ -341,113 +395,68 @@ export default function AdminDashboard() {
         </Grid>
       </motion.div>
 
-      {/* Quick Actions */}
+      {/* Search and Filters */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ ...ANIMATION_CONFIG.spring, delay: 0.2 }}
       >
-        <Typography 
-          variant="h5" 
-          sx={{ 
-            fontFamily: "Poppins", 
-            fontWeight: 600, 
-            color: "#000",
-            mb: 2
-          }}
-        >
-          Quick Actions
-        </Typography>
-        <Grid container spacing={3} sx={{ mb: 4 }}>
-          {QUICK_ACTIONS.map((action, index) => (
-            <Grid item xs={12} sm={6} md={3} key={action.name}>
-              <motion.div
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ ...ANIMATION_CONFIG.spring, delay: 0.2 + (index * 0.1) }}
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
+        <Card sx={{ 
+          border: "1px solid #f3f4f6",
+          boxShadow: "0 1px 3px 0 rgb(0 0 0 / 0.1)",
+          mb: 4
+        }}>
+          <CardContent sx={{ p: 3 }}>
+            <Box sx={{ display: "flex", flexDirection: { xs: "column", sm: "row" }, gap: 3, alignItems: { sm: "center" } }}>
+              <TextField
+                placeholder="Search users..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <MagnifyingGlassIcon style={{ width: 20, height: 20, color: "#6b7280" }} />
+                    </InputAdornment>
+                  ),
+                }}
+                sx={{
+                  flex: 1,
+                  "& .MuiOutlinedInput-root": {
+                    fontFamily: "DM Sans",
+                    backgroundColor: "#f9fafb",
+                    "& fieldset": { borderColor: "#e5e7eb" },
+                    "&:hover fieldset": { borderColor: "#d1d5db" },
+                    "&.Mui-focused fieldset": { borderColor: "#000" }
+                  }
+                }}
+              />
+              <Tabs 
+                value={selectedRole} 
+                onChange={handleRoleChange}
+                sx={{
+                  "& .MuiTab-root": {
+                    fontFamily: "DM Sans",
+                    textTransform: "none",
+                    minWidth: "auto",
+                    px: 2
+                  }
+                }}
               >
-                <Card sx={{ 
-                  height: "100%",
-                  border: "1px solid #f3f4f6",
-                  boxShadow: "0 1px 3px 0 rgb(0 0 0 / 0.1)",
-                  cursor: "pointer",
-                  "&:hover": { boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)" }
-                }}>
-                  <CardContent sx={{ p: 4, textAlign: "center" }}>
-                    <Box 
-                      sx={{ 
-                        mb: 3,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center"
-                      }}
-                    >
-                      <Box 
-                        sx={{ 
-                          p: 2, 
-                          borderRadius: "12px", 
-                          backgroundColor: `${action.color}20`,
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center"
-                        }}
-                      >
-                        <action.icon style={{ width: 32, height: 32, color: action.color }} />
-                      </Box>
-                    </Box>
-                    <Typography 
-                      variant="h6" 
-                      sx={{ 
-                        fontFamily: "Poppins", 
-                        fontWeight: 600, 
-                        color: "#000",
-                        mb: 1,
-                        fontSize: "1rem"
-                      }}
-                    >
-                      {action.name}
-                    </Typography>
-                    <Typography 
-                      variant="body2" 
-                      sx={{ 
-                        fontFamily: "DM Sans", 
-                        color: "#6b7280",
-                        fontSize: "0.875rem"
-                      }}
-                    >
-                      {action.description}
-                    </Typography>
-                  </CardContent>
-                </Card>
-              </motion.div>
-            </Grid>
-          ))}
-        </Grid>
+                <Tab label="All" value="all" />
+                <Tab label="Students" value="student" />
+                <Tab label="Lecturers" value="lecturer" />
+                <Tab label="Admins" value="admin" />
+              </Tabs>
+            </Box>
+          </CardContent>
+        </Card>
       </motion.div>
 
-      {/* Management Sections */}
+      {/* Users Table */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ ...ANIMATION_CONFIG.spring, delay: 0.3 }}
-      >
-        <Grid container spacing={3} sx={{ mb: 4 }}>
-          <Grid item xs={12} lg={6}>
-            <CourseManagement />
-          </Grid>
-          <Grid item xs={12} lg={6}>
-            <EnrollmentManagement />
-          </Grid>
-        </Grid>
-      </motion.div>
-
-      {/* Recent Sessions Table */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ ...ANIMATION_CONFIG.spring, delay: 0.4 }}
       >
         <Card sx={{ 
           border: "1px solid #f3f4f6",
@@ -464,7 +473,7 @@ export default function AdminDashboard() {
                   mb: 1
                 }}
               >
-                Recent Attendance Sessions
+                Users ({filteredUsers.length})
               </Typography>
               <Typography 
                 variant="body2" 
@@ -474,7 +483,7 @@ export default function AdminDashboard() {
                   mb: 2
                 }}
               >
-                Latest attendance sessions across all courses
+                Manage all system users and their roles
               </Typography>
             </Box>
             <TableContainer>
@@ -482,22 +491,22 @@ export default function AdminDashboard() {
                 <TableHead>
                   <TableRow sx={{ backgroundColor: "#f9fafb" }}>
                     <TableCell sx={{ fontFamily: "DM Sans", fontWeight: 600, color: "#374151" }}>
-                      Course
+                      User
                     </TableCell>
                     <TableCell sx={{ fontFamily: "DM Sans", fontWeight: 600, color: "#374151" }}>
-                      Session
+                      Email
                     </TableCell>
                     <TableCell sx={{ fontFamily: "DM Sans", fontWeight: 600, color: "#374151" }}>
-                      Lecturer
+                      Role
                     </TableCell>
                     <TableCell sx={{ fontFamily: "DM Sans", fontWeight: 600, color: "#374151" }}>
-                      Date
+                      Joined
+                    </TableCell>
+                    <TableCell sx={{ fontFamily: "DM Sans", fontWeight: 600, color: "#374151" }}>
+                      Last Login
                     </TableCell>
                     <TableCell sx={{ fontFamily: "DM Sans", fontWeight: 600, color: "#374151" }}>
                       Status
-                    </TableCell>
-                    <TableCell sx={{ fontFamily: "DM Sans", fontWeight: 600, color: "#374151" }}>
-                      Method
                     </TableCell>
                     <TableCell sx={{ fontFamily: "DM Sans", fontWeight: 600, color: "#374151" }}>
                       Actions
@@ -505,37 +514,44 @@ export default function AdminDashboard() {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {recentSessions.map((session, index) => (
+                  {filteredUsers.map((user, index) => (
                     <motion.tr
-                      key={session.id}
+                      key={user.id}
                       initial={{ opacity: 0, x: -20 }}
                       animate={{ opacity: 1, x: 0 }}
-                      transition={{ ...ANIMATION_CONFIG.spring, delay: 0.4 + (index * 0.05) }}
+                      transition={{ ...ANIMATION_CONFIG.spring, delay: 0.3 + (index * 0.02) }}
                       component={TableRow}
                       sx={{ "&:hover": { backgroundColor: "#f9fafb" } }}
                     >
                       <TableCell>
-                        <Box>
-                          <Typography 
-                            variant="body2" 
-                            sx={{ 
-                              fontFamily: "DM Sans", 
-                              fontWeight: 600, 
-                              color: "#000",
-                              mb: 0.5
-                            }}
-                          >
-                            {session.courses?.course_code}
-                          </Typography>
-                          <Typography 
-                            variant="caption" 
-                            sx={{ 
-                              fontFamily: "DM Sans", 
-                              color: "#6b7280"
-                            }}
-                          >
-                            {session.courses?.course_name}
-                          </Typography>
+                        <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
+                          <Avatar 
+                            src={`/placeholder-user.jpg`} 
+                            alt={user.full_name}
+                            sx={{ width: 40, height: 40 }}
+                          />
+                          <Box>
+                            <Typography 
+                              variant="body2" 
+                              sx={{ 
+                                fontFamily: "DM Sans", 
+                                fontWeight: 600, 
+                                color: "#000",
+                                mb: 0.5
+                              }}
+                            >
+                              {user.full_name}
+                            </Typography>
+                            <Typography 
+                              variant="caption" 
+                              sx={{ 
+                                fontFamily: "DM Sans", 
+                                color: "#6b7280"
+                              }}
+                            >
+                              ID: {user.id.slice(0, 8)}...
+                            </Typography>
+                          </Box>
                         </Box>
                       </TableCell>
                       <TableCell>
@@ -546,7 +562,45 @@ export default function AdminDashboard() {
                             color: "#374151"
                           }}
                         >
-                          {session.session_name}
+                          {user.email}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                          <Box 
+                            sx={{ 
+                              p: 0.5, 
+                              borderRadius: "4px", 
+                              backgroundColor: `${ROLE_COLORS[user.role]}20`,
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center"
+                            }}
+                          >
+                            {getRoleIcon(user.role)}
+                          </Box>
+                          <Chip 
+                            label={user.role} 
+                            size="small"
+                            sx={{ 
+                              backgroundColor: `${ROLE_COLORS[user.role]}20`,
+                              color: ROLE_COLORS[user.role],
+                              fontFamily: "DM Sans",
+                              textTransform: "capitalize",
+                              fontWeight: 500
+                            }}
+                          />
+                        </Box>
+                      </TableCell>
+                      <TableCell>
+                        <Typography 
+                          variant="body2" 
+                          sx={{ 
+                            fontFamily: "DM Sans", 
+                            color: "#374151"
+                          }}
+                        >
+                          {formatDate(user.created_at)}
                         </Typography>
                       </TableCell>
                       <TableCell>
@@ -557,47 +611,26 @@ export default function AdminDashboard() {
                             color: "#374151"
                           }}
                         >
-                          {session.users?.full_name}
-                        </Typography>
-                      </TableCell>
-                      <TableCell>
-                        <Typography 
-                          variant="body2" 
-                          sx={{ 
-                            fontFamily: "DM Sans", 
-                            color: "#374151"
-                          }}
-                        >
-                          {formatDate(session.session_date)}
+                          {user.last_login ? formatDate(user.last_login) : "Never"}
                         </Typography>
                       </TableCell>
                       <TableCell>
                         <Chip 
-                          label={session.is_active ? "Active" : "Completed"} 
+                          label={user.status || "active"} 
                           size="small"
                           sx={{ 
-                            backgroundColor: session.is_active ? "#10b98120" : "#6b728020",
-                            color: session.is_active ? "#10b981" : "#6b7280",
+                            backgroundColor: user.status === "active" ? "#10b98120" : "#ef444420",
+                            color: user.status === "active" ? "#10b981" : "#ef4444",
                             fontFamily: "DM Sans",
-                            fontWeight: 500
-                          }}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Chip 
-                          label={session.attendance_method?.replace("_", " ").toUpperCase() || "QR CODE"} 
-                          size="small"
-                          sx={{ 
-                            backgroundColor: "#f3f4f6",
-                            color: "#374151",
-                            fontFamily: "DM Sans"
+                            fontWeight: 500,
+                            textTransform: "capitalize"
                           }}
                         />
                       </TableCell>
                       <TableCell>
                         <IconButton
                           size="small"
-                          onClick={handleMenuOpen}
+                          onClick={(e) => handleMenuOpen(e, user)}
                           sx={{ color: "#6b7280" }}
                         >
                           <EllipsisVerticalIcon style={{ width: 16, height: 16 }} />
@@ -626,7 +659,7 @@ export default function AdminDashboard() {
         }}
       >
         <DialogTitle sx={{ fontFamily: "Poppins", fontWeight: 600, color: "#000" }}>
-          Create New User
+          Add New User
         </DialogTitle>
         <DialogContent>
           <Typography 
@@ -637,10 +670,63 @@ export default function AdminDashboard() {
               mb: 3
             }}
           >
-            Add a new student, lecturer, or admin to the system.
+            Create a new user account for the system.
           </Typography>
           <AddUserForm onFormSubmit={handleAddUserSuccess} />
         </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog 
+        open={isDeleteConfirmOpen} 
+        onClose={() => setDeleteConfirmOpen(false)}
+        maxWidth="sm"
+        PaperProps={{
+          sx: {
+            boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)",
+            border: "1px solid #f3f4f6"
+          }
+        }}
+      >
+        <DialogTitle sx={{ fontFamily: "Poppins", fontWeight: 600, color: "#000" }}>
+          Delete User
+        </DialogTitle>
+        <DialogContent>
+          <Typography 
+            variant="body2" 
+            sx={{ 
+              fontFamily: "DM Sans", 
+              color: "#374151",
+              mb: 2
+            }}
+          >
+            Are you sure you want to delete <strong>{selectedUser?.full_name}</strong>? 
+            This action cannot be undone.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ p: 3, pt: 0 }}>
+          <Button 
+            onClick={() => setDeleteConfirmOpen(false)}
+            sx={{ 
+              fontFamily: "DM Sans", 
+              textTransform: "none",
+              color: "#6b7280"
+            }}
+          >
+            Cancel
+          </Button>
+          <Button 
+            onClick={confirmDeleteUser}
+            variant="contained"
+            color="error"
+            sx={{ 
+              fontFamily: "DM Sans", 
+              textTransform: "none"
+            }}
+          >
+            Delete User
+          </Button>
+        </DialogActions>
       </Dialog>
 
       {/* Action Menu */}
@@ -656,13 +742,17 @@ export default function AdminDashboard() {
         }}
       >
         <MenuItem onClick={handleMenuClose} sx={{ fontFamily: "DM Sans" }}>
-          View Details
+          <EyeIcon style={{ width: 16, height: 16, marginRight: 8 }} />
+          View Profile
         </MenuItem>
-        <MenuItem onClick={handleMenuClose} sx={{ fontFamily: "DM Sans" }}>
-          Edit Session
+        <MenuItem onClick={handleEditUser} sx={{ fontFamily: "DM Sans" }}>
+          <PencilIcon style={{ width: 16, height: 16, marginRight: 8 }} />
+          Edit User
         </MenuItem>
-        <MenuItem onClick={handleMenuClose} sx={{ fontFamily: "DM Sans" }}>
-          View Attendance
+        <Divider />
+        <MenuItem onClick={handleDeleteUser} sx={{ fontFamily: "DM Sans", color: "#ef4444" }}>
+          <TrashIcon style={{ width: 16, height: 16, marginRight: 8 }} />
+          Delete User
         </MenuItem>
       </Menu>
     </Box>
