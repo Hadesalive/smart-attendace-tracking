@@ -1,12 +1,12 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useActionState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Trash2 } from "lucide-react"
-import { useFormState, useFormStatus } from "react-dom"
+import { useFormStatus } from "react-dom"
 import { supabase } from "@/lib/supabase"
 import { toast } from "sonner"
 import { createEnrollment, deleteEnrollment } from "@/lib/actions/admin"
@@ -35,7 +35,7 @@ export default function EnrollmentManagement() {
   const [enrollments, setEnrollments] = useState<any[]>([])
   const [students, setStudents] = useState<any[]>([])
   const [courses, setCourses] = useState<any[]>([])
-  const [state, formAction] = useFormState(createEnrollment, initialState)
+  const [state, formAction] = useActionState(createEnrollment, initialState)
 
   useEffect(() => {
     fetchInitialData()

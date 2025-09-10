@@ -3,12 +3,11 @@
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import AdminDashboard from "@/components/dashboard/admin-dashboard"
-import LecturerDashboard from "@/components/dashboard/lecturer-dashboard"
+import LecturerDashboard from "@/components/dashboard/lecturer-dashboard-material"
 import StudentDashboard from "@/components/dashboard/student-dashboard"
+import DashboardLayout from "@/components/layout/dashboard-layout"
 import { getCurrentUser } from "@/lib/auth"
-import { Button } from "@/components/ui/button"
 import { signOut } from "@/lib/auth"
-import { LogOut } from "lucide-react"
 
 export default function Dashboard() {
   const [user, setUser] = useState<any>(null)
@@ -50,31 +49,10 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            <div className="flex items-center">
-              <h1 className="text-xl font-semibold text-gray-900">Smart Attendance System</h1>
-            </div>
-            <div className="flex items-center gap-4">
-              <span className="text-sm text-gray-600">Welcome, {user.full_name}</span>
-              <Button variant="outline" size="sm" onClick={handleSignOut}>
-                <LogOut className="h-4 w-4 mr-2" />
-                Sign Out
-              </Button>
-            </div>
-          </div>
-        </div>
-      </header>
-
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {user.role === "admin" && <AdminDashboard />}
-        {user.role === "lecturer" && <LecturerDashboard userId={user.id} />}
-        {user.role === "student" && <StudentDashboard userId={user.id} />}
-      </main>
-    </div>
+    <DashboardLayout userName={user.full_name} userRole={user.role}>
+      {user.role === "admin" && <AdminDashboard />}
+      {user.role === "lecturer" && <LecturerDashboard userId={user.id} />}
+      {user.role === "student" && <StudentDashboard userId={user.id} />}
+    </DashboardLayout>
   )
 }

@@ -12,7 +12,22 @@ const config: Config = {
   ],
   theme: {
   	extend: {
+  		fontFamily: {
+  			'heading': ['Poppins', 'Inter', 'sans-serif'],
+  			'body': ['DM Sans', 'Inter', 'sans-serif'],
+  			'sans': ['DM Sans', 'Inter', 'sans-serif'],
+  		},
   		colors: {
+  			// Limkokwing University Brand Colors
+  			'limkokwing': {
+  				'black': '#000000',        // Primary brand color
+  				'gunmetal': '#555657',     // Secondary color
+  				'light-gray': '#F4F5F6',   // Background/neutral
+  				'teal': '#008080',         // Accent color
+  				'silver': '#C0C0C0',       // Alternative accent
+  				'gold': '#C9A66B',         // Premium accent
+  			},
+  			// System colors using CSS variables
   			background: 'hsl(var(--background))',
   			foreground: 'hsl(var(--foreground))',
   			card: {

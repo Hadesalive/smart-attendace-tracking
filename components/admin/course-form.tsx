@@ -1,7 +1,7 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { useFormState, useFormStatus } from "react-dom"
+import { useEffect, useState, useActionState } from "react"
+import { useFormStatus } from "react-dom"
 import { createCourse, updateCourse } from "@/lib/actions/admin"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
@@ -35,7 +35,7 @@ export function CourseForm({ course, onFormSubmit }: { course?: any; onFormSubmi
   const isEditing = !!course
 
   const action = isEditing ? updateCourse : createCourse
-  const [state, formAction] = useFormState(action, initialState)
+  const [state, formAction] = useActionState(action, initialState)
 
   useEffect(() => {
     async function fetchLecturers() {

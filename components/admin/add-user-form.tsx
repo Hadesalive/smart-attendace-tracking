@@ -1,6 +1,7 @@
 "use client"
 
-import { useFormState, useFormStatus } from "react-dom"
+import { useActionState } from "react"
+import { useFormStatus } from "react-dom"
 import { createUser } from "@/lib/actions/admin"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
@@ -31,7 +32,7 @@ function SubmitButton() {
 }
 
 export function AddUserForm({ onFormSubmit }: { onFormSubmit: () => void }) {
-  const [state, formAction] = useFormState(createUser, initialState)
+  const [state, formAction] = useActionState(createUser, initialState)
 
   useEffect(() => {
     if (!state) return;

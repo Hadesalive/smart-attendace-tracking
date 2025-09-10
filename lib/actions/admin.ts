@@ -199,6 +199,9 @@ const sessionSchema = z.object({
   end_time: z.string(),
   attendance_method: z.enum(["qr_code", "facial_recognition", "hybrid"]),
   lecturer_id: z.string(),
+  location: z.string().optional(),
+  capacity: z.string().optional(),
+  description: z.string().optional(),
 });
 
 export async function createSession(prevState: any, formData: FormData) {
@@ -210,6 +213,9 @@ export async function createSession(prevState: any, formData: FormData) {
     end_time: formData.get('end_time'),
     attendance_method: formData.get('attendance_method'),
     lecturer_id: formData.get('lecturer_id'),
+    location: formData.get('location'),
+    capacity: formData.get('capacity'),
+    description: formData.get('description'),
   });
 
   if (!validatedFields.success) {
@@ -238,10 +244,16 @@ export async function createSession(prevState: any, formData: FormData) {
   const utcEnd = getUTCDateTime(session_date, end_time);
 
   const { error } = await supabase.from('attendance_sessions').insert({
-    ...rest,
+    course_id: validatedFields.data.course_id,
+    session_name: validatedFields.data.session_name,
     session_date: utcStart.date,
     start_time: utcStart.time,
     end_time: utcEnd.time,
+    attendance_method: validatedFields.data.attendance_method,
+    lecturer_id: validatedFields.data.lecturer_id,
+    location: validatedFields.data.location || null,
+    capacity: validatedFields.data.capacity ? parseInt(validatedFields.data.capacity) : null,
+    description: validatedFields.data.description || null,
   });
 
   if (error) {

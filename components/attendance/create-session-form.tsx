@@ -1,7 +1,7 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
-import { useFormState, useFormStatus } from "react-dom"
+import { useState, useEffect, useRef, useActionState } from "react"
+import { useFormStatus } from "react-dom"
 import { toast } from "sonner"
 import { supabase } from "@/lib/supabase"
 import { createSession } from "@/lib/actions/admin"
@@ -31,7 +31,7 @@ function SubmitButton() {
 
 export default function CreateSessionForm({ lecturerId, onSessionCreated }: CreateSessionFormProps) {
   const [courses, setCourses] = useState<any[]>([])
-  const [state, formAction] = useFormState(createSession, initialState)
+  const [state, formAction] = useActionState(createSession, initialState)
   const formRef = useRef<HTMLFormElement>(null)
 
   useEffect(() => {

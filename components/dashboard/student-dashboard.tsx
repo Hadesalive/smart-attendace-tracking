@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { formatDate, formatTime } from "@/lib/utils"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -188,10 +189,9 @@ export default function StudentDashboard({ userId }: { userId: string }) {
                     </TableCell>
                     <TableCell>{session.session_name}</TableCell>
                     <TableCell>
-                      <div>{new Date(session.session_date).toLocaleDateString()}</div>
+                      <div>{formatDate(session.session_date)}</div>
                       <div className="text-sm text-muted-foreground">
-                        {new Date(`${session.session_date}T${session.start_time}`).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - 
-                        {new Date(`${session.session_date}T${session.end_time}`).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        {formatTime(`${session.session_date}T${session.start_time}`)} - {formatTime(`${session.session_date}T${session.end_time}`)}
                       </div>
                     </TableCell>
                     <TableCell>
@@ -276,7 +276,7 @@ export default function StudentDashboard({ userId }: { userId: string }) {
                     </div>
                   </TableCell>
                   <TableCell>{record.attendance_sessions?.session_name}</TableCell>
-                  <TableCell>{new Date(record.marked_at).toLocaleDateString()}</TableCell>
+                  <TableCell>{formatDate(record.marked_at)}</TableCell>
                   <TableCell>
                     <Badge variant="outline">{record.method_used === "qr_code" ? "QR Code" : "Face Recognition"}</Badge>
                   </TableCell>
