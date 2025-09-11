@@ -15,25 +15,29 @@ import {
   TableContainer,
   TableHead,
   TableRow,
-  Paper,
   Grid,
   IconButton,
   Menu,
   MenuItem,
-  Avatar,
-  LinearProgress,
-  Divider
+  TextField,
+  InputAdornment,
+  Tabs,
+  Tab
 } from "@mui/material"
 import { 
-  BookOpenIcon, 
-  PlusIcon, 
-  FunnelIcon, 
-  ArrowDownTrayIcon,
+  CalendarDaysIcon, 
+  MagnifyingGlassIcon,
+  FunnelIcon,
   EllipsisVerticalIcon,
-  TrophyIcon,
+  CheckCircleIcon,
+  ClockIcon,
+  XCircleIcon,
+  PlayIcon,
+  EyeIcon,
   ChartBarIcon
 } from "@heroicons/react/24/outline"
-import { formatDate, formatNumber } from "@/lib/utils"
+import { formatDate, formatTime, formatNumber } from "@/lib/utils"
+import { supabase } from "@/lib/supabase"
 
 // ============================================================================
 // CONSTANTS
@@ -49,126 +53,151 @@ const ANIMATION_CONFIG = {
 } as const
 
 const STATS_CARDS = [
-  { label: "Total Courses", value: 2, icon: BookOpenIcon, color: "#8b5cf6" },
-  { label: "Total Students", value: 83, icon: ChartBarIcon, color: "#10b981" },
-  { label: "Average Grade", value: "81.9%", icon: TrophyIcon, color: "#f59e0b" },
-  { label: "Graded This Week", value: 12, icon: PlusIcon, color: "#06b6d4" }
+  { label: "Total Sessions", value: 0, icon: CalendarDaysIcon, color: "#8b5cf6" },
+  { label: "Active Sessions", value: 0, icon: PlayIcon, color: "#10b981" },
+  { label: "Completed", value: 0, icon: CheckCircleIcon, color: "#06b6d4" },
+  { label: "Cancelled", value: 0, icon: XCircleIcon, color: "#ef4444" }
 ] as const
+
+const STATUS_COLORS = {
+  scheduled: "#f59e0b",
+  active: "#10b981", 
+  completed: "#06b6d4",
+  cancelled: "#ef4444"
+} as const
 
 // ============================================================================
 // MAIN COMPONENT
 // ============================================================================
 
-export default function GradebookPage() {
+export default function SessionsPage() {
   // ============================================================================
   // STATE & HOOKS
   // ============================================================================
   
+  const [sessions, setSessions] = useState<any[]>([])
+  const [stats, setStats] = useState({
+    totalSessions: 0,
+    activeSessions: 0,
+    completed: 0,
+    cancelled: 0
+  })
+  const [searchTerm, setSearchTerm] = useState("")
+  const [selectedStatus, setSelectedStatus] = useState<string>("all")
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null)
-  const [selectedCourse, setSelectedCourse] = useState<string | null>(null)
+  const [selectedSession, setSelectedSession] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
 
   // ============================================================================
-  // MOCK DATA
+  // DATA FETCHING
   // ============================================================================
-  
-  const courses = useMemo(() => [
-    {
-      id: "1",
-      courseCode: "CS101",
-      courseName: "Introduction to Computer Science",
-      credits: 3,
-      semester: "Fall 2024",
-      totalStudents: 45,
-      averageGrade: 85.2,
-      color: "#8b5cf6"
-    },
-    {
-      id: "2", 
-      courseCode: "MATH201",
-      courseName: "Calculus II",
-      credits: 4,
-      semester: "Fall 2024",
-      totalStudents: 38,
-      averageGrade: 78.5,
-      color: "#10b981"
-    }
-  ], [])
 
-  const recentGrades = useMemo(() => [
-    {
-      id: "1",
-      studentName: "John Doe",
-      studentAvatar: "/placeholder-user.jpg",
-      courseCode: "CS101",
-      assignment: "Midterm Exam",
-      grade: 92,
-      maxGrade: 100,
-      date: "2024-01-15",
-      status: "graded"
-    },
-    {
-      id: "2",
-      studentName: "Jane Smith",
-      studentAvatar: "/placeholder-user.jpg", 
-      courseCode: "MATH201",
-      assignment: "Quiz 3",
-      grade: 85,
-      maxGrade: 100,
-      date: "2024-01-14",
-      status: "graded"
-    },
-    {
-      id: "3",
-      studentName: "Mike Johnson",
-      studentAvatar: "/placeholder-user.jpg",
-      courseCode: "CS101",
-      assignment: "Lab Assignment 2",
-      grade: 78,
-      maxGrade: 100,
-      date: "2024-01-13",
-      status: "graded"
-    },
-    {
-      id: "4",
-      studentName: "Sarah Wilson",
-      studentAvatar: "/placeholder-user.jpg",
-      courseCode: "MATH201",
-      assignment: "Homework 4",
-      grade: 95,
-      maxGrade: 100,
-      date: "2024-01-12",
-      status: "graded"
+  useEffect(() => {
+    fetchSessions()
+  }, [])
+
+  const fetchSessions = useCallback(async () => {
+    try {
+      setLoading(true)
+      const { data: sessions, error } = await supabase
+        .from("attendance_sessions")
+        .select(`
+          *,
+          courses(course_code, course_name, department),
+          users(full_name, email)
+        `)
+        .order("session_date", { ascending: false })
+        .order("start_time", { ascending: false })
+
+      if (error) throw error
+
+      setSessions(sessions || [])
+      
+      // Calculate stats
+      const totalSessions = sessions?.length || 0
+      const activeSessions = sessions?.filter(s => s.is_active).length || 0
+      const completed = sessions?.filter(s => !s.is_active && s.status !== 'cancelled').length || 0
+      const cancelled = sessions?.filter(s => s.status === 'cancelled').length || 0
+
+      setStats({ totalSessions, activeSessions, completed, cancelled })
+    } catch (error) {
+      console.error("Error fetching sessions:", error)
+    } finally {
+      setLoading(false)
     }
-  ], [])
+  }, [])
 
   // ============================================================================
   // EVENT HANDLERS
   // ============================================================================
 
-  const handleMenuOpen = useCallback((event: React.MouseEvent<HTMLElement>, courseId: string) => {
+  const handleMenuOpen = useCallback((event: React.MouseEvent<HTMLElement>, session: any) => {
     setAnchorEl(event.currentTarget)
-    setSelectedCourse(courseId)
+    setSelectedSession(session)
   }, [])
 
   const handleMenuClose = useCallback(() => {
     setAnchorEl(null)
-    setSelectedCourse(null)
+    setSelectedSession(null)
   }, [])
 
-  const getGradeColor = useCallback((grade: number, maxGrade: number) => {
-    const percentage = (grade / maxGrade) * 100
-    if (percentage >= 90) return "#10b981" // green
-    if (percentage >= 80) return "#f59e0b" // orange
-    if (percentage >= 70) return "#06b6d4" // cyan
-    return "#ef4444" // red
+  const handleStatusChange = useCallback((event: React.SyntheticEvent, newValue: string) => {
+    setSelectedStatus(newValue)
   }, [])
 
-  const getGradeStatus = useCallback((grade: number, maxGrade: number) => {
-    const percentage = (grade / maxGrade) * 100
-    if (percentage >= 80) return { label: "Excellent", color: "success" }
-    if (percentage >= 70) return { label: "Good", color: "warning" }
-    if (percentage >= 60) return { label: "Pass", color: "info" }
-    return { label: "Needs Review", color: "error" }
+  // ============================================================================
+  // MEMOIZED VALUES
+  // ============================================================================
+
+  const statsCardsWithData = useMemo(() => {
+    return STATS_CARDS.map(card => ({
+      ...card,
+      value: card.label === "Total Sessions" ? stats.totalSessions :
+             card.label === "Active Sessions" ? stats.activeSessions :
+             card.label === "Completed" ? stats.completed :
+             stats.cancelled
+    }))
+  }, [stats])
+
+  const filteredSessions = useMemo(() => {
+    let filtered = sessions
+
+    // Filter by search term
+    if (searchTerm) {
+      filtered = filtered.filter(session => 
+        session.session_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        session.courses?.course_code.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        session.courses?.course_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        session.users?.full_name.toLowerCase().includes(searchTerm.toLowerCase())
+      )
+    }
+
+    // Filter by status
+    if (selectedStatus !== "all") {
+      if (selectedStatus === "active") {
+        filtered = filtered.filter(session => session.is_active)
+      } else if (selectedStatus === "completed") {
+        filtered = filtered.filter(session => !session.is_active && session.status !== 'cancelled')
+      } else {
+        filtered = filtered.filter(session => session.status === selectedStatus)
+      }
+    }
+
+    return filtered
+  }, [sessions, searchTerm, selectedStatus])
+
+  const getSessionStatus = useCallback((session: any) => {
+    if (session.status === 'cancelled') return { label: 'Cancelled', color: STATUS_COLORS.cancelled }
+    if (session.is_active) return { label: 'Active', color: STATUS_COLORS.active }
+    
+    const now = new Date()
+    const sessionStart = new Date(`${session.session_date}T${session.start_time}`)
+    
+    if (now < sessionStart) {
+      return { label: 'Scheduled', color: STATUS_COLORS.scheduled }
+    } else {
+      return { label: 'Completed', color: STATUS_COLORS.completed }
+    }
   }, [])
 
   // ============================================================================
@@ -203,7 +232,7 @@ export default function GradebookPage() {
                 mb: 1
               }}
             >
-              Gradebook
+              Session Monitoring
             </Typography>
             <Typography 
               variant="body1" 
@@ -213,7 +242,7 @@ export default function GradebookPage() {
                 fontSize: "1rem"
               }}
             >
-              Manage student grades and academic records
+              Monitor all attendance sessions across the system
             </Typography>
           </Box>
           <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
@@ -232,7 +261,7 @@ export default function GradebookPage() {
             </Button>
             <Button
               variant="outlined"
-              startIcon={<ArrowDownTrayIcon className="h-4 w-4" />}
+              startIcon={<ChartBarIcon className="h-4 w-4" />}
               sx={{
                 borderColor: "#e5e7eb",
                 color: "#374151",
@@ -241,19 +270,7 @@ export default function GradebookPage() {
                 "&:hover": { borderColor: "#d1d5db", backgroundColor: "#f9fafb" }
               }}
             >
-              Export
-            </Button>
-            <Button
-              variant="contained"
-              startIcon={<PlusIcon className="h-4 w-4" />}
-              sx={{
-                backgroundColor: "#000",
-                fontFamily: "DM Sans",
-                textTransform: "none",
-                "&:hover": { backgroundColor: "#1f2937" }
-              }}
-            >
-              Add Grade
+              Analytics
             </Button>
           </Box>
         </Box>
@@ -266,7 +283,7 @@ export default function GradebookPage() {
         transition={{ ...ANIMATION_CONFIG.spring, delay: 0.1 }}
       >
         <Grid container spacing={3} sx={{ mb: 4 }}>
-          {STATS_CARDS.map((stat, index) => (
+          {statsCardsWithData.map((stat, index) => (
             <Grid item xs={12} sm={6} md={3} key={stat.label}>
               <motion.div
                 initial={{ opacity: 0, scale: 0.9 }}
@@ -325,134 +342,65 @@ export default function GradebookPage() {
         </Grid>
       </motion.div>
 
-      {/* Course Overview Cards */}
+      {/* Search and Filters */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ ...ANIMATION_CONFIG.spring, delay: 0.2 }}
       >
-        <Typography 
-          variant="h5" 
-          sx={{ 
-            fontFamily: "Poppins", 
-            fontWeight: 600, 
-            color: "#000",
-            mb: 2
-          }}
-        >
-          Course Overview
-        </Typography>
-        <Grid container spacing={3} sx={{ mb: 4 }}>
-          {courses.map((course, index) => (
-            <Grid item xs={12} md={6} lg={4} key={course.id}>
-              <motion.div
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ ...ANIMATION_CONFIG.spring, delay: 0.2 + (index * 0.1) }}
-                whileHover={{ scale: 1.02 }}
+        <Card sx={{ 
+          border: "1px solid #f3f4f6",
+          boxShadow: "0 1px 3px 0 rgb(0 0 0 / 0.1)",
+          mb: 4
+        }}>
+          <CardContent sx={{ p: 3 }}>
+            <Box sx={{ display: "flex", flexDirection: { xs: "column", sm: "row" }, gap: 3, alignItems: { sm: "center" } }}>
+              <TextField
+                placeholder="Search sessions..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <MagnifyingGlassIcon style={{ width: 20, height: 20, color: "#6b7280" }} />
+                    </InputAdornment>
+                  ),
+                }}
+                sx={{
+                  flex: 1,
+                  "& .MuiOutlinedInput-root": {
+                    fontFamily: "DM Sans",
+                    backgroundColor: "#f9fafb",
+                    "& fieldset": { borderColor: "#e5e7eb" },
+                    "&:hover fieldset": { borderColor: "#d1d5db" },
+                    "&.Mui-focused fieldset": { borderColor: "#000" }
+                  }
+                }}
+              />
+              <Tabs 
+                value={selectedStatus} 
+                onChange={handleStatusChange}
+                sx={{
+                  "& .MuiTab-root": {
+                    fontFamily: "DM Sans",
+                    textTransform: "none",
+                    minWidth: "auto",
+                    px: 2
+                  }
+                }}
               >
-                <Card sx={{ 
-                  height: "100%",
-                  border: "1px solid #f3f4f6",
-                  boxShadow: "0 1px 3px 0 rgb(0 0 0 / 0.1)",
-                  "&:hover": { boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)" }
-                }}>
-                  <CardContent sx={{ p: 3 }}>
-                    <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 2 }}>
-                      <Box 
-                        sx={{ 
-                          p: 1.5, 
-                          borderRadius: "8px", 
-                          backgroundColor: `${course.color}20`,
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center"
-                        }}
-                      >
-                        <BookOpenIcon style={{ width: 24, height: 24, color: course.color }} />
-                      </Box>
-                      <Chip 
-                        label={`${course.credits} credits`} 
-                        size="small" 
-                        sx={{ 
-                          backgroundColor: "#f3f4f6", 
-                          color: "#374151",
-                          fontFamily: "DM Sans"
-                        }} 
-                      />
-                    </Box>
-                    <Typography 
-                      variant="h6" 
-                      sx={{ 
-                        fontFamily: "Poppins", 
-                        fontWeight: 600, 
-                        color: "#000",
-                        mb: 1,
-                        fontSize: "1.125rem"
-                      }}
-                    >
-                      {course.courseCode}
-                    </Typography>
-                    <Typography 
-                      variant="body2" 
-                      sx={{ 
-                        fontFamily: "DM Sans", 
-                        color: "#6b7280",
-                        mb: 3,
-                        fontSize: "0.875rem"
-                      }}
-                    >
-                      {course.courseName}
-                    </Typography>
-                    <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
-                      <Box sx={{ display: "flex", justifyContent: "space-between" }}>
-                        <Typography variant="body2" sx={{ fontFamily: "DM Sans", color: "#6b7280" }}>
-                          Students
-                        </Typography>
-                        <Typography variant="body2" sx={{ fontFamily: "DM Sans", fontWeight: 600, color: "#000" }}>
-                          {formatNumber(course.totalStudents)}
-                        </Typography>
-                      </Box>
-                      <Box sx={{ display: "flex", justifyContent: "space-between" }}>
-                        <Typography variant="body2" sx={{ fontFamily: "DM Sans", color: "#6b7280" }}>
-                          Average Grade
-                        </Typography>
-                        <Typography variant="body2" sx={{ fontFamily: "DM Sans", fontWeight: 600, color: "#000" }}>
-                          {formatNumber(course.averageGrade)}%
-                        </Typography>
-                      </Box>
-                      <Box sx={{ display: "flex", justifyContent: "space-between" }}>
-                        <Typography variant="body2" sx={{ fontFamily: "DM Sans", color: "#6b7280" }}>
-                          Semester
-                        </Typography>
-                        <Typography variant="body2" sx={{ fontFamily: "DM Sans", fontWeight: 600, color: "#000" }}>
-                          {course.semester}
-                        </Typography>
-                      </Box>
-                    </Box>
-                    <Button
-                      variant="outlined"
-                      fullWidth
-                      sx={{
-                        mt: 2,
-                        borderColor: "#e5e7eb",
-                        color: "#374151",
-                        fontFamily: "DM Sans",
-                        textTransform: "none",
-                        "&:hover": { borderColor: "#d1d5db", backgroundColor: "#f9fafb" }
-                      }}
-                    >
-                      View Details
-                    </Button>
-                  </CardContent>
-                </Card>
-              </motion.div>
-            </Grid>
-          ))}
-        </Grid>
+                <Tab label="All" value="all" />
+                <Tab label="Active" value="active" />
+                <Tab label="Scheduled" value="scheduled" />
+                <Tab label="Completed" value="completed" />
+                <Tab label="Cancelled" value="cancelled" />
+              </Tabs>
+            </Box>
+          </CardContent>
+        </Card>
       </motion.div>
 
-      {/* Recent Grades Table */}
+      {/* Sessions Table */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -473,7 +421,7 @@ export default function GradebookPage() {
                   mb: 1
                 }}
               >
-                Recent Grades
+                Sessions ({filteredSessions.length})
               </Typography>
               <Typography 
                 variant="body2" 
@@ -483,7 +431,7 @@ export default function GradebookPage() {
                   mb: 2
                 }}
               >
-                Latest grade entries across all courses
+                All attendance sessions across the system
               </Typography>
             </Box>
             <TableContainer>
@@ -491,19 +439,19 @@ export default function GradebookPage() {
                 <TableHead>
                   <TableRow sx={{ backgroundColor: "#f9fafb" }}>
                     <TableCell sx={{ fontFamily: "DM Sans", fontWeight: 600, color: "#374151" }}>
-                      Student
+                      Session
                     </TableCell>
                     <TableCell sx={{ fontFamily: "DM Sans", fontWeight: 600, color: "#374151" }}>
                       Course
                     </TableCell>
                     <TableCell sx={{ fontFamily: "DM Sans", fontWeight: 600, color: "#374151" }}>
-                      Assignment
+                      Lecturer
                     </TableCell>
                     <TableCell sx={{ fontFamily: "DM Sans", fontWeight: 600, color: "#374151" }}>
-                      Grade
+                      Date & Time
                     </TableCell>
                     <TableCell sx={{ fontFamily: "DM Sans", fontWeight: 600, color: "#374151" }}>
-                      Date
+                      Method
                     </TableCell>
                     <TableCell sx={{ fontFamily: "DM Sans", fontWeight: 600, color: "#374151" }}>
                       Status
@@ -514,80 +462,51 @@ export default function GradebookPage() {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {recentGrades.map((grade, index) => {
-                    const gradeStatus = getGradeStatus(grade.grade, grade.maxGrade)
-                    const gradeColor = getGradeColor(grade.grade, grade.maxGrade)
+                  {filteredSessions.map((session, index) => {
+                    const sessionStatus = getSessionStatus(session)
                     
                     return (
                       <motion.tr
-                        key={grade.id}
+                        key={session.id}
                         initial={{ opacity: 0, x: -20 }}
                         animate={{ opacity: 1, x: 0 }}
-                        transition={{ ...ANIMATION_CONFIG.spring, delay: 0.3 + (index * 0.05) }}
+                        transition={{ ...ANIMATION_CONFIG.spring, delay: 0.3 + (index * 0.02) }}
                         component={TableRow}
                         sx={{ "&:hover": { backgroundColor: "#f9fafb" } }}
                       >
                         <TableCell>
-                          <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
-                            <Avatar 
-                              src={grade.studentAvatar} 
-                              alt={grade.studentName}
-                              sx={{ width: 32, height: 32 }}
-                            />
+                          <Typography 
+                            variant="body2" 
+                            sx={{ 
+                              fontFamily: "DM Sans", 
+                              fontWeight: 600, 
+                              color: "#000"
+                            }}
+                          >
+                            {session.session_name}
+                          </Typography>
+                        </TableCell>
+                        <TableCell>
+                          <Box>
                             <Typography 
                               variant="body2" 
                               sx={{ 
                                 fontFamily: "DM Sans", 
                                 fontWeight: 600, 
-                                color: "#000"
+                                color: "#000",
+                                mb: 0.5
                               }}
                             >
-                              {grade.studentName}
-                            </Typography>
-                          </Box>
-                        </TableCell>
-                        <TableCell>
-                          <Typography 
-                            variant="body2" 
-                            sx={{ 
-                              fontFamily: "DM Sans", 
-                              color: "#374151"
-                            }}
-                          >
-                            {grade.courseCode}
-                          </Typography>
-                        </TableCell>
-                        <TableCell>
-                          <Typography 
-                            variant="body2" 
-                            sx={{ 
-                              fontFamily: "DM Sans", 
-                              color: "#374151"
-                            }}
-                          >
-                            {grade.assignment}
-                          </Typography>
-                        </TableCell>
-                        <TableCell>
-                          <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                            <Typography 
-                              variant="body2" 
-                              sx={{ 
-                                fontFamily: "DM Sans", 
-                                fontWeight: 600, 
-                                color: gradeColor
-                              }}
-                            >
-                              {formatNumber(grade.grade)}
+                              {session.courses?.course_code}
                             </Typography>
                             <Typography 
-                              variant="body2" 
+                              variant="caption" 
                               sx={{ 
                                 fontFamily: "DM Sans", 
                                 color: "#6b7280"
                               }}
                             >
-                              / {formatNumber(grade.maxGrade)}
+                              {session.courses?.course_name}
                             </Typography>
                           </Box>
                         </TableCell>
@@ -599,16 +518,51 @@ export default function GradebookPage() {
                               color: "#374151"
                             }}
                           >
-                            {formatDate(grade.date)}
+                            {session.users?.full_name}
                           </Typography>
                         </TableCell>
                         <TableCell>
+                          <Box>
+                            <Typography 
+                              variant="body2" 
+                              sx={{ 
+                                fontFamily: "DM Sans", 
+                                fontWeight: 600,
+                                color: "#000",
+                                mb: 0.5
+                              }}
+                            >
+                              {formatDate(session.session_date)}
+                            </Typography>
+                            <Typography 
+                              variant="caption" 
+                              sx={{ 
+                                fontFamily: "DM Sans", 
+                                color: "#6b7280"
+                              }}
+                            >
+                              {formatTime(`${session.session_date}T${session.start_time}`)} - {formatTime(`${session.session_date}T${session.end_time}`)}
+                            </Typography>
+                          </Box>
+                        </TableCell>
+                        <TableCell>
                           <Chip 
-                            label={gradeStatus.label} 
+                            label={session.attendance_method?.replace("_", " ").toUpperCase() || "QR CODE"} 
                             size="small"
                             sx={{ 
-                              backgroundColor: `${gradeColor}20`,
-                              color: gradeColor,
+                              backgroundColor: "#f3f4f6",
+                              color: "#374151",
+                              fontFamily: "DM Sans"
+                            }}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Chip 
+                            label={sessionStatus.label} 
+                            size="small"
+                            sx={{ 
+                              backgroundColor: `${sessionStatus.color}20`,
+                              color: sessionStatus.color,
                               fontFamily: "DM Sans",
                               fontWeight: 500
                             }}
@@ -617,7 +571,7 @@ export default function GradebookPage() {
                         <TableCell>
                           <IconButton
                             size="small"
-                            onClick={(e) => handleMenuOpen(e, grade.id)}
+                            onClick={(e) => handleMenuOpen(e, session)}
                             sx={{ color: "#6b7280" }}
                           >
                             <EllipsisVerticalIcon style={{ width: 16, height: 16 }} />
@@ -646,13 +600,16 @@ export default function GradebookPage() {
         }}
       >
         <MenuItem onClick={handleMenuClose} sx={{ fontFamily: "DM Sans" }}>
-          Edit Grade
-        </MenuItem>
-        <MenuItem onClick={handleMenuClose} sx={{ fontFamily: "DM Sans" }}>
+          <EyeIcon style={{ width: 16, height: 16, marginRight: 8 }} />
           View Details
         </MenuItem>
         <MenuItem onClick={handleMenuClose} sx={{ fontFamily: "DM Sans" }}>
-          Send Feedback
+          <ChartBarIcon style={{ width: 16, height: 16, marginRight: 8 }} />
+          View Attendance
+        </MenuItem>
+        <MenuItem onClick={handleMenuClose} sx={{ fontFamily: "DM Sans" }}>
+          <ClockIcon style={{ width: 16, height: 16, marginRight: 8 }} />
+          Session History
         </MenuItem>
       </Menu>
     </Box>
