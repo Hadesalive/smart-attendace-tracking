@@ -167,8 +167,8 @@ const IconContainer = ({ icon: Icon, color }: IconContainerProps) => (
   <Box
     className="stat-icon"
     sx={{
-      width: ICON_CONFIG.size,
-      height: ICON_CONFIG.size,
+      width: { xs: ICON_CONFIG.size.xs, sm: ICON_CONFIG.size.sm, md: ICON_CONFIG.size.md },
+      height: { xs: ICON_CONFIG.size.xs, sm: ICON_CONFIG.size.sm, md: ICON_CONFIG.size.md },
       borderRadius: ICON_CONFIG.borderRadius,
       display: 'flex',
       alignItems: 'center',

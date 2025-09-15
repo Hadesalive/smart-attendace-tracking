@@ -26,6 +26,7 @@ import { cn } from "@/lib/utils"
 interface SidebarProps {
   isOpen: boolean
   onClose: () => void
+  userRole?: string
 }
 
 interface NavigationItem {
@@ -53,16 +54,38 @@ interface AnimationVariants {
 // CONSTANTS
 // ============================================================================
 
-const NAVIGATION_ITEMS: NavigationItem[] = [
-  { name: "Dashboard", icon: ComputerDesktopIcon, href: "/dashboard" },
-  { name: "Gradebook", icon: BookOpenIcon, href: "/lecturer/gradebook" },
-  { name: "Attendance", icon: CalendarDaysIcon, href: "/lecturer/attendance" },
-  { name: "Sessions", icon: ClipboardDocumentListIcon, href: "/lecturer/sessions" },
-  { name: "Homework", icon: AcademicCapIcon, href: "/lecturer/homework" },
-  { name: "Lesson Materials", icon: DocumentTextIcon, href: "/lecturer/materials" },
-  { name: "Reports", icon: ChartPieIcon, href: "/reports" },
-  { name: "Settings", icon: Cog6ToothIcon, href: "/settings" },
-]
+const NAV_ITEMS_BY_ROLE: Record<string, NavigationItem[]> = {
+  Lecturer: [
+    { name: "Dashboard", icon: ComputerDesktopIcon, href: "/dashboard" },
+    { name: "Gradebook", icon: BookOpenIcon, href: "/lecturer/gradebook" },
+    { name: "Attendance", icon: CalendarDaysIcon, href: "/lecturer/attendance" },
+    { name: "Sessions", icon: ClipboardDocumentListIcon, href: "/lecturer/sessions" },
+    { name: "Homework", icon: AcademicCapIcon, href: "/lecturer/homework" },
+    { name: "Lesson Materials", icon: DocumentTextIcon, href: "/lecturer/materials" },
+    { name: "Reports", icon: ChartPieIcon, href: "/reports" },
+    { name: "Settings", icon: Cog6ToothIcon, href: "/settings" },
+  ],
+  Admin: [
+    { name: "Dashboard", icon: ComputerDesktopIcon, href: "/dashboard" },
+    { name: "Users", icon: UsersIcon, href: "/admin/users" },
+    { name: "Courses", icon: BookOpenIcon, href: "/admin/courses" },
+    { name: "Sessions", icon: ClipboardDocumentListIcon, href: "/admin/sessions" },
+    { name: "Attendance", icon: CalendarDaysIcon, href: "/admin/attendance" },
+    { name: "Reports", icon: ChartPieIcon, href: "/admin/reports" },
+    { name: "Settings", icon: Cog6ToothIcon, href: "/admin/settings" },
+  ],
+  Student: [
+    { name: "Dashboard", icon: ComputerDesktopIcon, href: "/dashboard" },
+    { name: "Courses", icon: BookOpenIcon, href: "/student/courses" },
+    { name: "Sessions", icon: ClipboardDocumentListIcon, href: "/student/sessions" },
+    { name: "Attendance", icon: CalendarDaysIcon, href: "/student/attendance" },
+    { name: "Homework", icon: AcademicCapIcon, href: "/student/homework" },
+    { name: "Materials", icon: DocumentTextIcon, href: "/student/materials" },
+    { name: "Profile", icon: UsersIcon, href: "/student/profile" },
+  ],
+}
+
+const DEFAULT_NAVIGATION_ITEMS: NavigationItem[] = NAV_ITEMS_BY_ROLE.Lecturer
 
 const ANIMATION_CONFIG = {
   spring: {
@@ -636,7 +659,7 @@ const MobileSidebar = ({
  * @param isOpen - Whether the sidebar is open (mobile)
  * @param onClose - Function to close the sidebar
  */
-export default function Sidebar({ isOpen, onClose }: SidebarProps) {
+export default function Sidebar({ isOpen, onClose, userRole }: SidebarProps) {
   // ============================================================================
   // STATE & HOOKS
   // ============================================================================
@@ -654,7 +677,10 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
   // MEMOIZED VALUES
   // ============================================================================
 
-  const navigationItems = useMemo(() => NAVIGATION_ITEMS, [])
+  const navigationItems = useMemo(() => {
+    const roleKey = (userRole || 'Lecturer') as keyof typeof NAV_ITEMS_BY_ROLE
+    return NAV_ITEMS_BY_ROLE[roleKey] || DEFAULT_NAVIGATION_ITEMS
+  }, [userRole])
 
   // ============================================================================
   // RENDER

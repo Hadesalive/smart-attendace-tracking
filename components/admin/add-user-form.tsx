@@ -1,14 +1,11 @@
 "use client"
 
-import { useActionState } from "react"
+import { useActionState, useEffect } from "react"
 import { useFormStatus } from "react-dom"
 import { createUser } from "@/lib/actions/admin"
-import { Label } from "@/components/ui/label"
-import { Input } from "@/components/ui/input"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Button } from "@/components/ui/button"
+import { Box, Button, TextField, FormControl, InputLabel, FormHelperText, Stack, NativeSelect } from "@mui/material"
+import { TYPOGRAPHY_STYLES } from "@/lib/design/fonts"
 import { toast } from "sonner"
-import { useEffect } from "react"
 
 type FormState = {
   message: string | null;
@@ -31,8 +28,8 @@ function SubmitButton() {
   )
 }
 
-export function AddUserForm({ onFormSubmit }: { onFormSubmit: () => void }) {
-  const [state, formAction] = useActionState(createUser, initialState)
+export function AddUserForm({ onFormSubmit, defaultRole }: { onFormSubmit: () => void; defaultRole?: 'student' | 'lecturer' | 'admin' }) {
+  const [state, formAction] = useActionState(createUser as any, initialState as any)
 
   useEffect(() => {
     if (!state) return;
@@ -46,37 +43,69 @@ export function AddUserForm({ onFormSubmit }: { onFormSubmit: () => void }) {
   }, [state, onFormSubmit]);
 
   return (
-    <form action={formAction} className="space-y-4">
-      <div>
-        <Label htmlFor="fullName">Full Name</Label>
-        <Input id="fullName" name="fullName" placeholder="John Doe" required />
-        {state.errors?.fullName && <p className="text-sm text-red-500 mt-1">{state.errors.fullName[0]}</p>}
-      </div>
-      <div>
-        <Label htmlFor="email">Email</Label>
-        <Input id="email" name="email" type="email" placeholder="user@example.com" required />
-        {state.errors?.email && <p className="text-sm text-red-500 mt-1">{state.errors.email[0]}</p>}
-      </div>
-      <div>
-        <Label htmlFor="password">Password</Label>
-        <Input id="password" name="password" type="password" required />
-        {state.errors?.password && <p className="text-sm text-red-500 mt-1">{state.errors.password[0]}</p>}
-      </div>
-      <div>
-        <Label htmlFor="role">Role</Label>
-        <Select name="role" required>
-          <SelectTrigger>
-            <SelectValue placeholder="Select a role" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="student">Student</SelectItem>
-            <SelectItem value="lecturer">Lecturer</SelectItem>
-            <SelectItem value="admin">Admin</SelectItem>
-          </SelectContent>
-        </Select>
-        {state.errors?.role && <p className="text-sm text-red-500 mt-1">{state.errors.role[0]}</p>}
-      </div>
-      <SubmitButton />
-    </form>
+    <Box component="form" action={formAction} sx={{ mt: 1 }}>
+      <Stack spacing={2.5}>
+        <TextField
+          id="fullName"
+          name="fullName"
+          label="Full Name"
+          placeholder="John Doe"
+          required
+          variant="outlined"
+          fullWidth
+          error={Boolean(state.errors?.fullName)}
+          helperText={state.errors?.fullName?.[0]}
+          InputLabelProps={{ shrink: true }}
+        />
+
+        <TextField
+          id="email"
+          name="email"
+          type="email"
+          label="Email"
+          placeholder="user@example.com"
+          required
+          variant="outlined"
+          fullWidth
+          error={Boolean(state.errors?.email)}
+          helperText={state.errors?.email?.[0]}
+          InputLabelProps={{ shrink: true }}
+        />
+
+        <TextField
+          id="password"
+          name="password"
+          type="password"
+          label="Password"
+          required
+          variant="outlined"
+          fullWidth
+          error={Boolean(state.errors?.password)}
+          helperText={state.errors?.password?.[0]}
+          InputLabelProps={{ shrink: true }}
+        />
+
+        <FormControl fullWidth required error={Boolean(state.errors?.role)}>
+          <InputLabel htmlFor="role-native">Role</InputLabel>
+          <NativeSelect
+            id="role-native"
+            inputProps={{ name: 'role', id: 'role-native' }}
+            defaultValue={defaultRole}
+          >
+            <option aria-label="None" value="" />
+            <option value="student">Student</option>
+            <option value="lecturer">Lecturer</option>
+            <option value="admin">Admin</option>
+          </NativeSelect>
+          {state.errors?.role && (
+            <FormHelperText>{state.errors.role[0]}</FormHelperText>
+          )}
+        </FormControl>
+
+        <Box>
+          <SubmitButton />
+        </Box>
+      </Stack>
+    </Box>
   )
 }

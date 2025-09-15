@@ -15,8 +15,6 @@ import {
   TableContainer,
   TableHead,
   TableRow,
-  Paper,
-  Grid,
   IconButton,
   Menu,
   MenuItem,
@@ -26,7 +24,9 @@ import {
   Dialog,
   DialogTitle,
   DialogContent,
-  DialogActions
+  DialogActions,
+  Alert,
+  AlertTitle
 } from "@mui/material"
 import { 
   UsersIcon, 
@@ -36,19 +36,94 @@ import {
   PlusIcon, 
   Cog6ToothIcon,
   EllipsisVerticalIcon,
-  TrendingUpIcon,
+  ArrowTrendingUpIcon,
   UserGroupIcon,
-  AcademicCapIcon
+  AcademicCapIcon,
+  ClockIcon,
+  CheckCircleIcon,
+  ExclamationTriangleIcon,
+  ArrowRightIcon,
+  EyeIcon,
+  PencilIcon,
+  TrashIcon
 } from "@heroicons/react/24/outline"
 import { formatDate, formatNumber } from "@/lib/utils"
-import CourseManagement from "@/components/admin/course-management"
-import EnrollmentManagement from "@/components/admin/enrollment-management"
 import { AddUserForm } from "@/components/admin/add-user-form"
-import { supabase } from "@/lib/supabase"
+import StatCard from "./stat-card"
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  BarElement,
+  Title,
+  Tooltip,
+  Legend,
+  ArcElement,
+} from 'chart.js'
+import { Line, Bar, Doughnut } from 'react-chartjs-2'
+
+// Register Chart.js components
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  BarElement,
+  Title,
+  Tooltip,
+  Legend,
+  ArcElement
+)
 
 // ============================================================================
 // CONSTANTS
 // ============================================================================
+
+const CARD_SX = {
+  border: "1px solid #000",
+  boxShadow: "0 1px 3px 0 rgb(0 0 0 / 0.1)",
+  "&:hover": { 
+    boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)",
+    transform: "translateY(-1px)"
+  },
+  transition: "all 0.2s ease-in-out"
+}
+
+const BUTTON_STYLES = {
+  primary: {
+    backgroundColor: "#000",
+    color: "#fff",
+    fontFamily: "DM Sans",
+    fontWeight: 500,
+    textTransform: "none",
+    borderRadius: "8px",
+    px: 3,
+    py: 1.5,
+    "&:hover": { 
+      backgroundColor: "#1f2937",
+      transform: "translateY(-1px)"
+    },
+    transition: "all 0.2s ease-in-out"
+  },
+  outlined: {
+    borderColor: "#000",
+    color: "#000",
+    fontFamily: "DM Sans",
+    fontWeight: 500,
+    textTransform: "none",
+    borderRadius: "8px",
+    px: 3,
+    py: 1.5,
+    "&:hover": { 
+      borderColor: "#1f2937",
+      backgroundColor: "#f9fafb",
+      transform: "translateY(-1px)"
+    },
+    transition: "all 0.2s ease-in-out"
+  }
+}
 
 const ANIMATION_CONFIG = {
   spring: {
@@ -59,19 +134,219 @@ const ANIMATION_CONFIG = {
   }
 } as const
 
-const STATS_CARDS = [
-  { label: "Total Users", value: 0, icon: UsersIcon, color: "#8b5cf6", trend: "+12% from last month" },
-  { label: "Total Courses", value: 0, icon: BookOpenIcon, color: "#10b981", trend: "+3 new this semester" },
-  { label: "Active Sessions", value: 0, icon: CalendarDaysIcon, color: "#f59e0b", trend: "+8% from last week" },
-  { label: "Attendance Rate", value: "0%", icon: TrendingUpIcon, color: "#06b6d4", trend: "+2.1% from last month" }
-] as const
+// Mock data for development
+const MOCK_STATS = {
+  totalUsers: 1247,
+  totalCourses: 23,
+  totalSessions: 156,
+  attendanceRate: 87.3
+}
+
+const MOCK_RECENT_SESSIONS = [
+  {
+    id: 1,
+    course_code: "CS101",
+    course_name: "Introduction to Computer Science",
+    session_name: "Lecture 1: Programming Basics",
+    lecturer_name: "Dr. Sarah Johnson",
+    session_date: "2024-01-15T10:00:00Z",
+    is_active: true,
+    attendance_method: "qr_code",
+    attendance_count: 45,
+    expected_count: 50
+  },
+  {
+    id: 2,
+    course_code: "MATH201",
+    course_name: "Calculus II",
+    session_name: "Tutorial 3: Integration Techniques",
+    lecturer_name: "Prof. Michael Chen",
+    session_date: "2024-01-14T14:00:00Z",
+    is_active: false,
+    attendance_method: "face_recognition",
+    attendance_count: 38,
+    expected_count: 42
+  },
+  {
+    id: 3,
+    course_code: "PHYS101",
+    course_name: "Physics I",
+    session_name: "Lab 2: Mechanics",
+    lecturer_name: "Dr. Emily Rodriguez",
+    session_date: "2024-01-13T09:00:00Z",
+    is_active: false,
+    attendance_method: "qr_code",
+    attendance_count: 28,
+    expected_count: 30
+  }
+]
 
 const QUICK_ACTIONS = [
-  { name: "Manage Users", description: "Add, edit, or remove users", icon: UserGroupIcon, color: "#8b5cf6", href: "/admin/users" },
-  { name: "Course Management", description: "Oversee all courses", icon: BookOpenIcon, color: "#10b981", href: "/admin/courses" },
-  { name: "Session Monitoring", description: "Monitor attendance sessions", icon: CalendarDaysIcon, color: "#f59e0b", href: "/admin/sessions" },
-  { name: "System Reports", description: "Generate comprehensive reports", icon: ChartPieIcon, color: "#06b6d4", href: "/admin/reports" }
+  { 
+    icon: UserGroupIcon, 
+    bgColor: '#404040', 
+    hoverColor: '#000000', 
+    href: '/admin/users', 
+    title: 'Manage Users',
+    onClick: false
+  },
+  { 
+    icon: BookOpenIcon, 
+    bgColor: '#666666', 
+    hoverColor: '#404040', 
+    href: '/admin/courses', 
+    title: 'Course Management',
+    onClick: false
+  },
+  { 
+    icon: CalendarDaysIcon, 
+    bgColor: '#999999', 
+    hoverColor: '#666666', 
+    href: '/admin/sessions', 
+    title: 'Session Monitoring',
+    onClick: false
+  },
+  { 
+    icon: ChartPieIcon, 
+    bgColor: '#BBBBBB', 
+    hoverColor: '#999999', 
+    href: '/admin/reports', 
+    title: 'System Reports',
+    onClick: false
+  },
+  { 
+    icon: PlusIcon, 
+    bgColor: '#000000', 
+    hoverColor: '#333333', 
+    href: '#', 
+    title: 'Add User',
+    onClick: true
+  }
 ] as const
+
+// Chart data and options
+const CHART_OPTIONS = {
+  responsive: true,
+  maintainAspectRatio: false,
+  plugins: {
+    legend: {
+      labels: {
+        font: {
+          family: 'DM Sans, sans-serif',
+          size: 12
+        },
+        color: '#000',
+        usePointStyle: true,
+        pointStyle: 'circle'
+      }
+    },
+    title: {
+      display: false
+    },
+    tooltip: {
+      backgroundColor: 'rgba(0, 0, 0, 0.8)',
+      titleColor: '#ffffff',
+      bodyColor: '#ffffff',
+      borderColor: '#000',
+      borderWidth: 1,
+      cornerRadius: 8,
+      displayColors: true
+    }
+  },
+  scales: {
+    x: {
+      ticks: {
+        font: {
+          family: 'DM Sans, sans-serif',
+          size: 11
+        },
+        color: '#666'
+      },
+      grid: {
+        color: '#e5e7eb',
+        drawBorder: false
+      }
+    },
+    y: {
+      ticks: {
+        font: {
+          family: 'DM Sans, sans-serif',
+          size: 11
+        },
+        color: '#666'
+      },
+      grid: {
+        color: '#e5e7eb',
+        drawBorder: false
+      }
+    }
+  },
+  elements: {
+    point: {
+      hoverRadius: 8,
+      hoverBorderWidth: 3
+    },
+    bar: {
+      hoverBackgroundColor: 'rgba(0, 0, 0, 0.1)'
+    }
+  }
+}
+
+const ATTENDANCE_TRENDS_DATA = {
+  labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+  datasets: [
+    {
+      label: 'Attendance Rate',
+      data: [85, 92, 78, 88, 95, 82, 90],
+      borderColor: '#3b82f6',
+      backgroundColor: 'rgba(59, 130, 246, 0.1)',
+      tension: 0.4,
+      fill: true,
+      pointBackgroundColor: '#3b82f6',
+      pointBorderColor: '#ffffff',
+      pointBorderWidth: 2,
+      pointRadius: 5
+    }
+  ]
+}
+
+const COURSE_PERFORMANCE_DATA = {
+  labels: ['CS101', 'MATH201', 'PHYS101', 'ENG101', 'CHEM201'],
+  datasets: [
+    {
+      label: 'Attendance Rate (%)',
+      data: [87, 92, 78, 85, 90],
+      backgroundColor: [
+        '#10b981',
+        '#3b82f6',
+        '#f59e0b',
+        '#ef4444',
+        '#8b5cf6'
+      ],
+      borderColor: '#000',
+      borderWidth: 1,
+      borderRadius: 4,
+      borderSkipped: false
+    }
+  ]
+}
+
+const USER_DISTRIBUTION_DATA = {
+  labels: ['Students', 'Lecturers', 'Admins'],
+  datasets: [
+    {
+      data: [1200, 45, 8],
+      backgroundColor: [
+        '#3b82f6',
+        '#10b981',
+        '#f59e0b'
+      ],
+      borderColor: '#ffffff',
+      borderWidth: 2,
+      hoverOffset: 4
+    }
+  ]
+}
 
 interface DashboardStats {
   totalUsers: number
@@ -89,104 +364,98 @@ export default function AdminDashboard() {
   // STATE & HOOKS
   // ============================================================================
   
-  const [stats, setStats] = useState<DashboardStats>({
-    totalUsers: 0,
-    totalCourses: 0,
-    totalSessions: 0,
-    attendanceRate: 0,
-  })
-  const [recentSessions, setRecentSessions] = useState<any[]>([])
+  const [stats, setStats] = useState<DashboardStats>(MOCK_STATS)
+  const [recentSessions, setRecentSessions] = useState(MOCK_RECENT_SESSIONS)
   const [isAddUserOpen, setAddUserOpen] = useState(false)
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null)
+  const [selectedSession, setSelectedSession] = useState<any>(null)
 
   // ============================================================================
   // DATA FETCHING
   // ============================================================================
 
   useEffect(() => {
-    fetchDashboardData()
-  }, [])
-
-  const fetchDashboardData = useCallback(async () => {
-    try {
-      // Fetch stats in parallel
-      const [userRes, courseRes, sessionRes, attendanceRes, completedSessionsRes] = await Promise.all([
-        supabase.from("users").select("*", { count: "exact", head: true }),
-        supabase.from("courses").select("*", { count: "exact", head: true }),
-        supabase.from("attendance_sessions").select("*", { count: "exact", head: true }),
-        supabase.from("attendance_records").select("id", { count: "exact", head: true }),
-        supabase.from("attendance_sessions").select("course_id").eq("is_active", false),
-      ])
-
-      const totalAttendanceRecords = attendanceRes.count || 0
-      const completedSessions = completedSessionsRes.data || []
-
-      let totalExpectedAttendees = 0
-      if (completedSessions.length > 0) {
-        const courseIds = completedSessions.map((s) => s.course_id)
-        const { count } = await supabase
-          .from("enrollments")
-          .select("*", { count: "exact", head: true })
-          .in("course_id", courseIds)
-        totalExpectedAttendees = count || 0
-      }
-
-      const attendanceRate = totalExpectedAttendees > 0
-          ? parseFloat(((totalAttendanceRecords / totalExpectedAttendees) * 100).toFixed(1))
-          : 0
-
-      // Fetch recent sessions for the table
-      const { data: sessions } = await supabase
-        .from("attendance_sessions")
-        .select(`*,
-          courses(course_name, course_code),
-          users(full_name)`)
-        .order("created_at", { ascending: false })
-        .limit(5)
-
-      setStats({
-        totalUsers: userRes.count || 0,
-        totalCourses: courseRes.count || 0,
-        totalSessions: sessionRes.count || 0,
-        attendanceRate: attendanceRate,
-      })
-
-      setRecentSessions(sessions || [])
-    } catch (error) {
-      console.error("Error fetching dashboard data:", error)
-    }
+    // Using mock data for development
+    // In production, this would fetch from Supabase
+    setStats(MOCK_STATS)
+    setRecentSessions(MOCK_RECENT_SESSIONS)
   }, [])
 
   // ============================================================================
   // EVENT HANDLERS
   // ============================================================================
 
-  const handleMenuOpen = useCallback((event: React.MouseEvent<HTMLElement>) => {
+  const handleMenuOpen = useCallback((event: React.MouseEvent<HTMLElement>, session: any) => {
     setAnchorEl(event.currentTarget)
+    setSelectedSession(session)
   }, [])
 
   const handleMenuClose = useCallback(() => {
     setAnchorEl(null)
+    setSelectedSession(null)
   }, [])
 
   const handleAddUserSuccess = useCallback(() => {
-    fetchDashboardData()
+    // Refresh data after adding user
     setAddUserOpen(false)
-  }, [fetchDashboardData])
+  }, [])
+
+  const handleNavigate = useCallback((path: string) => {
+    // TODO: Implement actual navigation using Next.js router
+    console.log(`Navigate to: ${path}`)
+    // Example: router.push(path)
+  }, [])
+
+  const getStatusColor = (isActive: boolean) => {
+    return isActive ? "#10b981" : "#6b7280"
+  }
+
+  const getStatusIcon = (isActive: boolean) => {
+    return isActive ? CheckCircleIcon : ClockIcon
+  }
 
   // ============================================================================
   // MEMOIZED VALUES
   // ============================================================================
 
-  const statsCardsWithData = useMemo(() => {
-    return STATS_CARDS.map(card => ({
-      ...card,
-      value: card.label === "Total Users" ? stats.totalUsers :
-             card.label === "Total Courses" ? stats.totalCourses :
-             card.label === "Active Sessions" ? stats.totalSessions :
-             `${stats.attendanceRate}%`
-    }))
-  }, [stats])
+  const statsCards = useMemo(() => [
+    { 
+      title: "Total Users", 
+      value: stats.totalUsers, 
+      subtitle: "Registered users",
+      icon: UsersIcon, 
+      color: "#000000",
+      trend: { value: 12, isPositive: true },
+      change: "+12% from last month"
+    },
+    { 
+      title: "Total Courses", 
+      value: stats.totalCourses, 
+      subtitle: "Active courses",
+      icon: BookOpenIcon, 
+      color: "#000000",
+      trend: { value: 3, isPositive: true },
+      change: "+3 new this semester"
+    },
+    { 
+      title: "Active Sessions", 
+      value: stats.totalSessions, 
+      subtitle: "Current sessions",
+      icon: CalendarDaysIcon, 
+      color: "#666666",
+      trend: { value: 8, isPositive: true },
+      change: "+8% from last week"
+    },
+    { 
+      title: "Attendance Rate", 
+      value: `${stats.attendanceRate}%`, 
+      subtitle: "This week",
+      icon: ArrowTrendingUpIcon, 
+      color: "#999999",
+      trend: { value: 2.1, isPositive: true },
+      change: "+2.1% from last month"
+    }
+  ], [stats])
 
   // ============================================================================
   // RENDER
@@ -208,14 +477,14 @@ export default function AdminDashboard() {
           gap: 2,
           mb: 4 
         }}>
-          <Box>
+          <Box sx={{ flex: 1, minWidth: 0 }}>
             <Typography 
               variant="h3" 
               component="h1" 
               sx={{ 
-                fontFamily: "Poppins", 
-                fontWeight: 700, 
-                color: "#000",
+                fontFamily: "Poppins, sans-serif", 
+                fontWeight: 600, 
+                color: "#000000",
                 fontSize: { xs: "1.75rem", sm: "2.125rem" },
                 mb: 1
               }}
@@ -225,41 +494,106 @@ export default function AdminDashboard() {
             <Typography 
               variant="body1" 
               sx={{ 
-                fontFamily: "DM Sans", 
-                color: "#6b7280",
+                fontFamily: "DM Sans, sans-serif", 
+                color: "#64748B",
+                fontWeight: 500,
                 fontSize: "1rem"
               }}
             >
               System overview and management controls
             </Typography>
           </Box>
-          <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
-            <Button
-              variant="outlined"
-              startIcon={<Cog6ToothIcon className="h-4 w-4" />}
-              sx={{
-                borderColor: "#e5e7eb",
-                color: "#374151",
-                fontFamily: "DM Sans",
-                textTransform: "none",
-                "&:hover": { borderColor: "#d1d5db", backgroundColor: "#f9fafb" }
-              }}
-            >
-              Settings
-            </Button>
-            <Button
-              variant="contained"
-              startIcon={<PlusIcon className="h-4 w-4" />}
-              onClick={() => setAddUserOpen(true)}
-              sx={{
-                backgroundColor: "#000",
-                fontFamily: "DM Sans",
-                textTransform: "none",
-                "&:hover": { backgroundColor: "#1f2937" }
-              }}
-            >
-              Add User
-            </Button>
+          <Box sx={{ 
+            display: 'flex', 
+            gap: { xs: 1, sm: 1.5 }, 
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            flexShrink: 0
+          }}>
+            {QUICK_ACTIONS.map((action, index) => (
+              <motion.div
+                key={index}
+                whileHover={{ 
+                  scale: 1.1, 
+                  rotate: 5 * (index % 2 === 0 ? 1 : -1)
+                }}
+                whileTap={{ scale: 0.95 }}
+                transition={{ type: "spring", stiffness: 400, damping: 17 }}
+              >
+                <Box
+                  onClick={() => {
+                    if (action.onClick) {
+                      setAddUserOpen(true)
+                    } else {
+                      handleNavigate(action.href)
+                    }
+                  }}
+                  sx={{ 
+                    width: { xs: 36, sm: 40 },
+                    height: { xs: 36, sm: 40 },
+                    borderRadius: '50%',
+                    backgroundColor: action.bgColor,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease-in-out',
+                    position: 'relative',
+                    '&:hover': {
+                      backgroundColor: action.hoverColor,
+                      transform: 'scale(1.05)',
+                      '& .hover-tooltip': {
+                        opacity: 1,
+                        visibility: 'visible'
+                      }
+                    }
+                  }}
+                  title={action.title}
+                >
+                  <action.icon style={{ 
+                    width: 18, 
+                    height: 18, 
+                    color: '#ffffff' 
+                  }} />
+                  
+                  {/* Hover Tooltip */}
+                  <Box
+                    className="hover-tooltip"
+                    sx={{
+                      position: 'absolute',
+                      bottom: '100%',
+                      left: '50%',
+                      transform: 'translateX(-50%)',
+                      mb: 1,
+                      px: 2,
+                      py: 1,
+                      backgroundColor: '#000000',
+                      color: '#ffffff',
+                      borderRadius: '6px',
+                      fontSize: '0.75rem',
+                      fontFamily: 'DM Sans, sans-serif',
+                      fontWeight: 500,
+                      whiteSpace: 'nowrap',
+                      opacity: 0,
+                      visibility: 'hidden',
+                      transition: 'all 0.2s ease-in-out',
+                      zIndex: 1000,
+                      '&::after': {
+                        content: '""',
+                        position: 'absolute',
+                        top: '100%',
+                        left: '50%',
+                        transform: 'translateX(-50%)',
+                        border: '4px solid transparent',
+                        borderTopColor: '#000000'
+                      }
+                    }}
+                  >
+                    {action.title}
+                  </Box>
+                </Box>
+              </motion.div>
+            ))}
           </Box>
         </Box>
       </motion.div>
@@ -270,177 +604,236 @@ export default function AdminDashboard() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ ...ANIMATION_CONFIG.spring, delay: 0.1 }}
       >
-        <Grid container spacing={3} sx={{ mb: 4 }}>
-          {statsCardsWithData.map((stat, index) => (
-            <Grid item xs={12} sm={6} md={3} key={stat.label}>
-              <motion.div
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ ...ANIMATION_CONFIG.spring, delay: 0.1 + (index * 0.05) }}
-                whileHover={{ scale: 1.02 }}
-              >
-                <Card sx={{ 
-                  height: "100%",
-                  border: "1px solid #f3f4f6",
-                  boxShadow: "0 1px 3px 0 rgb(0 0 0 / 0.1)",
-                  "&:hover": { boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)" }
-                }}>
-                  <CardContent sx={{ p: 3 }}>
-                    <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 2 }}>
-                      <Box 
-                        sx={{ 
-                          p: 1.5, 
-                          borderRadius: "8px", 
-                          backgroundColor: `${stat.color}20`,
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center"
-                        }}
-                      >
-                        <stat.icon style={{ width: 24, height: 24, color: stat.color }} />
-                      </Box>
-                    </Box>
-                    <Typography 
-                      variant="h4" 
-                      sx={{ 
-                        fontFamily: "Poppins", 
-                        fontWeight: 700, 
-                        color: "#000",
-                        mb: 0.5,
-                        fontSize: "1.875rem"
-                      }}
-                    >
-                      {stat.value}
-                    </Typography>
-                    <Typography 
-                      variant="body2" 
-                      sx={{ 
-                        fontFamily: "DM Sans", 
-                        color: "#6b7280",
-                        fontSize: "0.875rem",
-                        mb: 1
-                      }}
-                    >
-                      {stat.label}
-                    </Typography>
-                    <Typography 
-                      variant="caption" 
-                      sx={{ 
-                        fontFamily: "DM Sans", 
-                        color: "#10b981",
-                        fontSize: "0.75rem"
-                      }}
-                    >
-                      {stat.trend}
-                    </Typography>
-                  </CardContent>
-                </Card>
-              </motion.div>
-            </Grid>
+        <Box sx={{ 
+          display: "grid", 
+          gridTemplateColumns: { xs: "1fr", sm: "repeat(2, 1fr)", md: "repeat(4, 1fr)" }, 
+          gap: 3, 
+          mb: 4 
+        }}>
+          {statsCards.map((stat, index) => (
+            <StatCard
+              key={stat.title}
+              title={stat.title}
+              value={stat.value}
+              subtitle={stat.subtitle}
+              icon={stat.icon}
+              color={stat.color}
+              trend={stat.trend}
+              change={stat.change}
+            />
           ))}
-        </Grid>
+        </Box>
       </motion.div>
 
-      {/* Quick Actions */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ ...ANIMATION_CONFIG.spring, delay: 0.2 }}
-      >
-        <Typography 
-          variant="h5" 
-          sx={{ 
-            fontFamily: "Poppins", 
-            fontWeight: 600, 
-            color: "#000",
-            mb: 2
-          }}
-        >
-          Quick Actions
-        </Typography>
-        <Grid container spacing={3} sx={{ mb: 4 }}>
-          {QUICK_ACTIONS.map((action, index) => (
-            <Grid item xs={12} sm={6} md={3} key={action.name}>
-              <motion.div
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ ...ANIMATION_CONFIG.spring, delay: 0.2 + (index * 0.1) }}
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-              >
-                <Card sx={{ 
-                  height: "100%",
-                  border: "1px solid #f3f4f6",
-                  boxShadow: "0 1px 3px 0 rgb(0 0 0 / 0.1)",
-                  cursor: "pointer",
-                  "&:hover": { boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)" }
-                }}>
-                  <CardContent sx={{ p: 4, textAlign: "center" }}>
-                    <Box 
-                      sx={{ 
-                        mb: 3,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center"
-                      }}
-                    >
-                      <Box 
-                        sx={{ 
-                          p: 2, 
-                          borderRadius: "12px", 
-                          backgroundColor: `${action.color}20`,
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center"
-                        }}
-                      >
-                        <action.icon style={{ width: 32, height: 32, color: action.color }} />
-                      </Box>
-                    </Box>
-                    <Typography 
-                      variant="h6" 
-                      sx={{ 
-                        fontFamily: "Poppins", 
-                        fontWeight: 600, 
-                        color: "#000",
-                        mb: 1,
-                        fontSize: "1rem"
-                      }}
-                    >
-                      {action.name}
-                    </Typography>
-                    <Typography 
-                      variant="body2" 
-                      sx={{ 
-                        fontFamily: "DM Sans", 
-                        color: "#6b7280",
-                        fontSize: "0.875rem"
-                      }}
-                    >
-                      {action.description}
-                    </Typography>
-                  </CardContent>
-                </Card>
-              </motion.div>
-            </Grid>
-          ))}
-        </Grid>
-      </motion.div>
 
-      {/* Management Sections */}
+      {/* Analytics Section */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ ...ANIMATION_CONFIG.spring, delay: 0.3 }}
       >
-        <Grid container spacing={3} sx={{ mb: 4 }}>
-          <Grid item xs={12} lg={6}>
-            <CourseManagement />
-          </Grid>
-          <Grid item xs={12} lg={6}>
-            <EnrollmentManagement />
-          </Grid>
-        </Grid>
+                    <Typography 
+          variant="h5" 
+          sx={{ 
+            fontFamily: "Poppins, sans-serif", 
+            fontWeight: 600, 
+            color: "#000000",
+            fontSize: "1.25rem",
+            lineHeight: 1.3,
+            mb: 3
+          }}
+        >
+          System Analytics
+        </Typography>
+        <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", lg: "repeat(2, 1fr)" }, gap: 3, mb: 4 }}>
+          {/* Attendance Trends Chart */}
+          <Card sx={CARD_SX}>
+            <CardContent sx={{ p: 3 }}>
+              <Typography 
+                variant="h6" 
+                sx={{ 
+                  fontFamily: "Poppins, sans-serif", 
+                  fontWeight: 600, 
+                  color: "#000000",
+                  mb: 2
+                }}
+              >
+                Attendance Trends
+                    </Typography>
+                    <Typography 
+                      variant="body2" 
+                      sx={{ 
+                        fontFamily: "DM Sans, sans-serif", 
+                        color: "#64748B",
+                        fontWeight: 500,
+                        mb: 3
+                      }}
+                    >
+                Weekly attendance patterns across all courses
+                    </Typography>
+              <Box sx={{ height: 250, position: "relative" }}>
+                <Bar 
+                  data={COURSE_PERFORMANCE_DATA} 
+                  options={CHART_OPTIONS} 
+                />
+              </Box>
+                  </CardContent>
+                </Card>
+
+          {/* Course Performance Chart */}
+          <Card sx={CARD_SX}>
+            <CardContent sx={{ p: 3 }}>
+              <Typography 
+                variant="h6" 
+                sx={{ 
+                  fontFamily: "Poppins, sans-serif", 
+                  fontWeight: 600, 
+                  color: "#000000",
+                  mb: 2
+                }}
+              >
+                Course Performance
+              </Typography>
+              <Typography 
+                variant="body2" 
+                sx={{ 
+                  fontFamily: "DM Sans, sans-serif", 
+                  color: "#64748B",
+                  fontWeight: 500,
+                  mb: 3
+                }}
+              >
+                Attendance rates by course
+              </Typography>
+              <Box sx={{ height: 250, position: "relative" }}>
+                <Line 
+                  data={ATTENDANCE_TRENDS_DATA} 
+                  options={CHART_OPTIONS} 
+                />
+              </Box>
+            </CardContent>
+          </Card>
+        </Box>
+      </motion.div>
+
+      {/* Charts Section */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ ...ANIMATION_CONFIG.spring, delay: 0.4 }}
+      >
+        <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", lg: "repeat(3, 1fr)" }, gap: 3, mb: 4 }}>
+          {/* User Distribution Chart */}
+          <Card sx={CARD_SX}>
+            <CardContent sx={{ p: 3 }}>
+              <Typography 
+                variant="h6" 
+                sx={{ 
+                  fontFamily: "Poppins, sans-serif", 
+                  fontWeight: 600, 
+                  color: "#000000",
+                  mb: 2
+                }}
+              >
+                User Distribution
+              </Typography>
+              <Typography 
+                variant="body2" 
+                sx={{ 
+                  fontFamily: "DM Sans, sans-serif", 
+                  color: "#64748B",
+                  fontWeight: 500,
+                  mb: 3
+                }}
+              >
+                Total users by role
+              </Typography>
+              <Box sx={{ height: 250, position: "relative" }}>
+                <Doughnut 
+                  data={USER_DISTRIBUTION_DATA} 
+                  options={{
+                    ...CHART_OPTIONS,
+                    plugins: {
+                      ...CHART_OPTIONS.plugins,
+                      legend: {
+                        ...CHART_OPTIONS.plugins.legend,
+                        position: 'bottom' as const
+                      }
+                    }
+                  }} 
+                />
+              </Box>
+            </CardContent>
+          </Card>
+
+          {/* Course Performance Chart */}
+          <Card sx={CARD_SX}>
+            <CardContent sx={{ p: 3 }}>
+              <Typography 
+                variant="h6" 
+                sx={{ 
+                  fontFamily: "Poppins, sans-serif", 
+                  fontWeight: 600, 
+                  color: "#000000",
+                  mb: 2
+                }}
+              >
+                Course Performance
+              </Typography>
+              <Typography 
+                variant="body2" 
+                sx={{ 
+                  fontFamily: "DM Sans, sans-serif", 
+                  color: "#64748B",
+                  fontWeight: 500,
+                  mb: 3
+                }}
+              >
+                Attendance rates by course
+              </Typography>
+              <Box sx={{ height: 250, position: "relative" }}>
+                <Bar 
+                  data={COURSE_PERFORMANCE_DATA} 
+                  options={CHART_OPTIONS} 
+                />
+              </Box>
+            </CardContent>
+          </Card>
+
+          {/* Attendance Trends Chart */}
+          <Card sx={CARD_SX}>
+            <CardContent sx={{ p: 3 }}>
+              <Typography 
+                variant="h6" 
+                sx={{ 
+                  fontFamily: "Poppins, sans-serif", 
+                  fontWeight: 600, 
+                  color: "#000000",
+                  mb: 2
+                }}
+              >
+                Weekly Trends
+              </Typography>
+              <Typography 
+                variant="body2" 
+                sx={{ 
+                  fontFamily: "DM Sans, sans-serif", 
+                  color: "#64748B",
+                  fontWeight: 500,
+                  mb: 3
+                }}
+              >
+                Daily attendance patterns
+              </Typography>
+              <Box sx={{ height: 250, position: "relative" }}>
+                <Line 
+                  data={ATTENDANCE_TRENDS_DATA} 
+                  options={CHART_OPTIONS} 
+                />
+              </Box>
+            </CardContent>
+          </Card>
+        </Box>
       </motion.div>
 
       {/* Recent Sessions Table */}
@@ -449,18 +842,15 @@ export default function AdminDashboard() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ ...ANIMATION_CONFIG.spring, delay: 0.4 }}
       >
-        <Card sx={{ 
-          border: "1px solid #f3f4f6",
-          boxShadow: "0 1px 3px 0 rgb(0 0 0 / 0.1)"
-        }}>
+        <Card sx={CARD_SX}>
           <CardContent sx={{ p: 0 }}>
             <Box sx={{ p: 3, pb: 0 }}>
               <Typography 
                 variant="h5" 
                 sx={{ 
-                  fontFamily: "Poppins", 
+                  fontFamily: "Poppins, sans-serif", 
                   fontWeight: 600, 
-                  color: "#000",
+                  color: "#000000",
                   mb: 1
                 }}
               >
@@ -469,8 +859,9 @@ export default function AdminDashboard() {
               <Typography 
                 variant="body2" 
                 sx={{ 
-                  fontFamily: "DM Sans", 
-                  color: "#6b7280",
+                  fontFamily: "DM Sans, sans-serif", 
+                  color: "#64748B",
+                  fontWeight: 500,
                   mb: 2
                 }}
               >
@@ -480,61 +871,61 @@ export default function AdminDashboard() {
             <TableContainer>
               <Table>
                 <TableHead>
-                  <TableRow sx={{ backgroundColor: "#f9fafb" }}>
-                    <TableCell sx={{ fontFamily: "DM Sans", fontWeight: 600, color: "#374151" }}>
+                  <TableRow sx={{ backgroundColor: "hsl(var(--muted))" }}>
+                    <TableCell sx={{ fontFamily: "DM Sans", fontWeight: 600, color: "#000" }}>
                       Course
                     </TableCell>
-                    <TableCell sx={{ fontFamily: "DM Sans", fontWeight: 600, color: "#374151" }}>
+                    <TableCell sx={{ fontFamily: "DM Sans", fontWeight: 600, color: "#000" }}>
                       Session
                     </TableCell>
-                    <TableCell sx={{ fontFamily: "DM Sans", fontWeight: 600, color: "#374151" }}>
+                    <TableCell sx={{ fontFamily: "DM Sans", fontWeight: 600, color: "#000" }}>
                       Lecturer
                     </TableCell>
-                    <TableCell sx={{ fontFamily: "DM Sans", fontWeight: 600, color: "#374151" }}>
+                    <TableCell sx={{ fontFamily: "DM Sans", fontWeight: 600, color: "#000" }}>
                       Date
                     </TableCell>
-                    <TableCell sx={{ fontFamily: "DM Sans", fontWeight: 600, color: "#374151" }}>
+                    <TableCell sx={{ fontFamily: "DM Sans", fontWeight: 600, color: "#000" }}>
                       Status
                     </TableCell>
-                    <TableCell sx={{ fontFamily: "DM Sans", fontWeight: 600, color: "#374151" }}>
-                      Method
+                    <TableCell sx={{ fontFamily: "DM Sans", fontWeight: 600, color: "#000" }}>
+                      Attendance
                     </TableCell>
-                    <TableCell sx={{ fontFamily: "DM Sans", fontWeight: 600, color: "#374151" }}>
+                    <TableCell sx={{ fontFamily: "DM Sans", fontWeight: 600, color: "#000" }}>
                       Actions
                     </TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {recentSessions.map((session, index) => (
-                    <motion.tr
+                  {recentSessions.map((session, index) => {
+                    const StatusIcon = getStatusIcon(session.is_active)
+                    const attendancePercentage = Math.round((session.attendance_count / session.expected_count) * 100)
+                    
+                    return (
+                      <TableRow
                       key={session.id}
-                      initial={{ opacity: 0, x: -20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ ...ANIMATION_CONFIG.spring, delay: 0.4 + (index * 0.05) }}
-                      component={TableRow}
-                      sx={{ "&:hover": { backgroundColor: "#f9fafb" } }}
+                        sx={{ "&:hover": { backgroundColor: "hsl(var(--muted))" } }}
                     >
                       <TableCell>
                         <Box>
                           <Typography 
                             variant="body2" 
                             sx={{ 
-                              fontFamily: "DM Sans", 
+                              fontFamily: "DM Sans, sans-serif", 
                               fontWeight: 600, 
-                              color: "#000",
+                              color: "#000000",
                               mb: 0.5
                             }}
                           >
-                            {session.courses?.course_code}
+                              {session.course_code}
                           </Typography>
                           <Typography 
                             variant="caption" 
                             sx={{ 
-                              fontFamily: "DM Sans", 
-                              color: "#6b7280"
+                              fontFamily: "DM Sans, sans-serif", 
+                                color: "hsl(var(--muted-foreground))"
                             }}
                           >
-                            {session.courses?.course_name}
+                              {session.course_name}
                           </Typography>
                         </Box>
                       </TableCell>
@@ -542,8 +933,8 @@ export default function AdminDashboard() {
                         <Typography 
                           variant="body2" 
                           sx={{ 
-                            fontFamily: "DM Sans", 
-                            color: "#374151"
+                            fontFamily: "DM Sans, sans-serif", 
+                              color: "#000"
                           }}
                         >
                           {session.session_name}
@@ -553,19 +944,19 @@ export default function AdminDashboard() {
                         <Typography 
                           variant="body2" 
                           sx={{ 
-                            fontFamily: "DM Sans", 
-                            color: "#374151"
+                            fontFamily: "DM Sans, sans-serif", 
+                              color: "#000"
                           }}
                         >
-                          {session.users?.full_name}
+                            {session.lecturer_name}
                         </Typography>
                       </TableCell>
                       <TableCell>
                         <Typography 
                           variant="body2" 
                           sx={{ 
-                            fontFamily: "DM Sans", 
-                            color: "#374151"
+                            fontFamily: "DM Sans, sans-serif", 
+                              color: "#000"
                           }}
                         >
                           {formatDate(session.session_date)}
@@ -573,38 +964,54 @@ export default function AdminDashboard() {
                       </TableCell>
                       <TableCell>
                         <Chip 
+                            icon={<StatusIcon style={{ width: 16, height: 16 }} />}
                           label={session.is_active ? "Active" : "Completed"} 
                           size="small"
                           sx={{ 
-                            backgroundColor: session.is_active ? "#10b98120" : "#6b728020",
-                            color: session.is_active ? "#10b981" : "#6b7280",
-                            fontFamily: "DM Sans",
-                            fontWeight: 500
+                              backgroundColor: session.is_active ? "#10b98120" : "hsl(var(--muted))",
+                              color: getStatusColor(session.is_active),
+                            fontFamily: "DM Sans, sans-serif",
+                              fontWeight: 500,
+                              border: "1px solid",
+                              borderColor: getStatusColor(session.is_active)
                           }}
                         />
                       </TableCell>
                       <TableCell>
-                        <Chip 
-                          label={session.attendance_method?.replace("_", " ").toUpperCase() || "QR CODE"} 
-                          size="small"
+                          <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                            <Typography 
+                              variant="body2" 
                           sx={{ 
-                            backgroundColor: "#f3f4f6",
-                            color: "#374151",
-                            fontFamily: "DM Sans"
-                          }}
-                        />
+                                fontFamily: "DM Sans, sans-serif", 
+                                color: "#000000",
+                                fontWeight: 500
+                              }}
+                            >
+                              {session.attendance_count}/{session.expected_count}
+                            </Typography>
+                            <Typography 
+                              variant="caption" 
+                              sx={{ 
+                                fontFamily: "DM Sans, sans-serif", 
+                                color: "hsl(var(--muted-foreground))"
+                              }}
+                            >
+                              ({attendancePercentage}%)
+                            </Typography>
+                          </Box>
                       </TableCell>
                       <TableCell>
                         <IconButton
                           size="small"
-                          onClick={handleMenuOpen}
-                          sx={{ color: "#6b7280" }}
+                            onClick={(e) => handleMenuOpen(e, session)}
+                            sx={{ color: "hsl(var(--muted-foreground))" }}
                         >
                           <EllipsisVerticalIcon style={{ width: 16, height: 16 }} />
                         </IconButton>
                       </TableCell>
-                    </motion.tr>
-                  ))}
+                      </TableRow>
+                    )
+                  })}
                 </TableBody>
               </Table>
             </TableContainer>
@@ -620,20 +1027,26 @@ export default function AdminDashboard() {
         fullWidth
         PaperProps={{
           sx: {
-            boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)",
-            border: "1px solid #f3f4f6"
+            ...CARD_SX,
+            boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)"
           }
         }}
       >
-        <DialogTitle sx={{ fontFamily: "Poppins", fontWeight: 600, color: "#000" }}>
+        <DialogTitle sx={{ 
+          fontFamily: "Poppins", 
+          fontWeight: 600, 
+          color: "#000",
+          borderBottom: "1px solid hsl(var(--border))",
+          pb: 2
+        }}>
           Create New User
         </DialogTitle>
-        <DialogContent>
+        <DialogContent sx={{ pt: 3 }}>
           <Typography 
             variant="body2" 
             sx={{ 
               fontFamily: "DM Sans", 
-              color: "#6b7280",
+              color: "hsl(var(--muted-foreground))",
               mb: 3
             }}
           >
@@ -650,19 +1063,28 @@ export default function AdminDashboard() {
         onClose={handleMenuClose}
         PaperProps={{
           sx: {
+            ...CARD_SX,
             boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)",
-            border: "1px solid #f3f4f6"
+            minWidth: 160
           }
         }}
       >
-        <MenuItem onClick={handleMenuClose} sx={{ fontFamily: "DM Sans" }}>
+        <MenuItem onClick={handleMenuClose} sx={{ fontFamily: "DM Sans", gap: 1 }}>
+          <EyeIcon style={{ width: 16, height: 16 }} />
           View Details
         </MenuItem>
-        <MenuItem onClick={handleMenuClose} sx={{ fontFamily: "DM Sans" }}>
+        <MenuItem onClick={handleMenuClose} sx={{ fontFamily: "DM Sans", gap: 1 }}>
+          <PencilIcon style={{ width: 16, height: 16 }} />
           Edit Session
         </MenuItem>
-        <MenuItem onClick={handleMenuClose} sx={{ fontFamily: "DM Sans" }}>
+        <MenuItem onClick={handleMenuClose} sx={{ fontFamily: "DM Sans", gap: 1 }}>
+          <ChartPieIcon style={{ width: 16, height: 16 }} />
           View Attendance
+        </MenuItem>
+        <Divider />
+        <MenuItem onClick={handleMenuClose} sx={{ fontFamily: "DM Sans", gap: 1, color: "#dc2626" }}>
+          <TrashIcon style={{ width: 16, height: 16 }} />
+          Delete Session
         </MenuItem>
       </Menu>
     </Box>

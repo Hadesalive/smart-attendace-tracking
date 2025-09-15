@@ -1,7 +1,7 @@
 "use client"
 
 import React from "react"
-import DashboardLayout from "@/components/layout/dashboard-layout"
+import LecturerDashboardLayout from "@/components/layout/lecturer-dashboard-layout"
 
 export default function LecturerLayout({
   children
@@ -9,9 +9,9 @@ export default function LecturerLayout({
   children: React.ReactNode
 }) {
   return (
-    <DashboardLayout userName="Lecturer" userRole="Lecturer">
+    <LecturerDashboardLayout userName="Lecturer">
       {children}
-    </DashboardLayout>
+    </LecturerDashboardLayout>
   )
 }
 

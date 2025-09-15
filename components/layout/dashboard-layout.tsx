@@ -1,7 +1,9 @@
 "use client"
 
 import { useState, useEffect, useCallback, useMemo } from "react"
-import Sidebar from "./sidebar"
+import AdminSidebar from "./admin-sidebar"
+import LecturerSidebar from "./lecturer-sidebar"
+import StudentSidebar from "./student-sidebar"
 import TopNav from "./top-nav"
 import { cn } from "@/lib/utils"
 
@@ -179,20 +181,30 @@ const PageContent = ({
 
 /**
  * Sidebar wrapper component
- * Manages sidebar visibility and state
+ * Manages sidebar visibility and state with role-specific sidebars
  */
 const SidebarWrapper = ({ 
   isOpen, 
-  onClose 
+  onClose,
+  userRole
 }: { 
   isOpen: boolean
   onClose: () => void 
-}) => (
-  <Sidebar 
-    isOpen={isOpen} 
-    onClose={onClose} 
-  />
-)
+  userRole: string
+}) => {
+  // Render the appropriate sidebar based on user role
+  switch (userRole) {
+    case 'Admin':
+      return <AdminSidebar isOpen={isOpen} onClose={onClose} />
+    case 'Lecturer':
+      return <LecturerSidebar isOpen={isOpen} onClose={onClose} />
+    case 'Student':
+      return <StudentSidebar isOpen={isOpen} onClose={onClose} />
+    default:
+      // Default to Lecturer sidebar for backwards compatibility
+      return <LecturerSidebar isOpen={isOpen} onClose={onClose} />
+  }
+}
 
 /**
  * Top navigation wrapper component
@@ -299,7 +311,8 @@ export default function DashboardLayout({
       {/* Sidebar */}
       <SidebarWrapper 
         isOpen={sidebarOpen} 
-        onClose={handleSidebarClose} 
+        onClose={handleSidebarClose}
+        userRole={userRole}
       />
 
       {/* Main Content Area */}

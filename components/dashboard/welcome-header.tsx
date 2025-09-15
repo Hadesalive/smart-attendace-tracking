@@ -196,29 +196,73 @@ const QuickActionButton = ({
   isDialog?: boolean 
 }) => {
   const ButtonComponent = (
-    <Button
+    <Box
+      onClick={onClick || (() => {})}
       sx={{
         width: { xs: BUTTON_CONFIG.size.xs, sm: BUTTON_CONFIG.size.sm },
         height: { xs: BUTTON_CONFIG.size.xs, sm: BUTTON_CONFIG.size.sm },
         borderRadius: '50%',
         bgcolor: action.bgColor,
-        color: 'white',
-        minWidth: 'auto',
-        p: 0,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        cursor: 'pointer',
+        transition: 'all 0.2s ease-in-out',
+        position: 'relative',
         '&:hover': {
           bgcolor: action.hoverColor,
-          transform: 'scale(1.05)'
+          transform: 'scale(1.05)',
+          '& .hover-tooltip': {
+            opacity: 1,
+            visibility: 'visible'
+          }
         }
       }}
-      onClick={onClick || (() => {})}
       aria-label={action.label}
       title={action.description}
     >
       <action.icon aria-hidden="true" style={{ 
         width: BUTTON_CONFIG.iconSize, 
-        height: BUTTON_CONFIG.iconSize 
+        height: BUTTON_CONFIG.iconSize,
+        color: '#ffffff'
       }} />
-    </Button>
+      
+      {/* Hover Tooltip */}
+      <Box
+        className="hover-tooltip"
+        sx={{
+          position: 'absolute',
+          bottom: '100%',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          mb: 1,
+          px: 2,
+          py: 1,
+          backgroundColor: '#000000',
+          color: '#ffffff',
+          borderRadius: '6px',
+          fontSize: '0.75rem',
+          fontFamily: 'DM Sans, sans-serif',
+          fontWeight: 500,
+          whiteSpace: 'nowrap',
+          opacity: 0,
+          visibility: 'hidden',
+          transition: 'all 0.2s ease-in-out',
+          zIndex: 1000,
+          '&::after': {
+            content: '""',
+            position: 'absolute',
+            top: '100%',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            border: '4px solid transparent',
+            borderTopColor: '#000000'
+          }
+        }}
+      >
+        {action.label}
+      </Box>
+    </Box>
   )
 
   if (isDialog) {

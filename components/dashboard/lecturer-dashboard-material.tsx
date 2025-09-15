@@ -10,7 +10,6 @@ import AnalyticsCard from "./analytics-card"
 import SessionsCard from "./sessions-card"
 import CoursesCard from "./courses-card"
 import SessionQrCodeDialog from "@/components/attendance/session-qr-code-dialog"
-import { supabase } from "@/lib/supabase"
 
 // ============================================================================
 // TYPES & INTERFACES
@@ -156,51 +155,82 @@ const useDataFetching = (userId: string) => {
     sessions: Session[]
   }> => {
     try {
-      // Fetch courses with enrollment counts
-      const { data: coursesData, error: coursesError } = await supabase
-        .from('courses')
-        .select(`
-          *,
-          enrollments:enrollments(count)
-        `)
-        .eq('lecturer_id', userId)
+      // Mock data for development - replace with actual API calls when database is ready
+      const mockCourses: Course[] = [
+        {
+          id: "1",
+          course_code: "CS101",
+          course_name: "Introduction to Computer Science",
+          credits: 3,
+          enrollments: [{ count: 45 }]
+        },
+        {
+          id: "2", 
+          course_code: "CS201",
+          course_name: "Data Structures",
+          credits: 4,
+          enrollments: [{ count: 38 }]
+        },
+        {
+          id: "3",
+          course_code: "CS301", 
+          course_name: "Database Systems",
+          credits: 3,
+          enrollments: [{ count: 42 }]
+        }
+      ]
 
-      if (coursesError) throw coursesError
-
-      // Fetch recent sessions
-      const { data: sessionsData, error: sessionsError } = await supabase
-        .from('attendance_sessions')
-        .select(`
-          *,
-          course:courses(course_code, course_name)
-        `)
-        .eq('lecturer_id', userId)
-        .order('created_at', { ascending: false })
-        .limit(10)
-
-      if (sessionsError) throw sessionsError
+      const mockSessions: Session[] = [
+        {
+          id: "1",
+          session_name: "Lecture 5: Data Structures",
+          session_date: "2024-01-20",
+          start_time: "09:00",
+          end_time: "10:30",
+          status: "active",
+          course: {
+            course_code: "CS101",
+            course_name: "Introduction to Computer Science"
+          }
+        },
+        {
+          id: "2",
+          session_name: "Tutorial 3: Database Design",
+          session_date: "2024-01-21",
+          start_time: "14:00", 
+          end_time: "15:30",
+          status: "scheduled",
+          course: {
+            course_code: "CS301",
+            course_name: "Database Systems"
+          }
+        }
+      ]
 
       // Calculate statistics
-      const totalStudents = coursesData?.reduce(
+      const totalStudents = mockCourses.reduce(
         (sum, course) => sum + (course.enrollments?.[0]?.count || 0), 
         0
-      ) || 0
+      )
 
-      const todaySessions = sessionsData?.filter(session => 
+      const todaySessions = mockSessions.filter(session => 
         new Date(session.session_date).toDateString() === new Date().toDateString()
-      ).length || 0
+      ).length
 
       const stats: LecturerStats = {
-        totalCourses: coursesData?.length || 0,
+        totalCourses: mockCourses.length,
         totalStudents,
         todaySessions,
-        averageAttendance: DEFAULT_AVERAGE_ATTENDANCE // TODO: Calculate from actual attendance data
+        averageAttendance: DEFAULT_AVERAGE_ATTENDANCE
       }
+
+      // Simulate API delay
+      await new Promise(resolve => setTimeout(resolve, 500))
 
       return {
         stats,
-        courses: coursesData || [],
-        sessions: sessionsData || []
+        courses: mockCourses,
+        sessions: mockSessions
       }
     } catch (error) {
       console.error('Error fetching lecturer data:', error)
