@@ -36,6 +36,9 @@ import {
   AcademicCapIcon
 } from "@heroicons/react/24/outline"
 import { formatDate, formatFileSize } from "@/lib/utils"
+import { useData } from "@/lib/contexts/DataContext"
+import { AttendanceSession } from "@/lib/types/shared"
+import { mapSessionStatus } from "@/lib/utils/statusMapping"
 
 // Constants
 const CARD_SX = {
@@ -103,100 +106,98 @@ export default function StudentSessionDetailsPage() {
   const router = useRouter()
   const sessionId = params?.id as string
 
+  const { 
+    state,
+    fetchCourses,
+    fetchEnrollments,
+    fetchAttendanceSessions,
+    fetchAttendanceRecords,
+    getAttendanceRecordsBySession
+  } = useData()
+
   const [session, setSession] = useState<StudentSession | null>(null)
   const [loading, setLoading] = useState(true)
 
-  // Mock session data
+  // Load required data and resolve session from store
   useEffect(() => {
-    const mockSession: StudentSession = {
-      id: sessionId,
-      title: "Object-Oriented Programming Fundamentals",
-      courseCode: "CS101",
-      courseName: "Introduction to Computer Science",
-      instructor: "Dr. Smith",
-      type: "lecture",
-      date: "2024-01-24T10:00:00",
-      startTime: "10:00",
-      endTime: "11:30",
-      location: "Room 101, Computer Science Building",
-      capacity: 50,
-      enrolled: 45,
-      status: "upcoming",
-      description: "This session will cover the fundamental concepts of object-oriented programming including classes, objects, inheritance, encapsulation, and polymorphism. We'll explore practical examples and implement basic OOP principles in Python.",
-      attendanceStatus: null,
-      objectives: [
-        "Understand the core principles of object-oriented programming",
-        "Learn to create and use classes and objects",
-        "Explore inheritance and polymorphism concepts",
-        "Implement encapsulation in practical examples",
-        "Practice OOP design patterns"
-      ],
-      prerequisites: [
-        "Basic Python programming knowledge",
-        "Understanding of functions and variables",
-        "Completion of previous programming assignments"
-      ],
-      materials: [
-        {
-          id: "1",
-          title: "OOP Fundamentals - Lecture Slides",
-          type: "document",
-          size: 2048576,
-          description: "Comprehensive slides covering OOP concepts with examples"
-        },
-        {
-          id: "2", 
-          title: "Python OOP Tutorial Video",
-          type: "video",
-          size: 104857600,
-          description: "Step-by-step video tutorial on implementing OOP in Python"
-        },
-        {
-          id: "3",
-          title: "Class Diagram Examples",
-          type: "image",
-          size: 1024000,
-          description: "UML class diagrams showing OOP relationships"
-        },
-        {
-          id: "4",
-          title: "Python OOP Documentation",
-          type: "link",
-          url: "https://docs.python.org/3/tutorial/classes.html",
-          description: "Official Python documentation on classes and OOP"
-        },
-        {
-          id: "5",
-          title: "Practice Exercises",
-          type: "document", 
-          size: 512000,
-          description: "Hands-on exercises to practice OOP concepts"
-        }
-      ]
+    const load = async () => {
+      await Promise.all([
+        fetchCourses(),
+        fetchEnrollments(),
+        fetchAttendanceSessions(),
+        fetchAttendanceRecords()
+      ])
     }
-    
-    setTimeout(() => {
-      setSession(mockSession)
-      setLoading(false)
-    }, 500)
-  }, [sessionId])
+    load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Build session view model from store
+  useEffect(() => {
+    const source: AttendanceSession | undefined = state.attendanceSessions.find(s => s.id === sessionId)
+    if (!source) {
+      return
+    }
+
+    // Determine status for student view
+    const now = new Date()
+    const currentTime = now.toTimeString().slice(0, 5)
+    const todayDate = now.toISOString().split('T')[0]
+    let studentStatus: "upcoming" | "active" | "completed" = 'upcoming'
+    if (source.session_date < todayDate || (source.session_date === todayDate && source.end_time < currentTime)) {
+      studentStatus = 'completed'
+    } else if (source.session_date === todayDate && source.start_time <= currentTime && source.end_time >= currentTime) {
+      studentStatus = 'active'
+    } else {
+      studentStatus = 'upcoming'
+    }
+
+    // Attendance record for current user
+    const records = getAttendanceRecordsBySession(source.id)
+    const studentRecord = records.find(r => !!state.currentUser?.id && r.student_id === state.currentUser.id)
+
+    const view: StudentSession = {
+      id: source.id,
+      title: source.session_name,
+      courseCode: source.course_code,
+      courseName: source.course_name,
+      instructor: source.lecturer_name || 'Instructor',
+      type: (source.type || 'lecture') as any,
+      date: source.session_date,
+      startTime: source.start_time,
+      endTime: source.end_time,
+      location: (source as any).location || 'TBA',
+      capacity: source.capacity || 50,
+      enrolled: source.enrolled || 0,
+      status: studentStatus,
+      description: source.description || '',
+      materials: [],
+      attendanceStatus: studentRecord ? (studentRecord.status as any) : null,
+      checkInTime: studentRecord?.check_in_time,
+      objectives: [],
+      prerequisites: []
+    }
+
+    setSession(view)
+    setLoading(false)
+  }, [sessionId, state.attendanceSessions, state.currentUser?.id, getAttendanceRecordsBySession])
 
   const sessionTypeInfo = useMemo(() => {
     const types = {
-      lecture: { label: "Lecture", color: "bg-blue-500", icon: AcademicCapIcon },
-      lab: { label: "Lab", color: "bg-green-500", icon: BookOpenIcon },
-      seminar: { label: "Seminar", color: "bg-purple-500", icon: UserIcon },
-      workshop: { label: "Workshop", color: "bg-orange-500", icon: DocumentTextIcon }
+      lecture: { label: "Lecture", color: "#000000", icon: AcademicCapIcon },
+      lab: { label: "Lab", color: "#000000", icon: BookOpenIcon },
+      seminar: { label: "Seminar", color: "#000000", icon: UserIcon },
+      workshop: { label: "Workshop", color: "#000000", icon: DocumentTextIcon }
     }
     return types[session?.type as keyof typeof types] || types.lecture
   }, [session?.type])
 
   const statusInfo = useMemo(() => {
     const statuses = {
-      upcoming: { label: "Upcoming", color: "bg-blue-500", icon: ClockIcon },
-      active: { label: "Active", color: "bg-green-500", icon: CheckCircleIcon },
-      completed: { label: "Completed", color: "bg-gray-500", icon: CheckCircleIcon },
-      cancelled: { label: "Cancelled", color: "bg-red-500", icon: XCircleIcon }
+      upcoming: { label: "Upcoming", color: "#333333", icon: ClockIcon },
+      active: { label: "Active", color: "#000000", icon: CheckCircleIcon },
+      completed: { label: "Completed", color: "#000000", icon: CheckCircleIcon },
+      cancelled: { label: "Cancelled", color: "#666666", icon: XCircleIcon }
     }
     return statuses[session?.status as keyof typeof statuses] || statuses.upcoming
   }, [session?.status])
@@ -205,9 +206,9 @@ export default function StudentSessionDetailsPage() {
     if (!session?.attendanceStatus) return null
     
     const statuses = {
-      present: { label: "Present", color: "text-green-600", icon: CheckCircleIcon },
-      late: { label: "Late", color: "text-yellow-600", icon: ExclamationTriangleIcon },
-      absent: { label: "Absent", color: "text-red-600", icon: XCircleIcon }
+      present: { label: "Present", color: "#000000", icon: CheckCircleIcon },
+      late: { label: "Late", color: "#333333", icon: ExclamationTriangleIcon },
+      absent: { label: "Absent", color: "#666666", icon: XCircleIcon }
     }
     return statuses[session.attendanceStatus]
   }, [session?.attendanceStatus])
@@ -223,13 +224,13 @@ export default function StudentSessionDetailsPage() {
   const getFileIcon = (type: string) => {
     switch (type) {
       case "document":
-        return <DocumentTextIcon className="h-5 w-5 text-blue-600" />
+        return <DocumentTextIcon className="h-5 w-5 text-gray-600" />
       case "video":
-        return <VideoCameraIcon className="h-5 w-5 text-red-600" />
+        return <VideoCameraIcon className="h-5 w-5 text-gray-600" />
       case "image":
-        return <PhotoIcon className="h-5 w-5 text-green-600" />
+        return <PhotoIcon className="h-5 w-5 text-gray-600" />
       case "link":
-        return <LinkIcon className="h-5 w-5 text-purple-600" />
+        return <LinkIcon className="h-5 w-5 text-gray-600" />
       default:
         return <DocumentTextIcon className="h-5 w-5 text-gray-600" />
     }
@@ -278,12 +279,24 @@ export default function StudentSessionDetailsPage() {
             <Typography variant="body1" sx={{ color: 'hsl(var(--muted-foreground))', fontFamily: 'DM Sans, sans-serif' }}>
               {session.courseCode} - {session.courseName}
             </Typography>
-            <Badge variant="default" className={sessionTypeInfo.color}>
-              {sessionTypeInfo.label}
-            </Badge>
-            <Badge variant="default" className={statusInfo.color}>
-              {statusInfo.label}
-            </Badge>
+            <Chip 
+              label={sessionTypeInfo.label}
+              sx={{ 
+                bgcolor: sessionTypeInfo.color,
+                color: 'white',
+                fontWeight: 600,
+                border: '1px solid #000000'
+              }}
+            />
+            <Chip 
+              label={statusInfo.label}
+              sx={{ 
+                bgcolor: statusInfo.color,
+                color: 'white',
+                fontWeight: 600,
+                border: '1px solid #000000'
+              }}
+            />
           </div>
         </div>
         <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
@@ -419,7 +432,7 @@ export default function StudentSessionDetailsPage() {
                 alignItems: 'center',
                 gap: 1
               }}>
-                <CheckCircleIcon className="h-5 w-5 text-green-600" />
+                <CheckCircleIcon className="h-5 w-5 text-gray-600" />
                 Learning Objectives
               </Typography>
               <Box component="ul" sx={{ pl: 2, m: 0 }}>
@@ -450,7 +463,7 @@ export default function StudentSessionDetailsPage() {
                 alignItems: 'center',
                 gap: 1
               }}>
-                <ExclamationTriangleIcon className="h-5 w-5 text-orange-500" />
+                <ExclamationTriangleIcon className="h-5 w-5 text-gray-600" />
                 Prerequisites
               </Typography>
               <Box component="ul" sx={{ pl: 2, m: 0 }}>

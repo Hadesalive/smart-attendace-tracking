@@ -24,8 +24,10 @@
 "use client"
 
 import React, { useMemo, useState } from "react"
-import { Box, Button, Dialog, DialogTitle, DialogContent } from "@mui/material"
+import { Box, Button, Dialog, DialogTitle, DialogContent, Typography } from "@mui/material"
 import { PlusIcon, UserPlusIcon, BuildingOffice2Icon, ArrowPathIcon } from "@heroicons/react/24/outline"
+import { useData } from "@/lib/contexts/DataContext"
+import { useMockData } from "@/lib/hooks/useMockData"
 import PageHeader from "@/components/admin/PageHeader"
 import StatsGrid from "@/components/admin/StatsGrid"
 import SearchFilters from "@/components/admin/SearchFilters"
@@ -102,13 +104,81 @@ export default function AcademicHubPage() {
   const [error, setError] = useState<string | null>(null)
   const [addUserOpen, setAddUserOpen] = useState<false | 'student' | 'lecturer' | 'admin'>(false)
 
-  // KPI stats (placeholder)
+  // Data Context
+  const { state } = useData()
+  const { isInitialized } = useMockData()
+
+  // Get data from DataContext
+  const classes = useMemo(() => {
+    // For now, use mock data structure but get courses from DataContext
+    return state.courses.map((course, index) => ({
+      id: `cl${index + 1}`,
+      year: 1 as Year,
+      semester: 2 as Semester,
+      program: course.department || 'BSEM',
+      section: course.course_code.slice(-4),
+      size: state.enrollments.filter(e => e.course_id === course.id).length
+    }))
+  }, [state.courses, state.enrollments])
+
+  const courses = useMemo(() => {
+    return state.courses.map(course => ({
+      id: course.id,
+      code: course.course_code,
+      name: course.course_name,
+      program: course.department || 'BSEM'
+    }))
+  }, [state.courses])
+
+  const classrooms = useMemo(() => {
+    // Mock classrooms for now - this would come from a classrooms table
+    return mockClassrooms
+  }, [])
+
+  const assignments = useMemo(() => {
+    // Get lecturer assignments from DataContext
+    return state.lecturerAssignments.map(assignment => {
+      const course = state.courses.find(c => c.id === assignment.course_id)
+      const lecturer = state.users.find(u => u.id === assignment.lecturer_id)
+      
+      return {
+        id: assignment.id,
+        teacher_id: assignment.lecturer_id,
+        teacher_name: lecturer?.full_name || 'Unknown',
+        course_id: assignment.course_id,
+        course_code: course?.course_code || 'N/A',
+        year: 1 as Year,
+        semester: 2 as Semester,
+        program: course?.department || 'BSEM',
+        section: '2101' // Mock section
+      }
+    })
+  }, [state.lecturerAssignments, state.courses, state.users])
+
+  const enrollments = useMemo(() => {
+    return state.enrollments.map(enrollment => {
+      const student = state.students.find(s => s.id === enrollment.student_id)
+      const course = state.courses.find(c => c.id === enrollment.course_id)
+      
+      return {
+        id: enrollment.id,
+        student_id: enrollment.student_id,
+        student_name: student?.full_name || 'Unknown',
+        year: 1 as Year,
+        semester: 2 as Semester,
+        program: course?.department || 'BSEM',
+        section: '2101' // Mock section
+      }
+    })
+  }, [state.enrollments, state.students, state.courses])
+
+  // KPI stats from DataContext
   const statsCards = useMemo(() => ([
-    { title: "Classes", value: mockClasses.length, icon: BuildingOffice2Icon, color: "#000000", subtitle: "Total classes", change: "+2 this term" },
-    { title: "Courses", value: mockCourses.length, icon: ArrowPathIcon, color: "#000000", subtitle: "Catalog size", change: "+1 added" },
-    { title: "Classrooms", value: mockClassrooms.length, icon: BuildingOffice2Icon, color: "#000000", subtitle: "Rooms available", change: "Stable" },
-    { title: "Assignments", value: mockAssignments.length, icon: UserPlusIcon, color: "#000000", subtitle: "Teacher-course", change: "+1" },
-  ]), [])
+    { title: "Classes", value: classes.length, icon: BuildingOffice2Icon, color: "#000000", subtitle: "Total classes", change: "+2 this term" },
+    { title: "Courses", value: courses.length, icon: ArrowPathIcon, color: "#000000", subtitle: "Catalog size", change: "+1 added" },
+    { title: "Classrooms", value: classrooms.length, icon: BuildingOffice2Icon, color: "#000000", subtitle: "Rooms available", change: "Stable" },
+    { title: "Assignments", value: assignments.length, icon: UserPlusIcon, color: "#000000", subtitle: "Teacher-course", change: "+1" },
+  ]), [classes.length, courses.length, classrooms.length, assignments.length])
 
   // Columns per tab
   const classColumns = [
@@ -250,6 +320,22 @@ export default function AcademicHubPage() {
       )
     }
   ]
+
+  // Loading state
+  if (!isInitialized) {
+    return (
+      <Box sx={{ p: { xs: 2, sm: 3 } }}>
+        <PageHeader
+          title="Academic Management"
+          subtitle="Manage classes, courses, classrooms, assignments, and enrollments"
+          actions={null}
+        />
+        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 400 }}>
+          <Typography variant="body1">Loading academic data...</Typography>
+        </Box>
+      </Box>
+    )
+  }
 
   return (
     <Box sx={{ p: { xs: 2, sm: 3 } }}>

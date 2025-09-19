@@ -36,6 +36,9 @@ import {
   TrophyIcon
 } from "@heroicons/react/24/outline"
 import { formatDate, formatNumber } from "@/lib/utils"
+import { useData } from "@/lib/contexts/DataContext"
+import { useMockData } from "@/lib/hooks/useMockData"
+import { Course, Student, Assignment, Submission, AttendanceSession } from "@/lib/types/shared"
 
 // Constants
 const CARD_SX = {
@@ -78,21 +81,7 @@ interface StudentStats {
   achievements: number
 }
 
-interface Course {
-  id: string
-  courseCode: string
-  courseName: string
-  instructor: string
-  credits: number
-  attendanceRate: number
-  averageGrade: number
-  nextSession?: {
-    title: string
-    date: string
-    time: string
-    location: string
-  }
-}
+// Using shared Course type from DataContext
 
 interface UpcomingSession {
   id: string
@@ -119,146 +108,181 @@ interface RecentActivity {
 
 
 export default function StudentDashboardPage() {
+  const { 
+    state, 
+    getCoursesByLecturer, 
+    getStudentsByCourse,
+    getAssignmentsByCourse,
+    getSubmissionsByAssignment,
+    getAttendanceSessionsByCourse,
+    getAttendanceRecordsBySession,
+    getStudentGradesByCourse,
+    calculateFinalGrade
+  } = useData()
+  const { isInitialized } = useMockData()
+
   const router = useRouter()
   const [qrScannerOpen, setQrScannerOpen] = useState(false)
 
-  // Mock data
-  const studentStats: StudentStats = {
-    totalCourses: 5,
-    activeCourses: 5,
-    completedAssignments: 23,
-    pendingAssignments: 4,
-    overallAttendanceRate: 92,
-    averageGrade: 87,
-    totalCredits: 18,
-    achievements: 8
-  }
+  // Get student's data from shared context
+  const studentId = state.currentUser?.id || "user_1" // Use real authenticated user ID
+  
+  // Get student's courses
+  const courses = useMemo(() => {
+    return state.courses.filter(course => 
+      state.enrollments.some(enrollment => 
+        enrollment.student_id === studentId && enrollment.course_id === course.id
+      )
+    )
+  }, [state.courses, state.enrollments, studentId])
 
-  const courses: Course[] = [
-    {
-      id: "1",
-      courseCode: "CS101",
-      courseName: "Introduction to Computer Science",
-      instructor: "Dr. Smith",
-      credits: 3,
-      attendanceRate: 95,
-      averageGrade: 89,
-      nextSession: {
-        title: "Object-Oriented Programming",
-        date: "2024-01-24T10:00:00",
-        time: "10:00 - 11:30",
-        location: "Room 101"
-      }
-    },
-    {
-      id: "2",
-      courseCode: "MATH201",
-      courseName: "Calculus II",
-      instructor: "Prof. Johnson",
-      credits: 4,
-      attendanceRate: 88,
-      averageGrade: 82,
-      nextSession: {
-        title: "Integration Techniques",
-        date: "2024-01-24T14:00:00",
-        time: "14:00 - 15:30",
-        location: "Room 301"
-      }
-    },
-    {
-      id: "3",
-      courseCode: "ENG101",
-      courseName: "English Composition",
-      instructor: "Dr. Brown",
-      credits: 3,
-      attendanceRate: 92,
-      averageGrade: 91,
-      nextSession: {
-        title: "Research Methods",
-        date: "2024-01-25T09:00:00",
-        time: "09:00 - 10:30",
-        location: "Room 205"
-      }
-    }
-  ]
+  // Calculate student stats from shared data
+  const studentStats = useMemo(() => {
+    const totalCourses = courses.length
+    const activeCourses = courses.length // All enrolled courses are active
+    
+    // Calculate assignments
+    let completedAssignments = 0
+    let pendingAssignments = 0
+    courses.forEach(course => {
+      const assignments = getAssignmentsByCourse(course.id)
+      assignments.forEach(assignment => {
+        const submissions = getSubmissionsByAssignment(assignment.id)
+        const studentSubmission = submissions.find(s => s.student_id === studentId)
+        if (studentSubmission) {
+          completedAssignments++
+        } else {
+          pendingAssignments++
+        }
+      })
+    })
 
-  const upcomingSessions: UpcomingSession[] = [
-    {
-      id: "1",
-      title: "Object-Oriented Programming",
-      courseCode: "CS101",
-      courseName: "Introduction to Computer Science",
-      date: "2024-01-24T10:00:00",
-      startTime: "10:00",
-      endTime: "11:30",
-      location: "Room 101",
-      status: "upcoming",
-      instructor: "Dr. Smith"
-    },
-    {
-      id: "2",
-      title: "Integration Techniques",
-      courseCode: "MATH201",
-      courseName: "Calculus II", 
-      date: "2024-01-24T14:00:00",
-      startTime: "14:00",
-      endTime: "15:30",
-      location: "Room 301",
-      status: "upcoming",
-      instructor: "Prof. Johnson"
-    },
-    {
-      id: "3",
-      title: "Research Methods",
-      courseCode: "ENG101",
-      courseName: "English Composition",
-      date: "2024-01-25T09:00:00",
-      startTime: "09:00",
-      endTime: "10:30",
-      location: "Room 205",
-      status: "upcoming",
-      instructor: "Dr. Brown"
-    }
-  ]
+    // Calculate attendance rate
+    let totalAttendanceRecords = 0
+    let presentRecords = 0
+    courses.forEach(course => {
+      const sessions = getAttendanceSessionsByCourse(course.id)
+      sessions.forEach(session => {
+        const records = getAttendanceRecordsBySession(session.id)
+        const studentRecord = records.find(r => r.student_id === studentId)
+        if (studentRecord) {
+          totalAttendanceRecords++
+          if (studentRecord.status === 'present' || studentRecord.status === 'late') {
+            presentRecords++
+          }
+        }
+      })
+    })
+    const overallAttendanceRate = totalAttendanceRecords > 0 ? Math.round((presentRecords / totalAttendanceRecords) * 100) : 0
 
-  const recentActivity: RecentActivity[] = [
-    {
-      id: "1",
-      type: "assignment",
-      title: "Data Structures Assignment Submitted",
-      description: "Successfully submitted Assignment 3 for CS101",
-      date: "2024-01-22T14:30:00",
-      status: "success",
-      courseCode: "CS101"
-    },
-    {
-      id: "2",
-      type: "attendance",
-      title: "Attendance Marked",
-      description: "Present for Calculus II lecture",
-      date: "2024-01-22T09:00:00",
-      status: "success",
-      courseCode: "MATH201"
-    },
-    {
-      id: "3",
-      type: "grade",
-      title: "Grade Received",
-      description: "Received A- on English Composition essay",
-      date: "2024-01-21T16:00:00",
-      status: "success",
-      courseCode: "ENG101"
-    },
-    {
-      id: "4",
-      type: "announcement",
-      title: "New Course Material",
-      description: "Physics I lecture notes uploaded",
-      date: "2024-01-21T11:00:00",
-      status: "info",
-      courseCode: "PHYS101"
+    // Calculate average grade
+    let totalGrade = 0
+    let gradedCourses = 0
+    courses.forEach(course => {
+      const grades = getStudentGradesByCourse(studentId, course.id)
+      if (grades.length > 0) {
+        const finalGrade = calculateFinalGrade(studentId, course.id)
+        totalGrade += finalGrade
+        gradedCourses++
+      }
+    })
+    const averageGrade = gradedCourses > 0 ? Math.round(totalGrade / gradedCourses) : 0
+
+    // Calculate total credits
+    const totalCredits = courses.reduce((sum, course) => sum + (course.credits || 3), 0)
+
+    return {
+      totalCourses,
+      activeCourses,
+      completedAssignments,
+      pendingAssignments,
+      overallAttendanceRate,
+      averageGrade,
+      totalCredits,
+      achievements: 8 // Mock for now
     }
-  ]
+  }, [courses, getAssignmentsByCourse, getSubmissionsByAssignment, getAttendanceSessionsByCourse, getAttendanceRecordsBySession, getStudentGradesByCourse, calculateFinalGrade, studentId])
+
+  // Calculate upcoming sessions from shared data
+  const upcomingSessions = useMemo(() => {
+    const sessions: UpcomingSession[] = []
+    
+    courses.forEach(course => {
+      const courseSessions = getAttendanceSessionsByCourse(course.id)
+      const futureSessions = courseSessions.filter(session => 
+        new Date(session.session_date) >= new Date()
+      ).sort((a, b) => new Date(a.session_date).getTime() - new Date(b.session_date).getTime())
+      
+      if (futureSessions.length > 0) {
+        const nextSession = futureSessions[0]
+        sessions.push({
+          id: nextSession.id,
+          title: nextSession.session_name,
+          courseCode: nextSession.course_code,
+          courseName: nextSession.course_name,
+          date: nextSession.session_date || new Date().toISOString(),
+          startTime: nextSession.start_time || 'TBD',
+          endTime: nextSession.end_time || 'TBD',
+          location: nextSession.location || 'TBD',
+          instructor: "Instructor", // Would need to get from lecturer data
+          status: nextSession.status === 'active' ? 'active' : 'upcoming'
+        })
+      }
+    })
+    
+    return sessions.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+  }, [courses, getAttendanceSessionsByCourse])
+
+
+  // Calculate recent activity from shared data
+  const recentActivity = useMemo(() => {
+    const activities: RecentActivity[] = []
+    
+    // Get recent submissions
+    courses.forEach(course => {
+      const assignments = getAssignmentsByCourse(course.id)
+      assignments.forEach(assignment => {
+        const submissions = getSubmissionsByAssignment(assignment.id)
+        const studentSubmission = submissions.find(s => s.student_id === studentId)
+        if (studentSubmission) {
+          activities.push({
+            id: `submission_${studentSubmission.id}`,
+            type: "assignment",
+            title: `${assignment.title} Submitted`,
+            description: `Successfully submitted ${assignment.title} for ${course.course_code}`,
+            date: studentSubmission.submitted_at,
+            status: "success",
+            courseCode: course.course_code
+          })
+        }
+      })
+    })
+    
+    // Get recent attendance records
+    courses.forEach(course => {
+      const sessions = getAttendanceSessionsByCourse(course.id)
+      sessions.forEach(session => {
+        const records = getAttendanceRecordsBySession(session.id)
+        const studentRecord = records.find(r => r.student_id === studentId)
+        if (studentRecord) {
+          activities.push({
+            id: `attendance_${studentRecord.id}`,
+            type: "attendance",
+            title: "Attendance Marked",
+            description: `${studentRecord.status} for ${session.session_name}`,
+            date: studentRecord.check_in_time || session.session_date,
+            status: studentRecord.status === 'present' ? "success" : "warning",
+            courseCode: course.course_code
+          })
+        }
+      })
+    })
+    
+    // Sort by date (most recent first) and take the latest 10
+    return activities
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+      .slice(0, 10)
+  }, [courses, getAssignmentsByCourse, getSubmissionsByAssignment, getAttendanceSessionsByCourse, getAttendanceRecordsBySession, studentId])
 
 
   // Handlers
@@ -512,16 +536,11 @@ export default function StudentDashboardPage() {
                   >
                     <Box sx={{ flex: 1 }}>
                       <Typography variant="body1" sx={{ fontWeight: 600, mb: 0.5 }}>
-                        {course.courseCode} - {course.courseName}
+                        {course.course_code} - {course.course_name}
                       </Typography>
                       <Typography variant="body2" sx={{ color: 'hsl(var(--muted-foreground))', mb: 1 }}>
-                        {course.instructor} • {course.credits} Credits
+                        Instructor • {course.credits || 3} Credits
                       </Typography>
-                      {course.nextSession && (
-                        <Typography variant="caption" sx={{ color: 'hsl(var(--muted-foreground))' }}>
-                          Next: {course.nextSession.title} - {formatDate(course.nextSession.date)}
-                        </Typography>
-                      )}
                     </Box>
                     <Box sx={{ 
                       display: 'flex', 
@@ -532,7 +551,23 @@ export default function StudentDashboardPage() {
                     }}>
                       <Box sx={{ textAlign: 'center' }}>
                         <Typography variant="h6" sx={{ fontFamily: 'Poppins, sans-serif', fontWeight: 700 }}>
-                          {course.attendanceRate}%
+                          {(() => {
+                            // Calculate attendance rate for this course
+                            let totalSessions = 0
+                            let presentSessions = 0
+                            const courseSessions = getAttendanceSessionsByCourse(course.id)
+                            courseSessions.forEach(session => {
+                              const records = getAttendanceRecordsBySession(session.id)
+                              const studentRecord = records.find(r => r.student_id === studentId)
+                              if (studentRecord) {
+                                totalSessions++
+                                if (studentRecord.status === 'present' || studentRecord.status === 'late') {
+                                  presentSessions++
+                                }
+                              }
+                            })
+                            return totalSessions > 0 ? Math.round((presentSessions / totalSessions) * 100) : 0
+                          })()}%
                         </Typography>
                         <Typography variant="caption" sx={{ color: 'hsl(var(--muted-foreground))' }}>
                           Attendance
@@ -540,7 +575,11 @@ export default function StudentDashboardPage() {
                       </Box>
                       <Box sx={{ textAlign: 'center' }}>
                         <Typography variant="h6" sx={{ fontFamily: 'Poppins, sans-serif', fontWeight: 700 }}>
-                          {course.averageGrade}%
+                          {(() => {
+                            // Calculate average grade for this course
+                            const grades = getStudentGradesByCourse(studentId, course.id)
+                            return grades.length > 0 ? Math.round(calculateFinalGrade(studentId, course.id)) : 0
+                          })()}%
                         </Typography>
                         <Typography variant="caption" sx={{ color: 'hsl(var(--muted-foreground))' }}>
                           Grade

@@ -4,9 +4,16 @@ import React, { useState, useEffect } from "react"
 import { Box, Typography, Card, CardContent, Button, Alert, Chip } from "@mui/material"
 import { QrCodeIcon, CheckCircleIcon, XCircleIcon } from "@heroicons/react/24/outline"
 import { motion } from "framer-motion"
-import MobileQrScanner from "@/components/attendance/mobile-qr-scanner"
+import { toast } from "sonner"
+import MobileQrScanner from "@/components/attendance/mobile-qr-scanner-new"
+import { useData } from "@/lib/contexts/DataContext"
+import { useSearchParams } from "next/navigation"
 
 export default function StudentScanAttendancePage() {
+  const { markAttendanceSupabase, state } = useData()
+  const searchParams = useSearchParams()
+  const sessionIdFromUrl = searchParams.get('sessionId')
+  
   const [isScanning, setIsScanning] = useState(false)
   const [scanResult, setScanResult] = useState<{
     success: boolean
@@ -15,6 +22,7 @@ export default function StudentScanAttendancePage() {
     courseName?: string
   } | null>(null)
   const [isMobile, setIsMobile] = useState(false)
+  const [loading, setLoading] = useState(false)
 
   // Check if device is mobile
   useEffect(() => {
@@ -26,21 +34,58 @@ export default function StudentScanAttendancePage() {
     return () => window.removeEventListener('resize', checkMobile)
   }, [])
 
-  const handleQrScan = (data: string) => {
+  const handleQrScan = async (data: string) => {
     console.log('QR Code scanned:', data)
+    setLoading(true)
     
-    // Simulate processing the QR code
-    // In a real app, this would validate the session and mark attendance
     try {
-      // Parse the QR code data (assuming it contains session info)
-      const sessionData = data.includes('session-') ? data.replace('session-', '') : data
+      // Parse the QR code data (expecting JSON with session info)
+      let sessionData: any = null
+      
+      if (data.startsWith('{')) {
+        sessionData = JSON.parse(data)
+      } else {
+        throw new Error('Invalid QR code format - expected JSON data')
+      }
+      
+      // Validate QR code data
+      if (!sessionData.session_id || sessionData.type !== 'attendance') {
+        throw new Error('Invalid attendance QR code')
+      }
+      
+      const sessionId = sessionData.session_id
+      
+      // Check if session exists and is active
+      const session = state.attendanceSessions.find(s => s.id === sessionId)
+      if (!session) {
+        throw new Error('Session not found or no longer active')
+      }
+      
+      // Check if user is enrolled in this course
+      const isEnrolled = state.enrollments.some(e => 
+        e.course_id === session.course_id && 
+        e.student_id === state.currentUser?.id
+      )
+      
+      if (!isEnrolled) {
+        throw new Error('You are not enrolled in this course')
+      }
+      
+      // Mark attendance using Supabase
+      if (!state.currentUser?.id) {
+        throw new Error('User not authenticated')
+      }
+      
+      await markAttendanceSupabase(sessionId, state.currentUser.id, 'qr_code')
       
       setScanResult({
         success: true,
         message: 'Attendance marked successfully!',
-        sessionId: sessionData,
-        courseName: 'Sample Course' // This would come from the QR code data
+        sessionId: sessionId,
+        courseName: sessionData.course_name || session.course_name
       })
+      
+      toast.success('Attendance marked successfully!')
       
       // Auto-hide success message after 3 seconds
       setTimeout(() => {
@@ -48,10 +93,14 @@ export default function StudentScanAttendancePage() {
       }, 3000)
       
     } catch (error) {
+      console.error('Error marking attendance:', error)
       setScanResult({
         success: false,
-        message: 'Invalid QR code. Please scan the code displayed by your lecturer.'
+        message: error instanceof Error ? error.message : 'Failed to mark attendance. Please try again.'
       })
+      toast.error('Failed to mark attendance')
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -215,10 +264,11 @@ export default function StudentScanAttendancePage() {
                     label={scanResult.courseName} 
                     size="small" 
                     sx={{ 
-                      bgcolor: scanResult.success ? '#4caf50' : '#f44336',
+                      bgcolor: scanResult.success ? '#000000' : '#666666',
                       color: 'white',
                       fontFamily: 'DM Sans, sans-serif',
-                      fontWeight: 500
+                      fontWeight: 500,
+                      border: '1px solid #000000'
                     }} 
                   />
                 </Box>
@@ -270,9 +320,8 @@ export default function StudentScanAttendancePage() {
           isOpen={isScanning}
           onClose={stopScanning}
           onScan={handleQrScan}
-          title="Scan Attendance QR Code"
-          sessionId="sample-session"
-          courseName="Sample Course"
+          loading={loading}
+          scanResult={scanResult}
         />
       </div>
     </div>

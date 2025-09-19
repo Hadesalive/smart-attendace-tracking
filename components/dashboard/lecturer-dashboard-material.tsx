@@ -5,11 +5,11 @@ import { Box, Typography } from "@mui/material"
 import { motion } from "framer-motion"
 import { ComputerDesktopIcon } from "@heroicons/react/24/outline"
 import WelcomeHeader from "./welcome-header"
-import StatsGrid from "./stats-grid"
+import StatsGrid from "@/components/admin/StatsGrid"
 import AnalyticsCard from "./analytics-card"
 import SessionsCard from "./sessions-card"
 import CoursesCard from "./courses-card"
-import SessionQrCodeDialog from "@/components/attendance/session-qr-code-dialog"
+import SessionQrCodeDialog from "@/components/attendance/session-qr-code-dialog-new"
 
 // ============================================================================
 // TYPES & INTERFACES
@@ -62,7 +62,10 @@ interface DashboardState {
 interface QrDialogSession {
   id: string
   course_name: string
-  course_code: string
+  session_name: string
+  session_date: string
+  start_time: string
+  end_time: string
 }
 
 // ============================================================================
@@ -544,7 +547,10 @@ export default function LecturerDashboard({
     return {
       id: state.selectedSession.id,
       course_name: state.selectedSession.course.course_name,
-      course_code: state.selectedSession.course.course_code
+      session_name: state.selectedSession.session_name,
+      session_date: state.selectedSession.session_date,
+      start_time: state.selectedSession.start_time,
+      end_time: state.selectedSession.end_time
     }
   }, [state.selectedSession])
 

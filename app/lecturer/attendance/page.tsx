@@ -5,43 +5,21 @@ import { motion } from "framer-motion"
 import { CalendarDaysIcon, PlusIcon, ClockIcon, UsersIcon, CheckCircleIcon } from "@heroicons/react/24/outline"
 import StatCard from "@/components/dashboard/stat-card"
 import { Box, Card as MUICard, CardContent as MUICardContent, Typography, FormControl, InputLabel, Select, MenuItem, TextField, Table, TableBody, TableCell, TableHead, TableRow, TableContainer, Button as MUIButton, Chip } from "@mui/material"
-import SessionQrCodeDialog from "@/components/attendance/session-qr-code-dialog"
+import SessionQrCodeDialog from "@/components/attendance/session-qr-code-dialog-new"
+import CreateSessionModal from "@/components/attendance/session-creation-modal-new"
 import { exportRowsToCsv } from "@/lib/utils"
+import { useData } from "@/lib/contexts/DataContext"
+import { AttendanceSession, AttendanceRecord, Course, Class } from "@/lib/types/shared"
+import { mapSessionStatus } from "@/lib/utils/statusMapping"
+import { toast } from "sonner"
 
 // ============================================================================
 // TYPES
 // ============================================================================
 
+// Using shared types from DataContext
 type SessionStatus = "active" | "scheduled" | "completed"
 type AttendanceStatus = "scheduled" | "completed"
-
-interface CourseInfo { 
-  course_code: string
-  course_name: string 
-}
-
-interface SessionItem {
-  id: string
-  session_name: string
-  session_date: string
-  start_time: string
-  end_time: string
-  status: SessionStatus
-  course: CourseInfo
-}
-
-interface AttendanceRecord {
-  id: string
-  courseCode: string
-  courseName: string
-  className: string
-  date: string
-  startTime: string
-  endTime: string
-  present: number
-  total: number
-  status: AttendanceStatus
-}
 
 // ============================================================================
 // CONSTANTS
@@ -59,7 +37,7 @@ const BUTTON_STYLES = {
 
 const TIMETABLE_ROTATION_INTERVAL = 6000 // 6 seconds
 const AVERAGE_ATTENDANCE_7D = 89.2
-const TODAY_DATE = "2024-01-20"
+const TODAY_DATE = new Date().toISOString().split('T')[0]
 
 // ============================================================================
 // HELPERS
@@ -67,7 +45,7 @@ const TODAY_DATE = "2024-01-20"
 
 /** Apply all filters to the dataset */
 const filterAttendance = (
-  data: AttendanceRecord[],
+  data: any[],
   course: string,
   clazz: string,
   date: string,
@@ -85,54 +63,42 @@ const filterAttendance = (
 }
 
 export default function LecturerAttendancePage() {
-  // ==========================================================================
-  // MOCK DATA (replace with real data fetching)
-  // ==========================================================================
-  const sessions: SessionItem[] = [
-    {
-      id: "1",
-      session_name: "Lecture 5: Data Structures",
-      session_date: "2024-01-20",
-      start_time: "09:00",
-      end_time: "10:30",
-      status: "active",
-      course: {
-        course_code: "CS101",
-        course_name: "Introduction to Computer Science"
-      }
-    },
-    {
-      id: "2",
-      session_name: "Tutorial 3: Integration",
-      session_date: "2024-01-21",
-      start_time: "14:00",
-      end_time: "15:30",
-      status: "scheduled",
-      course: {
-        course_code: "MATH201",
-        course_name: "Calculus II"
-      }
-    },
-    {
-      id: "3",
-      session_name: "Lecture 4: Algorithms",
-      session_date: "2024-01-18",
-      start_time: "09:00",
-      end_time: "10:30",
-      status: "completed",
-      course: {
-        course_code: "CS101",
-        course_name: "Introduction to Computer Science"
-      }
-    }
-  ]
+  const { 
+    state, 
+    getCoursesByLecturer, 
+    getAttendanceSessionsByCourse,
+    getAttendanceRecordsBySession,
+    createAttendanceSession,
+    markAttendance,
+    fetchAttendanceSessions,
+    fetchAttendanceRecords,
+    fetchCourses,
+    deleteAttendanceSessionSupabase,
+    updateAttendanceSessionSupabase
+  } = useData()
 
-  const sessionsToday = useMemo(() => sessions.filter(s => s.session_date === TODAY_DATE), [sessions])
+  // Load data on component mount
+  useEffect(() => {
+    fetchCourses()
+    fetchAttendanceSessions()
+    fetchAttendanceRecords()
+  }, [fetchCourses, fetchAttendanceSessions, fetchAttendanceRecords])
+
+  // ==========================================================================
+  // COMPUTED DATA
+  // ==========================================================================
+  
+  // Use all sessions from shared state (no hardcoded lecturer dependency)
+  const sessions = useMemo(() => state.attendanceSessions, [state.attendanceSessions])
+
+  // Legacy mock data removed - using real data from DataContext
+
+  const sessionsToday = useMemo(() => sessions.filter(s => s.session_date === TODAY_DATE), [sessions, TODAY_DATE])
 
   // Build a prioritized list for timetable rotation: active first, then scheduled
   const timetable = useMemo(() => {
-    const active = sessionsToday.filter(s => s.status === 'active')
-    const scheduled = sessionsToday.filter(s => s.status === 'scheduled')
+    const active = sessionsToday.filter(s => mapSessionStatus(s.status, 'lecturer') === 'active')
+    const scheduled = sessionsToday.filter(s => mapSessionStatus(s.status, 'lecturer') === 'scheduled')
     return [...active, ...scheduled]
   }, [sessionsToday])
 
@@ -148,47 +114,33 @@ export default function LecturerAttendancePage() {
 
   const currentItem = timetable[currentIdx]
 
-  const activeCount = useMemo(() => sessionsToday.filter(s => s.status === 'active').length, [sessionsToday])
+  const activeCount = useMemo(() => sessionsToday.filter(s => mapSessionStatus(s.status, 'lecturer') === 'active').length, [sessionsToday])
 
-  // Attendance records mock data
-  const attendanceRecords: AttendanceRecord[] = [
-    {
-      id: "a1",
-      courseCode: "CS101",
-      courseName: "Introduction to Computer Science",
-      className: "Lecture",
-      date: "2024-01-20",
-      startTime: "09:00",
-      endTime: "10:30",
-      present: 42,
-      total: 45,
-      status: "completed"
-    },
-    {
-      id: "a2",
-      courseCode: "MATH201",
-      courseName: "Calculus II",
-      className: "Tutorial",
-      date: "2024-01-21",
-      startTime: "14:00",
-      endTime: "15:30",
-      present: 35,
-      total: 38,
-      status: "scheduled"
-    },
-    {
-      id: "a3",
-      courseCode: "CS101",
-      courseName: "Introduction to Computer Science",
-      className: "Quiz",
-      date: "2024-01-18",
-      startTime: "09:00",
-      endTime: "10:00",
-      present: 40,
-      total: 45,
-      status: "completed"
-    }
-  ]
+  // Compute attendance records from shared data
+  const attendanceRecords = useMemo(() => {
+    console.log('Computing attendance records from sessions:', sessions)
+    return sessions.map(session => {
+      const records = getAttendanceRecordsBySession(session.id)
+      const presentCount = records.filter(r => r.status === 'present' || r.status === 'late').length
+      const totalCount = records.length
+      
+      const record = {
+        id: session.id,
+        courseCode: session.course_code,
+        courseName: session.course_name,
+        className: session.class_name,
+        sessionName: session.session_name,
+        date: session.session_date,
+        startTime: session.start_time,
+        endTime: session.end_time,
+        present: presentCount,
+        total: totalCount,
+        status: mapSessionStatus(session.status, 'lecturer')
+      }
+      console.log('Created attendance record:', record)
+      return record
+    })
+  }, [sessions, getAttendanceRecordsBySession])
 
   // Filters
   const [courseFilter, setCourseFilter] = useState<string>("all")
@@ -218,11 +170,151 @@ export default function LecturerAttendancePage() {
 
   // QR Dialog state
   const [qrOpen, setQrOpen] = useState(false)
-  const [qrSession, setQrSession] = useState<{ id: string; course_name: string; course_code: string } | null>(null)
+  const [qrSession, setQrSession] = useState<{ id: string; course_name: string; session_name: string; session_date: string; start_time: string; end_time: string } | null>(null)
   
-  const openQrFor = (record: AttendanceRecord) => {
-    setQrSession({ id: record.id, course_name: record.courseName, course_code: record.courseCode })
+  // Edit Modal state
+  const [editModalOpen, setEditModalOpen] = useState(false)
+  const [editingSession, setEditingSession] = useState<AttendanceSession | null>(null)
+  
+  const openQrFor = (record: any) => {
+    setQrSession({ 
+      id: record.id, 
+      course_name: record.courseName, 
+      session_name: record.sessionName || 'Session',
+      session_date: record.date || new Date().toISOString().split('T')[0],
+      start_time: record.startTime || '00:00',
+      end_time: record.endTime || '00:00'
+    })
     setQrOpen(true) // Always show QR code for teachers to display
+  }
+
+  const openEditModal = (record: any) => {
+    console.log('Opening edit modal for record:', record)
+    // Find the full session data from the sessions array
+    const fullSession = state.attendanceSessions.find(s => s.id === record.id)
+    if (fullSession) {
+      console.log('Found full session data:', fullSession)
+      setEditingSession(fullSession)
+      setEditModalOpen(true)
+    } else {
+      console.error('Session not found for editing:', record.id)
+      toast.error('Session not found for editing')
+    }
+  }
+
+  const handleEditModalClose = () => {
+    setEditModalOpen(false)
+    setEditingSession(null)
+  }
+
+  const handleSessionUpdated = async (sessionId?: string) => {
+    console.log('Session updated, refreshing data...')
+    await fetchAttendanceSessions()
+    handleEditModalClose()
+  }
+
+  // Handler for creating new attendance session
+  const handleStartSession = (courseId: string, className: string) => {
+    const course = state.courses.find((c: any) => c.id === courseId)
+    if (!course) return
+
+    createAttendanceSession({
+      course_id: courseId,
+      course_code: course.course_code,
+      course_name: course.course_name,
+      class_id: "Bsem", // Default class for now
+      class_name: className,
+      session_name: `Session ${new Date().toLocaleDateString()}`,
+      session_date: new Date().toISOString().split('T')[0],
+      start_time: new Date().toTimeString().slice(0, 5),
+      end_time: new Date(Date.now() + 90 * 60 * 1000).toTimeString().slice(0, 5), // 90 minutes later
+      location: "Room TBD",
+      is_active: true,
+      attendance_method: "qr_code",
+      status: "active"
+    })
+  }
+
+  // Handler for deleting attendance session
+  const handleDeleteSession = async (sessionId: string) => {
+    console.log('Delete button clicked for session:', sessionId)
+    
+    if (!confirm('Are you sure you want to delete this session? This action cannot be undone.')) {
+      console.log('Delete cancelled by user')
+      return
+    }
+    
+    // Show loading toast
+    const loadingToast = toast.loading('Deleting session...')
+    
+    try {
+      console.log('Deleting session:', sessionId)
+      
+      // Check if session exists
+      const session = state.attendanceSessions.find(s => s.id === sessionId)
+      if (!session) {
+        throw new Error('Session not found')
+      }
+      
+      console.log('Session found:', session)
+      
+      // Delete the session
+      await deleteAttendanceSessionSupabase(sessionId)
+      console.log('Session deleted successfully from database')
+      
+      // Refresh the sessions list
+      console.log('Refreshing sessions list...')
+      await fetchAttendanceSessions()
+      
+      // Dismiss loading toast and show success
+      toast.dismiss(loadingToast)
+      toast.success(`Session "${session.session_name}" deleted successfully!`)
+      
+    } catch (error: any) {
+      console.error('Error deleting session:', error)
+      
+      // Dismiss loading toast and show error
+      toast.dismiss(loadingToast)
+      toast.error(`Failed to delete session: ${error.message || 'Unknown error'}`)
+    }
+  }
+
+  // Handler for updating attendance session
+  const handleUpdateSession = async (sessionId: string, updates: Partial<AttendanceSession>) => {
+    console.log('Update button clicked for session:', sessionId, 'with updates:', updates)
+    
+    // Show loading toast
+    const loadingToast = toast.loading('Updating session...')
+    
+    try {
+      // Check if session exists
+      const session = state.attendanceSessions.find(s => s.id === sessionId)
+      if (!session) {
+        throw new Error('Session not found')
+      }
+      
+      console.log('Session found:', session)
+      console.log('Updating with:', updates)
+      
+      // Update the session
+      await updateAttendanceSessionSupabase(sessionId, updates)
+      console.log('Session updated successfully in database')
+      
+      // Refresh the sessions list
+      console.log('Refreshing sessions list...')
+      await fetchAttendanceSessions()
+      
+      // Dismiss loading toast and show success
+      toast.dismiss(loadingToast)
+      toast.success(`Session "${session.session_name}" updated successfully!`)
+      
+    } catch (error: any) {
+      console.error('Error updating session:', error)
+      
+      // Dismiss loading toast and show error
+      toast.dismiss(loadingToast)
+      toast.error(`Failed to update session: ${error.message || 'Unknown error'}`)
+    }
   }
 
   // Removed Saved Views feature for now
@@ -264,8 +356,8 @@ export default function LecturerAttendancePage() {
       }}>
         {/* Rotating timetable card */}
         <StatCard
-          title={currentItem ? (currentItem.status === 'active' ? 'Now' : 'Next') : 'Timetable'}
-          value={currentItem ? `${currentItem.course.course_code}` : 'No sessions'}
+          title={currentItem ? (mapSessionStatus(currentItem.status, 'lecturer') === 'active' ? 'Now' : 'Next') : 'Timetable'}
+          value={currentItem ? `${currentItem.course_code}` : 'No sessions'}
           subtitle={currentItem ? `${currentItem.session_name}` : 'You are free at this time'}
           icon={CalendarDaysIcon}
           color="#000000"
@@ -538,7 +630,8 @@ export default function LecturerAttendancePage() {
                         <Box sx={{ 
                           display: 'flex', 
                           gap: 1, 
-                          alignItems: 'center'
+                          alignItems: 'center',
+                          flexWrap: 'wrap'
                         }}>
                           <MUIButton 
                             size="small" 
@@ -554,6 +647,40 @@ export default function LecturerAttendancePage() {
                             }}
                           >
                             Display QR
+                          </MUIButton>
+                          <MUIButton 
+                            size="small" 
+                            variant="outlined" 
+                            onClick={() => {
+                              console.log('Edit button clicked for record:', r)
+                              openEditModal(r)
+                            }}
+                            sx={{
+                              fontSize: '0.75rem',
+                              fontWeight: 600,
+                              borderColor: '#666',
+                              color: '#666',
+                              '&:hover': { borderColor: '#000', color: '#000' }
+                            }}
+                          >
+                            Edit
+                          </MUIButton>
+                          <MUIButton 
+                            size="small" 
+                            variant="outlined" 
+                            onClick={() => {
+                              console.log('Delete button clicked for record:', r)
+                              handleDeleteSession(r.id)
+                            }}
+                            sx={{
+                              fontSize: '0.75rem',
+                              fontWeight: 600,
+                              borderColor: '#ef4444',
+                              color: '#ef4444',
+                              '&:hover': { borderColor: '#dc2626', color: '#dc2626' }
+                            }}
+                          >
+                            Delete
                           </MUIButton>
                           <a 
                             className="underline" 
@@ -776,6 +903,54 @@ export default function LecturerAttendancePage() {
                       </MUIButton>
                       <MUIButton 
                         variant="outlined" 
+                        onClick={() => {
+                          console.log('Mobile Edit button clicked for record:', r)
+                          openEditModal(r)
+                        }}
+                        sx={{
+                          borderColor: '#666',
+                          color: '#666',
+                          fontFamily: 'DM Sans, sans-serif',
+                          fontWeight: 600,
+                          fontSize: '0.875rem',
+                          py: 1.5,
+                          touchAction: 'manipulation',
+                          width: '100%',
+                          '&:hover': {
+                            borderColor: '#000',
+                            color: '#000',
+                            bgcolor: 'rgba(0,0,0,0.04)'
+                          }
+                        }}
+                      >
+                        Edit Session
+                      </MUIButton>
+                      <MUIButton 
+                        variant="outlined" 
+                        onClick={() => {
+                          console.log('Mobile Delete button clicked for record:', r)
+                          handleDeleteSession(r.id)
+                        }}
+                        sx={{
+                          borderColor: '#ef4444',
+                          color: '#ef4444',
+                          fontFamily: 'DM Sans, sans-serif',
+                          fontWeight: 600,
+                          fontSize: '0.875rem',
+                          py: 1.5,
+                          touchAction: 'manipulation',
+                          width: '100%',
+                          '&:hover': {
+                            borderColor: '#dc2626',
+                            color: '#dc2626',
+                            bgcolor: 'rgba(239, 68, 68, 0.04)'
+                          }
+                        }}
+                      >
+                        Delete Session
+                      </MUIButton>
+                      <MUIButton 
+                        variant="outlined" 
                         href={`/lecturer/attendance/${r.id}`}
                         component="a"
                         aria-label={`View detailed attendance for ${r.courseCode} ${r.className}`}
@@ -808,6 +983,16 @@ export default function LecturerAttendancePage() {
 
       {/* QR Dialog - Teachers show QR codes */}
       <SessionQrCodeDialog isOpen={qrOpen} onOpenChange={setQrOpen} session={qrSession} />
+      
+      {/* Edit Session Modal */}
+      <CreateSessionModal 
+        open={editModalOpen}
+        onOpenChange={handleEditModalClose}
+        lecturerId={state.currentUser?.id || ''}
+        onSessionCreated={() => {}} // Not used in edit mode
+        editSession={editingSession}
+        onSessionUpdated={handleSessionUpdated}
+      />
     </div>
   )
 }

@@ -39,41 +39,24 @@ import {
   TrashIcon,
   ArrowDownTrayIcon,
   QrCodeIcon,
-  ChartBarIcon
+  ChartBarIcon,
+  CheckCircleIcon,
+  XCircleIcon,
+  ExclamationTriangleIcon
 } from "@heroicons/react/24/outline"
-import { formatDate, formatTime } from "@/lib/utils"
+import { formatDate, formatTime, formatNumber } from "@/lib/utils"
+import { QRCodeCanvas } from 'qrcode.react'
+import { useData } from "@/lib/contexts/DataContext"
+import SessionQrCodeDialog from "@/components/attendance/session-qr-code-dialog-new"
+// Mock data removed - using DataContext
+import { AttendanceSession, AttendanceRecord } from "@/lib/types/shared"
+import { mapSessionStatus, mapAttendanceStatus } from "@/lib/utils/statusMapping"
 
 // ============================================================================
 // TYPES & INTERFACES
 // ============================================================================
 
-interface Session {
-  id: string
-  title: string
-  courseCode: string
-  courseName: string
-  type: "lecture" | "tutorial" | "lab" | "quiz" | "exam" | "seminar"
-  date: string
-  startTime: string
-  endTime: string
-  location: string
-  capacity: number
-  enrolled: number
-  status: "draft" | "scheduled" | "active" | "completed" | "cancelled"
-  description: string
-  materials: string[]
-  createdAt: string
-  updatedAt: string
-}
-
-interface AttendanceRecord {
-  id: string
-  studentId: string
-  studentName: string
-  studentEmail: string
-  checkInTime: string
-  status: "present" | "late" | "absent"
-}
+// Using shared types from DataContext
 
 // ============================================================================
 // CONSTANTS
@@ -108,52 +91,27 @@ const BUTTON_STYLES = {
 }
 
 const SESSION_TYPES = {
-  lecture: { label: "Lecture", color: "#8b5cf6", icon: "📚" },
-  tutorial: { label: "Tutorial", color: "#06b6d4", icon: "👥" },
-  lab: { label: "Lab", color: "#f59e0b", icon: "🔬" },
-  quiz: { label: "Quiz", color: "#ef4444", icon: "📝" },
-  exam: { label: "Exam", color: "#6366f1", icon: "📋" },
-  seminar: { label: "Seminar", color: "#10b981", icon: "🎯" }
+  lecture: { label: "Lecture", color: "#000000", icon: "📚" },
+  tutorial: { label: "Tutorial", color: "#000000", icon: "👥" },
+  lab: { label: "Lab", color: "#000000", icon: "🔬" },
+  quiz: { label: "Quiz", color: "#000000", icon: "📝" },
+  exam: { label: "Exam", color: "#000000", icon: "📋" },
+  seminar: { label: "Seminar", color: "#000000", icon: "🎯" }
 }
 
 const STATUS_COLORS = {
-  draft: "#6b7280",
-  scheduled: "#f59e0b",
-  active: "#10b981", 
-  completed: "#10b981",
-  cancelled: "#ef4444"
+  draft: "#666666",
+  scheduled: "#333333",
+  active: "#000000", 
+  completed: "#000000",
+  cancelled: "#999999"
 }
 
 // ============================================================================
 // MOCK DATA
 // ============================================================================
 
-const mockAttendance: AttendanceRecord[] = [
-  {
-    id: "1",
-    studentId: "s1",
-    studentName: "John Doe",
-    studentEmail: "john.doe@student.edu",
-    checkInTime: "2024-01-20T10:05:00Z",
-    status: "present"
-  },
-  {
-    id: "2",
-    studentId: "s2",
-    studentName: "Jane Smith",
-    studentEmail: "jane.smith@student.edu",
-    checkInTime: "2024-01-20T10:15:00Z",
-    status: "late"
-  },
-  {
-    id: "3",
-    studentId: "s3",
-    studentName: "Mike Johnson",
-    studentEmail: "mike.johnson@student.edu",
-    checkInTime: "",
-    status: "absent"
-  }
-]
+// Mock attendance data removed - using shared data from DataContext
 
 // ============================================================================
 // MAIN COMPONENT
@@ -165,11 +123,26 @@ export default function SessionDetailsPage() {
   const sessionId = params?.id as string
 
   // ============================================================================
+  // DATA CONTEXT
+  // ============================================================================
+  
+  const { 
+    state, 
+    getAttendanceSessionsByCourse,
+    getAttendanceRecordsBySession,
+    updateAttendanceSessionSupabase,
+    subscribeToAttendanceSessions,
+    subscribeToAttendanceRecords,
+    unsubscribeAll
+  } = useData()
+  // Mock data removed - using DataContext
+
+  // ============================================================================
   // STATE
   // ============================================================================
   
-  const [session, setSession] = useState<Session | null>(null)
-  const [attendance, setAttendance] = useState<AttendanceRecord[]>(mockAttendance)
+  const [session, setSession] = useState<AttendanceSession | null>(null)
+  const [attendance, setAttendance] = useState<AttendanceRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [showQRDialog, setShowQRDialog] = useState(false)
   const [showEditDialog, setShowEditDialog] = useState(false)
@@ -179,45 +152,65 @@ export default function SessionDetailsPage() {
   // ============================================================================
 
   useEffect(() => {
-    // Mock session data - replace with actual API call
-    const mockSession: Session = {
-      id: sessionId,
-      title: "Introduction to Database Design",
-      courseCode: "CS301",
-      courseName: "Database Systems",
-      type: "lecture",
-      date: "2024-01-20",
-      startTime: "10:00",
-      endTime: "11:30",
-      location: "Room 201",
-      capacity: 50,
-      enrolled: 45,
-      status: "scheduled",
-      description: "This session covers advanced database design principles including normalization, indexing strategies, and query optimization techniques. Students will learn about entity-relationship modeling and best practices for database schema design.",
-      materials: ["lecture-notes.pdf", "assignment-3.pdf", "sample-database.sql"],
-      createdAt: "2024-01-15T10:00:00Z",
-      updatedAt: "2024-01-15T10:00:00Z"
-    }
-    
-    setTimeout(() => {
-      setSession(mockSession)
+    if (sessionId) {
+      // Find session from shared data
+      const foundSession = state.attendanceSessions.find(s => s.id === sessionId)
+      if (foundSession) {
+        setSession(foundSession)
+        
+        // Get attendance records for this session
+        const records = getAttendanceRecordsBySession(sessionId)
+        setAttendance(records)
+      }
       setLoading(false)
-    }, 500)
-  }, [sessionId])
+    }
+  }, [sessionId, state.attendanceSessions, getAttendanceRecordsBySession])
+
+  // Subscribe to real-time updates
+  useEffect(() => {
+    if (sessionId) {
+      // Subscribe to session changes
+      subscribeToAttendanceSessions()
+      
+      // Subscribe to attendance record changes for this session
+      subscribeToAttendanceRecords(sessionId)
+      
+      // Cleanup subscriptions on unmount
+      return () => {
+        unsubscribeAll()
+      }
+    }
+  }, [sessionId, subscribeToAttendanceSessions, subscribeToAttendanceRecords, unsubscribeAll])
 
   // ============================================================================
   // EVENT HANDLERS
   // ============================================================================
 
-  const handleStartSession = () => {
+  const handleStartSession = async () => {
     if (session) {
-      setSession({ ...session, status: "active" })
+      try {
+        await updateAttendanceSessionSupabase(session.id, { 
+          status: "active",
+          is_active: true 
+        })
+        setSession({ ...session, status: "active", is_active: true })
+      } catch (error) {
+        console.error("Error starting session:", error)
+      }
     }
   }
 
-  const handleEndSession = () => {
+  const handleEndSession = async () => {
     if (session) {
-      setSession({ ...session, status: "completed" })
+      try {
+        await updateAttendanceSessionSupabase(session.id, { 
+          status: "completed",
+          is_active: false 
+        })
+        setSession({ ...session, status: "completed", is_active: false })
+      } catch (error) {
+        console.error("Error ending session:", error)
+      }
     }
   }
 
@@ -239,9 +232,9 @@ export default function SessionDetailsPage() {
   }
 
   const getAttendanceStats = () => {
-    const present = attendance.filter(a => a.status === 'present').length
-    const late = attendance.filter(a => a.status === 'late').length
-    const absent = attendance.filter(a => a.status === 'absent').length
+    const present = attendance.filter(a => mapAttendanceStatus(a.status, 'lecturer') === 'present').length
+    const late = attendance.filter(a => mapAttendanceStatus(a.status, 'lecturer') === 'late').length
+    const absent = attendance.filter(a => mapAttendanceStatus(a.status, 'lecturer') === 'absent').length
     const total = attendance.length
     const attendanceRate = total > 0 ? Math.round(((present + late) / total) * 100) : 0
     
@@ -278,7 +271,7 @@ export default function SessionDetailsPage() {
     )
   }
 
-  const sessionType = SESSION_TYPES[session.type]
+  const sessionType = SESSION_TYPES[session.type as keyof typeof SESSION_TYPES] || SESSION_TYPES.lecture
   const stats = getAttendanceStats()
 
   return (
@@ -310,24 +303,24 @@ export default function SessionDetailsPage() {
                 mb: 0.5
               }}
             >
-              {session.title}
+              {session.session_name}
             </Typography>
             <Typography variant="body1" sx={{ color: 'hsl(var(--muted-foreground))' }}>
-              {session.courseCode} • {session.courseName}
+              {session.course_code} • {session.course_name}
             </Typography>
           </Box>
           <Box sx={{ display: 'flex', gap: 1 }}>
-            {session.status === 'scheduled' && (
+            {mapSessionStatus(session.status, 'lecturer') === 'scheduled' && (
               <MUIButton
                 variant="contained"
                 startIcon={<PlayIcon className="h-4 w-4" />}
                 onClick={handleStartSession}
-                sx={{ ...BUTTON_STYLES.primary, bgcolor: '#10b981' }}
+                sx={BUTTON_STYLES.primary}
               >
                 Start Session
               </MUIButton>
             )}
-            {session.status === 'active' && (
+            {mapSessionStatus(session.status, 'lecturer') === 'active' && (
               <>
                 <MUIButton
                   variant="contained"
@@ -362,17 +355,19 @@ export default function SessionDetailsPage() {
                 <Chip 
                   label={sessionType.label}
                   sx={{ 
-                    bgcolor: sessionType.color,
+                    bgcolor: '#000000',
                     color: 'white',
-                    fontWeight: 600
+                    fontWeight: 600,
+                    border: '1px solid #000000'
                   }}
                 />
                 <Chip 
-                  label={session.status.charAt(0).toUpperCase() + session.status.slice(1)}
+                  label={mapSessionStatus(session.status, 'lecturer')?.charAt(0).toUpperCase() + mapSessionStatus(session.status, 'lecturer')?.slice(1) || 'Unknown'}
                   sx={{ 
                     bgcolor: getStatusColor(session.status),
                     color: 'white',
-                    fontWeight: 600
+                    fontWeight: 600,
+                    border: '1px solid #000000'
                   }}
                 />
               </Box>
@@ -381,13 +376,13 @@ export default function SessionDetailsPage() {
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                   <CalendarDaysIcon className="h-5 w-5 text-gray-500" />
                   <Typography variant="body1">
-                    {formatDate(session.date)}
+                    {formatDate(session.session_date)}
                   </Typography>
                 </Box>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                   <ClockIcon className="h-5 w-5 text-gray-500" />
                   <Typography variant="body1">
-                    {session.startTime} - {session.endTime}
+                    {session.start_time} - {session.end_time}
                   </Typography>
                 </Box>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
@@ -399,7 +394,7 @@ export default function SessionDetailsPage() {
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                   <UsersIcon className="h-5 w-5 text-gray-500" />
                   <Typography variant="body1">
-                    {session.enrolled}/{session.capacity} students
+                    {attendance.length} students enrolled
                   </Typography>
                 </Box>
               </Box>
@@ -411,44 +406,9 @@ export default function SessionDetailsPage() {
                   Description
                 </Typography>
                 <Typography variant="body1" sx={{ color: 'hsl(var(--muted-foreground))', lineHeight: 1.6 }}>
-                  {session.description}
+                  {session.description || "No description provided for this session."}
                 </Typography>
               </Box>
-
-              {session.materials.length > 0 && (
-                <>
-                  <Divider sx={{ my: 3, borderColor: '#000' }} />
-                  <Box>
-                    <Typography variant="h6" sx={{ fontWeight: 600, mb: 2 }}>
-                      Session Materials
-                    </Typography>
-                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                      {session.materials.map((material, index) => (
-                        <Box 
-                          key={index}
-                          sx={{ 
-                            display: 'flex', 
-                            alignItems: 'center', 
-                            justifyContent: 'space-between',
-                            p: 2,
-                            border: '1px solid #000',
-                            borderRadius: 1,
-                            '&:hover': { bgcolor: 'hsl(var(--muted) / 0.3)' }
-                          }}
-                        >
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                            <DocumentTextIcon className="h-5 w-5 text-gray-500" />
-                            <Typography variant="body2">{material}</Typography>
-                          </Box>
-                          <IconButton size="small">
-                            <ArrowDownTrayIcon className="h-4 w-4" />
-                          </IconButton>
-                        </Box>
-                      ))}
-                    </Box>
-                  </Box>
-                </>
-              )}
             </MUICardContent>
           </MUICard>
 
@@ -475,7 +435,7 @@ export default function SessionDetailsPage() {
                     borderRadius: 4,
                     bgcolor: 'hsl(var(--muted))',
                     '& .MuiLinearProgress-bar': {
-                      bgcolor: stats.attendanceRate >= 80 ? '#10b981' : stats.attendanceRate >= 60 ? '#f59e0b' : '#ef4444'
+                      bgcolor: '#000000'
                     }
                   }}
                 />
@@ -484,7 +444,7 @@ export default function SessionDetailsPage() {
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <Box sx={{ width: 12, height: 12, borderRadius: '50%', bgcolor: '#10b981' }} />
+                    <Box sx={{ width: 12, height: 12, borderRadius: '50%', bgcolor: '#000000' }} />
                     <Typography variant="body2">Present</Typography>
                   </Box>
                   <Typography variant="body2" sx={{ fontWeight: 600 }}>
@@ -493,7 +453,7 @@ export default function SessionDetailsPage() {
                 </Box>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <Box sx={{ width: 12, height: 12, borderRadius: '50%', bgcolor: '#f59e0b' }} />
+                    <Box sx={{ width: 12, height: 12, borderRadius: '50%', bgcolor: '#333333' }} />
                     <Typography variant="body2">Late</Typography>
                   </Box>
                   <Typography variant="body2" sx={{ fontWeight: 600 }}>
@@ -502,7 +462,7 @@ export default function SessionDetailsPage() {
                 </Box>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <Box sx={{ width: 12, height: 12, borderRadius: '50%', bgcolor: '#ef4444' }} />
+                    <Box sx={{ width: 12, height: 12, borderRadius: '50%', bgcolor: '#666666' }} />
                     <Typography variant="body2">Absent</Typography>
                   </Box>
                   <Typography variant="body2" sx={{ fontWeight: 600 }}>
@@ -522,110 +482,102 @@ export default function SessionDetailsPage() {
                 Student Attendance
               </Typography>
             </Box>
-            <Table>
-              <TableHead>
-                <TableRow sx={{ '& th': { borderColor: '#000' } }}>
-                  <TableCell sx={{ fontWeight: 700 }}>Student</TableCell>
-                  <TableCell sx={{ fontWeight: 700 }}>Email</TableCell>
-                  <TableCell sx={{ fontWeight: 700 }}>Check-in Time</TableCell>
-                  <TableCell sx={{ fontWeight: 700 }}>Status</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {attendance.map((record) => (
-                  <TableRow 
-                    key={record.id}
-                    sx={{ 
-                      '&:hover': { bgcolor: 'hsl(var(--muted) / 0.3)' },
-                      '& td': { borderColor: '#000' }
-                    }}
-                  >
-                    <TableCell>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                        <Avatar sx={{ width: 32, height: 32, bgcolor: '#f0f0f0' }}>
-                          {record.studentName.charAt(0)}
-                        </Avatar>
-                        <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                          {record.studentName}
-                        </Typography>
-                      </Box>
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="body2" sx={{ color: 'hsl(var(--muted-foreground))' }}>
-                        {record.studentEmail}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="body2">
-                        {record.checkInTime ? new Date(record.checkInTime).toLocaleTimeString() : '-'}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Chip 
-                        label={record.status.charAt(0).toUpperCase() + record.status.slice(1)}
-                        size="small"
-                        sx={{ 
-                          bgcolor: record.status === 'present' ? '#10b981' : 
-                                   record.status === 'late' ? '#f59e0b' : '#ef4444',
-                          color: 'white',
-                          fontWeight: 600
-                        }}
-                      />
-                    </TableCell>
+            {attendance.length === 0 ? (
+              <Box sx={{
+                p: 6,
+                textAlign: 'center',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: 2
+              }}>
+                <QrCodeIcon className="h-16 w-16" style={{ color: 'hsl(var(--muted-foreground))' }} />
+                <Typography variant="h6" sx={{ color: 'hsl(var(--muted-foreground))' }}>
+                  No attendance yet
+                </Typography>
+                <Typography variant="body2" sx={{ color: 'hsl(var(--muted-foreground))' }}>
+                  Ask students to scan the session QR code to check in
+                </Typography>
+              </Box>
+            ) : (
+              <Table>
+                <TableHead>
+                  <TableRow sx={{ '& th': { borderColor: '#000' } }}>
+                    <TableCell sx={{ fontWeight: 700 }}>Student</TableCell>
+                    <TableCell sx={{ fontWeight: 700 }}>Email</TableCell>
+                    <TableCell sx={{ fontWeight: 700 }}>Check-in Time</TableCell>
+                    <TableCell sx={{ fontWeight: 700 }}>Status</TableCell>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHead>
+                <TableBody>
+                  {attendance.map((record) => (
+                    <TableRow 
+                      key={record.id}
+                      sx={{ 
+                        '&:hover': { bgcolor: 'hsl(var(--muted) / 0.3)' },
+                        '& td': { borderColor: '#000' }
+                      }}
+                    >
+                      <TableCell>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                          <Avatar sx={{ 
+                            width: 32, 
+                            height: 32, 
+                            bgcolor: '#f0f0f0',
+                            color: '#000000',
+                            border: '1px solid #000000'
+                          }}>
+                            {record.student_name?.charAt(0) || '?'}
+                          </Avatar>
+                          <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                            {record.student_name}
+                          </Typography>
+                        </Box>
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2" sx={{ color: 'hsl(var(--muted-foreground))' }}>
+                          {record.student_email}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2">
+                          {record.check_in_time ? new Date(record.check_in_time).toLocaleTimeString() : '-'}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Chip 
+                          label={mapAttendanceStatus(record.status, 'lecturer')?.charAt(0).toUpperCase() + mapAttendanceStatus(record.status, 'lecturer')?.slice(1) || 'Unknown'}
+                          size="small"
+                          sx={{ 
+                            bgcolor: mapAttendanceStatus(record.status, 'lecturer') === 'present' ? '#000000' : 
+                                     mapAttendanceStatus(record.status, 'lecturer') === 'late' ? '#333333' : '#666666',
+                            color: 'white',
+                            fontWeight: 600,
+                            border: '1px solid #000000'
+                          }}
+                        />
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
           </MUICardContent>
         </MUICard>
 
         {/* QR Code Dialog */}
-        <Dialog 
-          open={showQRDialog} 
-          onClose={() => setShowQRDialog(false)}
-          maxWidth="sm"
-          fullWidth
-          PaperProps={{
-            sx: {
-              border: '2px solid #000',
-              borderRadius: 2
-            }
-          }}
-        >
-          <DialogTitle sx={{ borderBottom: '1px solid #000', textAlign: 'center' }}>
-            QR Code for Attendance
-          </DialogTitle>
-          <DialogContent sx={{ p: 4, textAlign: 'center' }}>
-            <Box sx={{ 
-              width: 200, 
-              height: 200, 
-              bgcolor: '#f0f0f0', 
-              border: '2px solid #000',
-              borderRadius: 2,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              mx: 'auto',
-              mb: 2
-            }}>
-              <QrCodeIcon className="h-24 w-24 text-gray-400" />
-            </Box>
-            <Typography variant="body1" sx={{ mb: 1 }}>
-              {session.title}
-            </Typography>
-            <Typography variant="body2" sx={{ color: 'hsl(var(--muted-foreground))' }}>
-              Students can scan this QR code to mark their attendance
-            </Typography>
-          </DialogContent>
-          <DialogActions sx={{ p: 3, borderTop: '1px solid #000' }}>
-            <MUIButton 
-              onClick={() => setShowQRDialog(false)}
-              sx={BUTTON_STYLES.outlined}
-            >
-              Close
-            </MUIButton>
-          </DialogActions>
-        </Dialog>
+        <SessionQrCodeDialog
+          isOpen={showQRDialog}
+          onOpenChange={setShowQRDialog}
+          session={session ? {
+            id: session.id,
+            course_name: session.course_name,
+            session_name: session.session_name,
+            session_date: session.session_date,
+            start_time: session.start_time,
+            end_time: session.end_time
+          } : null}
+        />
       </motion.div>
     </Box>
   )

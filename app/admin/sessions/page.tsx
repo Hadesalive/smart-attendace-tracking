@@ -83,12 +83,14 @@ import {
 import { formatDate, formatTime} from "@/lib/utils"
 import { TYPOGRAPHY_STYLES } from "@/lib/design/fonts"
 import { BUTTON_STYLES, STATUS_COLORS } from "@/lib/constants/admin-constants"
-import { supabase } from "@/lib/supabase"
+import { useData } from "@/lib/contexts/DataContext"
+import { useMockData } from "@/lib/hooks/useMockData"
 import PageHeader from "@/components/admin/PageHeader"
 import StatsGrid from "@/components/admin/StatsGrid"
 import SearchFilters from "@/components/admin/SearchFilters"
 import DataTable from "@/components/admin/DataTable"
 import ErrorAlert from "@/components/admin/ErrorAlert"
+import { mapSessionStatus } from "@/lib/utils/statusMapping"
 
 // ============================================================================
 // CONSTANTS
@@ -174,68 +176,59 @@ export default function SessionsPage() {
   // ============================================================================
   
   const router = useRouter()
-  const [sessions, setSessions] = useState<Session[]>([])
-  const [stats, setStats] = useState<SessionStats>({
-    totalSessions: 0,
-    activeSessions: 0,
-    completed: 0,
-    cancelled: 0
-  })
+  
+  // Data Context
+  const { state } = useData()
+  const { isInitialized } = useMockData()
+  
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedStatus, setSelectedStatus] = useState<string>("all")
   const [selectedCourse, setSelectedCourse] = useState<string>("all")
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null)
   const [selectedSession, setSelectedSession] = useState<Session | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
   const [showFilters, setShowFilters] = useState(false)
 
   // ============================================================================
-  // DATA FETCHING
+  // COMPUTED DATA
   // ============================================================================
 
-  useEffect(() => {
-    fetchSessions()
-  }, [])
-
-  const fetchSessions = useCallback(async () => {
-    try {
-      setLoading(true)
-      setError(null)
+  // Get sessions from DataContext
+  const sessions = useMemo(() => {
+    return state.attendanceSessions.map(session => {
+      const course = state.courses.find(c => c.id === session.course_id)
+      const lecturer = state.users.find(u => u.role === 'lecturer')
       
-      const { data: sessions, error } = await supabase
-        .from("attendance_sessions")
-        .select(`
-          *,
-          courses(course_code, course_name, department),
-          users(full_name, email)
-        `)
-        .order("session_date", { ascending: false })
-        .order("start_time", { ascending: false })
-
-      if (error) {
-        throw new Error(`Failed to fetch sessions: ${error.message}`)
+      return {
+        id: session.id,
+        session_name: session.session_name,
+        session_date: session.session_date,
+        start_time: session.start_time,
+        end_time: session.end_time,
+        attendance_method: session.attendance_method || 'qr_code',
+        status: (session.status as 'scheduled' | 'active' | 'completed' | 'cancelled') || 'scheduled',
+        is_active: session.is_active || false,
+        courses: course ? {
+          course_code: course.course_code,
+          course_name: course.course_name,
+          department: course.department || 'Computer Science'
+        } : undefined,
+        users: lecturer ? {
+          full_name: lecturer.full_name,
+          email: lecturer.email
+        } : undefined
       }
+    })
+  }, [state.attendanceSessions, state.courses, state.users])
 
-      const sessionData = sessions || []
-      setSessions(sessionData)
-      
-      // Calculate stats
-      const totalSessions = sessionData.length
-      const activeSessions = sessionData.filter(s => s.is_active).length
-      const completed = sessionData.filter(s => !s.is_active && s.status !== 'cancelled').length
-      const cancelled = sessionData.filter(s => s.status === 'cancelled').length
+  // Calculate stats from DataContext
+  const stats = useMemo(() => {
+    const totalSessions = sessions.length
+    const activeSessions = sessions.filter(s => s.is_active).length
+    const completed = sessions.filter(s => !s.is_active && s.status !== 'cancelled').length
+    const cancelled = sessions.filter(s => s.status === 'cancelled').length
 
-      setStats({ totalSessions, activeSessions, completed, cancelled })
-    } catch (error) {
-      console.error("Error fetching sessions:", error)
-      setError(error instanceof Error ? error.message : "Failed to fetch sessions")
-      setSessions([])
-      setStats({ totalSessions: 0, activeSessions: 0, completed: 0, cancelled: 0 })
-    } finally {
-      setLoading(false)
-    }
-  }, [])
+    return { totalSessions, activeSessions, completed, cancelled }
+  }, [sessions])
 
   // ============================================================================
   // EVENT HANDLERS
@@ -307,15 +300,12 @@ export default function SessionsPage() {
       )
     }
 
-    // Filter by status
+    // Filter by status (use centralized status mapping + is_active override)
     if (selectedStatus !== "all") {
-      if (selectedStatus === "active") {
-        filtered = filtered.filter(session => session.is_active)
-      } else if (selectedStatus === "completed") {
-        filtered = filtered.filter(session => !session.is_active && session.status !== 'cancelled')
-      } else {
-        filtered = filtered.filter(session => session.status === selectedStatus)
-      }
+      filtered = filtered.filter(session => {
+        const displayStatus = session.is_active ? 'active' : mapSessionStatus(session.status, 'admin')
+        return displayStatus === selectedStatus
+      })
     }
 
     // Filter by course
@@ -327,17 +317,13 @@ export default function SessionsPage() {
   }, [sessions, searchTerm, selectedStatus, selectedCourse])
 
   const getSessionStatus = useCallback((session: Session) => {
-    if (session.status === 'cancelled') return { label: 'Cancelled', color: STATUS_COLORS.cancelled }
-    if (session.is_active) return { label: 'Active', color: STATUS_COLORS.active }
-    
-    const now = new Date()
-    const sessionStart = new Date(`${session.session_date}T${session.start_time}`)
-    
-    if (now < sessionStart) {
-      return { label: 'Scheduled', color: STATUS_COLORS.scheduled }
-    } else {
-      return { label: 'Completed', color: STATUS_COLORS.completed }
-    }
+    const displayStatus = session.is_active ? 'active' : mapSessionStatus(session.status, 'admin')
+    const color =
+      displayStatus === 'cancelled' ? STATUS_COLORS.cancelled :
+      displayStatus === 'active' ? STATUS_COLORS.active :
+      displayStatus === 'scheduled' ? STATUS_COLORS.scheduled :
+      STATUS_COLORS.completed
+    return { label: displayStatus.charAt(0).toUpperCase() + displayStatus.slice(1), color }
   }, [])
 
   // ============================================================================
@@ -441,6 +427,22 @@ export default function SessionsPage() {
     }
   ]
 
+  // Loading state
+  if (!isInitialized) {
+    return (
+      <Box sx={{ p: { xs: 2, sm: 3 } }}>
+        <PageHeader
+          title="Session Monitoring"
+          subtitle="Monitor all attendance sessions across the system"
+          actions={null}
+        />
+        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 400 }}>
+          <Typography variant="body1">Loading sessions...</Typography>
+        </Box>
+      </Box>
+    )
+  }
+
   return (
     <Box sx={{ p: { xs: 2, sm: 3 } }}>
       <PageHeader
@@ -468,9 +470,7 @@ export default function SessionsPage() {
         }
       />
 
-      <ErrorAlert error={error} onRetry={fetchSessions} />
-
-      <StatsGrid stats={statsCardsWithData} loading={loading} />
+      <StatsGrid stats={statsCardsWithData} />
 
       <SearchFilters
         searchTerm={searchTerm}
@@ -498,8 +498,6 @@ export default function SessionsPage() {
         subtitle="All attendance sessions across the system"
         columns={columns}
         data={filteredSessions}
-        loading={loading}
-        emptyMessage={error ? "Failed to load sessions" : "No sessions found"}
         onRowClick={(session) => router.push(`/admin/sessions/${session.id}`)}
       />
 

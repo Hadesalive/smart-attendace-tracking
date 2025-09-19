@@ -55,59 +55,16 @@ import {
 } from "@heroicons/react/24/outline"
 import { formatDate, formatNumber } from "@/lib/utils"
 import { useRouter } from "next/navigation"
+import { useData } from "@/lib/contexts/DataContext"
+import { useMockData } from "@/lib/hooks/useMockData"
+import { Assignment, Submission, Class, Course } from "@/lib/types/shared"
+import { mapAssignmentStatus } from "@/lib/utils/statusMapping"
 
 // ============================================================================
 // TYPES
 // ============================================================================
 
-interface Assignment {
-  id: string
-  title: string
-  description: string
-  courseId: string
-  courseCode: string
-  courseName: string
-  classId: string
-  className: string
-  dueDate: string
-  totalPoints: number
-  submittedCount: number
-  totalStudents: number
-  status: "active" | "completed" | "upcoming"
-  latePenaltyEnabled: boolean
-  latePenaltyPercent: number
-  latePenaltyInterval: "day" | "week"
-  createdAt: string
-}
-
-interface Submission {
-  id: string
-  studentId: string
-  studentName: string
-  assignmentId: string
-  assignmentTitle: string
-  courseCode: string
-  submittedAt: string
-  grade: number | null
-  maxGrade: number
-  status: "graded" | "submitted" | "late"
-  latePenaltyApplied: number
-  finalGrade: number | null
-  comments: string
-}
-
-interface Class {
-  id: string
-  name: string
-  level: string
-}
-
-interface Course {
-  id: string
-  courseCode: string
-  courseName: string
-  classId: string
-}
+// Using shared types from DataContext
 
 // ============================================================================
 // COMPONENT
@@ -115,6 +72,16 @@ interface Course {
 
 export default function HomeworkPage() {
   const router = useRouter()
+  const { 
+    state, 
+    getCoursesByLecturer, 
+    getStudentsByCourse, 
+    getAssignmentsByCourse,
+    getSubmissionsByAssignment,
+    createAssignment,
+    gradeSubmission
+  } = useData()
+  const { isInitialized } = useMockData()
   
   // ============================================================================
   // STATE
@@ -135,11 +102,11 @@ export default function HomeworkPage() {
   const [assignmentForm, setAssignmentForm] = useState({
     title: "",
     description: "",
-    dueDate: "",
-    totalPoints: 100,
-    latePenaltyEnabled: true,
-    latePenaltyPercent: 10,
-    latePenaltyInterval: "week" as "day" | "week"
+    due_date: "",
+    total_points: 100,
+    late_penalty_enabled: true,
+    late_penalty_percent: 10,
+    late_penalty_interval: "week" as "day" | "week"
   })
 
   // Grading form state
@@ -149,172 +116,63 @@ export default function HomeworkPage() {
   })
 
   // ============================================================================
-  // MOCK DATA
+  // COMPUTED DATA
   // ============================================================================
 
-  const classes: Class[] = [
-    { id: "1", name: "Computer Science 2024", level: "Level 2" },
-    { id: "2", name: "Mathematics 2024", level: "Level 1" },
-    { id: "3", name: "Engineering 2024", level: "Level 3" }
-  ]
+  // Get lecturer's courses (assuming current user is lecturer with ID "user_2")
+  const lecturerCourses = useMemo(() => getCoursesByLecturer("user_2"), [getCoursesByLecturer])
+  
+  // Get classes from the data context
+  const classes = useMemo(() => state.classes, [state.classes])
+  
+  // Get courses available for selected class
+  const availableCourses = useMemo(() => {
+    if (!selectedClass) return []
+    const lecturerAssignments = state.lecturerAssignments.filter(assignment => 
+      assignment.class_id === selectedClass && assignment.status === 'active'
+    )
+    const courseIds = lecturerAssignments.map(assignment => assignment.course_id)
+    return lecturerCourses.filter(course => courseIds.includes(course.id))
+  }, [selectedClass, lecturerCourses, state.lecturerAssignments])
 
-  const courses: Course[] = [
-    { id: "1", courseCode: "CS101", courseName: "Introduction to Computer Science", classId: "1" },
-    { id: "2", courseCode: "MATH201", courseName: "Calculus II", classId: "2" },
-    { id: "3", courseCode: "ENG101", courseName: "English Composition", classId: "1" },
-    { id: "4", courseCode: "CS201", courseName: "Data Structures", classId: "1" }
-  ]
+  // Get assignments for selected course
+  const assignments = useMemo(() => {
+    if (!selectedCourse) return []
+    return getAssignmentsByCourse(selectedCourse)
+  }, [selectedCourse, getAssignmentsByCourse])
 
-  const assignments: Assignment[] = [
-    {
-      id: "1",
-      title: "Data Structures Implementation",
-      description: "Implement basic data structures including arrays, linked lists, and stacks.",
-      courseId: "1",
-      courseCode: "CS101",
-      courseName: "Introduction to Computer Science",
-      classId: "1",
-      className: "Computer Science 2024",
-      dueDate: "2024-01-25",
-      totalPoints: 100,
-      submittedCount: 42,
-      totalStudents: 45,
-      status: "active",
-      latePenaltyEnabled: true,
-      latePenaltyPercent: 10,
-      latePenaltyInterval: "week",
-      createdAt: "2024-01-15"
-    },
-    {
-      id: "2",
-      title: "Calculus Problem Set 3",
-      description: "Solve integration problems using various techniques.",
-      courseId: "2",
-      courseCode: "MATH201",
-      courseName: "Calculus II", 
-      classId: "2",
-      className: "Mathematics 2024",
-      dueDate: "2024-01-22",
-      totalPoints: 50,
-      submittedCount: 38,
-      totalStudents: 38,
-      status: "completed",
-      latePenaltyEnabled: true,
-      latePenaltyPercent: 5,
-      latePenaltyInterval: "day",
-      createdAt: "2024-01-10"
-    },
-    {
-      id: "3",
-      title: "Research Paper Outline",
-      description: "Create a detailed outline for your research paper topic.",
-      courseId: "3",
-      courseCode: "ENG101",
-      courseName: "English Composition",
-      classId: "1",
-      className: "Computer Science 2024",
-      dueDate: "2024-01-30",
-      totalPoints: 25,
-      submittedCount: 0,
-      totalStudents: 30,
-      status: "upcoming",
-      latePenaltyEnabled: false,
-      latePenaltyPercent: 0,
-      latePenaltyInterval: "week",
-      createdAt: "2024-01-20"
-    }
-  ]
 
-  const submissions: Submission[] = [
-    {
-      id: "1",
-      studentId: "1",
-      studentName: "John Doe",
-      assignmentId: "1",
-      assignmentTitle: "Data Structures Implementation",
-      courseCode: "CS101",
-      submittedAt: "2024-01-20T14:30:00",
-      grade: 92,
-      maxGrade: 100,
-      status: "graded",
-      latePenaltyApplied: 0,
-      finalGrade: 92,
-      comments: "Excellent implementation!"
-    },
-    {
-      id: "2",
-      studentId: "2",
-      studentName: "Jane Smith",
-      assignmentId: "2",
-      assignmentTitle: "Calculus Problem Set 3",
-      courseCode: "MATH201",
-      submittedAt: "2024-01-19T16:45:00",
-      grade: 87,
-      maxGrade: 50,
-      status: "graded",
-      latePenaltyApplied: 0,
-      finalGrade: 87,
-      comments: "Good work, minor errors in integration."
-    },
-    {
-      id: "3",
-      studentId: "3",
-      studentName: "Mike Johnson",
-      assignmentId: "1",
-      assignmentTitle: "Data Structures Implementation",
-      courseCode: "CS101",
-      submittedAt: "2024-01-26T09:15:00",
-      grade: 85,
-      maxGrade: 100,
-      status: "late",
-      latePenaltyApplied: 10,
-      finalGrade: 75,
-      comments: "Submitted 1 week late. Good work but late penalty applied."
-    },
-    {
-      id: "4",
-      studentId: "4",
-      studentName: "Sarah Wilson",
-      assignmentId: "1",
-      assignmentTitle: "Data Structures Implementation",
-      courseCode: "CS101", 
-      submittedAt: "2024-01-21T10:30:00",
-      grade: null,
-      maxGrade: 100,
-      status: "submitted",
-      latePenaltyApplied: 0,
-      finalGrade: null,
-      comments: ""
-    }
-  ]
+  // Get submissions for selected assignment
+  const submissions = useMemo(() => {
+    if (!selectedAssignmentId) return []
+    return getSubmissionsByAssignment(selectedAssignmentId)
+  }, [selectedAssignmentId, getSubmissionsByAssignment])
 
   // ============================================================================
   // COMPUTED VALUES
   // ============================================================================
 
-  const availableCourses = useMemo(() => {
-    if (!selectedClass) return []
-    return courses.filter(course => course.classId === selectedClass)
-  }, [selectedClass, courses])
 
   const filteredAssignments = useMemo(() => {
     let filtered = assignments
     if (selectedClass) {
-      filtered = filtered.filter(assignment => assignment.classId === selectedClass)
+      filtered = filtered.filter(assignment => assignment.class_id === selectedClass)
     }
     if (selectedCourse) {
-      filtered = filtered.filter(assignment => assignment.courseId === selectedCourse)
+      filtered = filtered.filter(assignment => assignment.course_id === selectedCourse)
     }
     if (assignmentStatusTab !== "all") {
-      filtered = filtered.filter(assignment => assignment.status === assignmentStatusTab)
+      filtered = filtered.filter(assignment => {
+        return mapAssignmentStatus(assignment.status, 'lecturer') === assignmentStatusTab
+      })
     }
     // Sort by due date (most urgent first)
-    return filtered.sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())
+    return filtered.sort((a, b) => new Date(a.due_date).getTime() - new Date(b.due_date).getTime())
   }, [selectedClass, selectedCourse, assignmentStatusTab, assignments])
 
   const filteredSubmissions = useMemo(() => {
     if (!selectedAssignment) return []
-    return submissions.filter(submission => submission.assignmentId === selectedAssignment.id)
+    return submissions.filter(submission => submission.assignment_id === selectedAssignment.id)
   }, [selectedAssignment, submissions])
 
   const stats = useMemo(() => {
@@ -323,11 +181,15 @@ export default function HomeworkPage() {
     const gradedCount = filteredSubmissions.filter(s => s.status === "graded" || s.status === "late").length
     const averageGrade = gradedCount > 0 
       ? filteredSubmissions
-          .filter(s => s.finalGrade !== null)
-          .reduce((sum, s) => sum + (s.finalGrade || 0), 0) / gradedCount
+          .filter(s => s.final_grade !== null)
+          .reduce((sum, s) => sum + (s.final_grade || 0), 0) / gradedCount
       : 0
     const submissionRate = filteredAssignments.length > 0
-      ? filteredAssignments.reduce((sum, a) => sum + (a.submittedCount / a.totalStudents), 0) / filteredAssignments.length * 100
+      ? filteredAssignments.reduce((sum, a) => {
+          const assignmentSubmissions = submissions.filter(s => s.assignment_id === a.id)
+          const studentsInCourse = getStudentsByCourse(a.course_id).length
+          return sum + (assignmentSubmissions.length / Math.max(studentsInCourse, 1)) * 100
+        }, 0) / filteredAssignments.length
       : 0
 
     return {
@@ -336,12 +198,12 @@ export default function HomeworkPage() {
       averageGrade,
       submissionRate
     }
-  }, [filteredAssignments, filteredSubmissions])
+  }, [filteredAssignments, filteredSubmissions, submissions, getStudentsByCourse])
 
   const recentSubmissions = useMemo(() => {
     return submissions
       .slice()
-      .sort((a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime())
+      .sort((a, b) => new Date(b.submitted_at).getTime() - new Date(a.submitted_at).getTime())
       .slice(0, 10)
   }, [submissions])
 
@@ -358,28 +220,46 @@ export default function HomeworkPage() {
     setAssignmentForm({
       title: "",
       description: "",
-      dueDate: "",
-      totalPoints: 100,
-      latePenaltyEnabled: true,
-      latePenaltyPercent: 10,
-      latePenaltyInterval: "week"
+      due_date: "",
+      total_points: 100,
+      late_penalty_enabled: true,
+      late_penalty_percent: 10,
+      late_penalty_interval: "week"
     })
     setAssignmentDialogOpen(true)
   }
 
   const handleSaveAssignment = () => {
-    // Here you would save to database
-    console.log('Creating assignment:', assignmentForm)
+    if (!selectedCourse || !selectedClass) return
+    
+    // Create assignment using shared data context
+    createAssignment({
+      title: assignmentForm.title,
+      description: assignmentForm.description,
+      course_id: selectedCourse,
+      course_code: availableCourses.find(c => c.id === selectedCourse)?.course_code || "",
+      course_name: availableCourses.find(c => c.id === selectedCourse)?.course_name || "",
+      class_id: selectedClass,
+      class_name: classes.find(c => c.id === selectedClass)?.name || "",
+      due_date: assignmentForm.due_date,
+      total_points: assignmentForm.total_points,
+      late_penalty_enabled: assignmentForm.late_penalty_enabled,
+      late_penalty_percent: assignmentForm.late_penalty_percent,
+      late_penalty_interval: assignmentForm.late_penalty_interval,
+      category_id: state.gradeCategories[0]?.id || "category_1", // Default to first category
+      status: "published"
+    })
+    
     setAssignmentDialogOpen(false)
     // Reset form
     setAssignmentForm({
       title: "",
       description: "",
-      dueDate: "",
-      totalPoints: 100,
-      latePenaltyEnabled: true,
-      latePenaltyPercent: 10,
-      latePenaltyInterval: "week"
+      due_date: "",
+      total_points: 100,
+      late_penalty_enabled: true,
+      late_penalty_percent: 10,
+      late_penalty_interval: "week"
     })
   }
 
@@ -396,25 +276,19 @@ export default function HomeworkPage() {
     if (!selectedSubmission) return
     
     // Calculate late penalty if applicable
-    const assignment = assignments.find(a => a.id === selectedSubmission.assignmentId)
+    const assignment = assignments.find(a => a.id === selectedSubmission.assignment_id)
     let finalGrade = gradingForm.grade
     let latePenaltyApplied = 0
     
-    if (assignment?.latePenaltyEnabled && selectedSubmission.status === "late") {
-      const daysLate = Math.ceil((new Date(selectedSubmission.submittedAt).getTime() - new Date(assignment.dueDate).getTime()) / (1000 * 60 * 60 * 24))
-      const penaltyIntervals = assignment.latePenaltyInterval === "week" ? Math.ceil(daysLate / 7) : daysLate
-      latePenaltyApplied = penaltyIntervals * assignment.latePenaltyPercent
+    if (assignment?.late_penalty_enabled && selectedSubmission.status === "late") {
+      const daysLate = Math.ceil((new Date(selectedSubmission.submitted_at).getTime() - new Date(assignment.due_date).getTime()) / (1000 * 60 * 60 * 24))
+      const penaltyIntervals = assignment.late_penalty_interval === "week" ? Math.ceil(daysLate / 7) : daysLate
+      latePenaltyApplied = penaltyIntervals * assignment.late_penalty_percent
       finalGrade = Math.max(0, gradingForm.grade - latePenaltyApplied)
     }
 
-    // Here you would save to database and sync to gradebook
-    console.log('Grading submission:', {
-      submissionId: selectedSubmission.id,
-      grade: gradingForm.grade,
-      finalGrade,
-      latePenaltyApplied,
-      comments: gradingForm.comments
-    })
+    // Use shared data context to grade submission and sync to gradebook
+    gradeSubmission(selectedSubmission.id, gradingForm.grade, gradingForm.comments)
     
     setGradingDialogOpen(false)
     setSelectedSubmission(null)
@@ -422,16 +296,17 @@ export default function HomeworkPage() {
 
   const handleViewSubmissions = (assignment: Assignment) => {
     setSelectedAssignment(assignment)
+    setSelectedAssignmentId(assignment.id)
     setActiveTab(1) // Switch to submissions tab
   }
 
   const getStatusBadge = (status: string) => {
     switch (status) {
-      case "active":
+      case "published":
         return <Badge variant="default">Active</Badge>
-      case "completed":
+      case "closed":
         return <Badge variant="outline">Completed</Badge>
-      case "upcoming":
+      case "draft":
         return <Badge variant="secondary">Upcoming</Badge>
       case "graded":
         return <Badge variant="default">Graded</Badge>
@@ -503,7 +378,7 @@ export default function HomeworkPage() {
         gap: 16 / 4,
         '@media (min-width: 768px)': { gridTemplateColumns: 'repeat(4, minmax(0, 1fr))' }
       }}>
-        <StatCard title="Active Assignments" value={formatNumber(assignments.filter(a => a.status === 'active').length)} icon={AcademicCapIcon} color="#000000" change="Currently active" />
+        <StatCard title="Active Assignments" value={formatNumber(assignments.filter(a => a.status === 'published').length)} icon={AcademicCapIcon} color="#000000" change="Currently active" />
         <StatCard title="Due This Week" value={formatNumber(2)} icon={ClockIcon} color="#000000" change="Within 7 days" />
         <StatCard title="Avg Submission Rate" value={`${formatNumber(stats.submissionRate)}%`} icon={CheckCircleIcon} color="#000000" change="Across visible assignments" />
         <StatCard title="Pending Reviews" value={formatNumber(stats.pendingGrading)} icon={DocumentTextIcon} color="#000000" change="Awaiting grading" />
@@ -584,7 +459,7 @@ export default function HomeworkPage() {
             >
               <option value="">All Courses</option>
               {availableCourses.map(course => (
-                <option key={course.id} value={course.id}>{course.courseCode} • {course.courseName}</option>
+                <option key={course.id} value={course.id}>{course.course_code} • {course.course_name}</option>
               ))}
             </Select>
           </FormControl>
@@ -622,15 +497,15 @@ export default function HomeworkPage() {
               value="all" 
             />
             <Tab 
-              label={`Active (${assignments.filter(a => a.status === 'active').length})`} 
+              label={`Active (${assignments.filter(a => mapAssignmentStatus(a.status, 'lecturer') === 'active').length})`} 
               value="active" 
             />
             <Tab 
-              label={`Upcoming (${assignments.filter(a => a.status === 'upcoming').length})`} 
+              label={`Upcoming (${assignments.filter(a => mapAssignmentStatus(a.status, 'lecturer') === 'upcoming').length})`} 
               value="upcoming" 
             />
             <Tab 
-              label={`Completed (${assignments.filter(a => a.status === 'completed').length})`} 
+              label={`Completed (${assignments.filter(a => mapAssignmentStatus(a.status, 'lecturer') === 'completed').length})`} 
               value="completed" 
             />
           </Tabs>
@@ -661,25 +536,25 @@ export default function HomeworkPage() {
                       {assignment.title}
                     </Typography>
                     {(() => {
-                      const daysUntilDue = Math.ceil((new Date(assignment.dueDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))
-                      if (daysUntilDue < 0 && assignment.status === 'active') {
+                      const daysUntilDue = Math.ceil((new Date(assignment.due_date).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))
+                      if (daysUntilDue < 0 && mapAssignmentStatus(assignment.status, 'lecturer') === 'active') {
                         return <Chip label="OVERDUE" size="small" sx={{ bgcolor: 'hsl(var(--destructive))', color: 'white', fontSize: '0.75rem' }} />
-                      } else if (daysUntilDue <= 2 && assignment.status === 'active') {
+                      } else if (daysUntilDue <= 2 && mapAssignmentStatus(assignment.status, 'lecturer') === 'active') {
                         return <Chip label={`${daysUntilDue}d left`} size="small" sx={{ bgcolor: 'hsl(var(--warning))', color: 'white', fontSize: '0.75rem' }} />
-                      } else if (daysUntilDue <= 7 && assignment.status === 'active') {
+                      } else if (daysUntilDue <= 7 && mapAssignmentStatus(assignment.status, 'lecturer') === 'active') {
                         return <Chip label={`${daysUntilDue}d left`} size="small" sx={{ bgcolor: 'hsl(var(--muted))', color: 'hsl(var(--muted-foreground))', fontSize: '0.75rem' }} />
                       }
                       return null
                     })()}
                   </Box>
                   <Typography variant="body2" sx={{ fontFamily: 'DM Sans, sans-serif', color: 'muted-foreground' }}>
-                    {assignment.courseCode} - {assignment.courseName}
+                    {assignment.course_code} - {assignment.course_name}
                   </Typography>
                 </Box>
                 <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1 }}>
-                {getStatusBadge(assignment.status)}
+                {getStatusBadge(mapAssignmentStatus(assignment.status, 'lecturer'))}
                   <Typography variant="body2" sx={{ fontFamily: 'Poppins, sans-serif', fontWeight: 600, textAlign: 'right' }}>
-                    {formatNumber(assignment.totalPoints)} pts
+                    {formatNumber(assignment.total_points)} pts
                   </Typography>
                 </Box>
               </Box>
@@ -709,7 +584,11 @@ export default function HomeworkPage() {
                         strokeWidth={4}
                         fill="none"
                         strokeDasharray={`${2 * Math.PI * 25}`}
-                        strokeDashoffset={`${2 * Math.PI * 25 * (1 - (assignment.submittedCount / assignment.totalStudents))}`}
+                        strokeDashoffset={`${2 * Math.PI * 25 * (1 - (() => {
+                          const assignmentSubmissions = submissions.filter(s => s.assignment_id === assignment.id)
+                          const studentsInCourse = getStudentsByCourse(assignment.course_id).length
+                          return studentsInCourse > 0 ? assignmentSubmissions.length / studentsInCourse : 0
+                        })())}`}
                         strokeLinecap="round"
                         transform="rotate(-90 30 30)"
                       />
@@ -725,13 +604,24 @@ export default function HomeworkPage() {
                       justifyContent: 'center' 
                     }}>
                       <Typography variant="body2" sx={{ fontFamily: 'Poppins, sans-serif', fontWeight: 600, fontSize: '0.75rem' }}>
-                        {Math.round((assignment.submittedCount / assignment.totalStudents) * 100)}%
+                        {Math.round((() => {
+                          const assignmentSubmissions = submissions.filter(s => s.assignment_id === assignment.id)
+                          const studentsInCourse = getStudentsByCourse(assignment.course_id).length
+                          return studentsInCourse > 0 ? (assignmentSubmissions.length / studentsInCourse) * 100 : 0
+                        })())}%
                       </Typography>
                     </Box>
                 </Box>
                   <Box>
                     <Typography variant="body2" sx={{ fontFamily: 'Poppins, sans-serif', fontWeight: 600 }}>
-                      {formatNumber(assignment.submittedCount)} / {formatNumber(assignment.totalStudents)}
+                      {formatNumber((() => {
+                        const assignmentSubmissions = submissions.filter(s => s.assignment_id === assignment.id)
+                        const studentsInCourse = getStudentsByCourse(assignment.course_id).length
+                        return assignmentSubmissions.length
+                      })())} / {formatNumber((() => {
+                        const studentsInCourse = getStudentsByCourse(assignment.course_id).length
+                        return studentsInCourse
+                      })())}
                     </Typography>
                     <Typography variant="body2" sx={{ color: 'muted-foreground', fontFamily: 'DM Sans, sans-serif' }}>
                       submissions
@@ -743,7 +633,7 @@ export default function HomeworkPage() {
                     Due
                   </Typography>
                   <Typography variant="body2" sx={{ fontFamily: 'Poppins, sans-serif', fontWeight: 600 }}>
-                    {formatDate(assignment.dueDate)}
+                    {formatDate(assignment.due_date)}
                   </Typography>
                 </Box>
               </Box>
@@ -806,15 +696,15 @@ export default function HomeworkPage() {
             <TableBody>
               {recentSubmissions.map((submission) => (
                 <TableRow key={submission.id}>
-                  <TableCell sx={{ fontFamily: 'Poppins, sans-serif', fontWeight: 600 }}>{submission.studentName}</TableCell>
-                  <TableCell sx={{ fontFamily: 'DM Sans, sans-serif' }}>{submission.assignmentTitle}</TableCell>
-                  <TableCell sx={{ fontFamily: 'DM Sans, sans-serif' }}>{submission.courseCode}</TableCell>
-                  <TableCell sx={{ fontFamily: 'DM Sans, sans-serif' }}>{formatDate(submission.submittedAt)}</TableCell>
+                  <TableCell sx={{ fontFamily: 'Poppins, sans-serif', fontWeight: 600 }}>{submission.student_name}</TableCell>
+                  <TableCell sx={{ fontFamily: 'DM Sans, sans-serif' }}>{submission.assignment_id}</TableCell>
+                  <TableCell sx={{ fontFamily: 'DM Sans, sans-serif' }}>{assignments.find(a => a.id === submission.assignment_id)?.course_code || 'N/A'}</TableCell>
+                  <TableCell sx={{ fontFamily: 'DM Sans, sans-serif' }}>{formatDate(submission.submitted_at)}</TableCell>
                   <TableCell>
                     {submission.grade !== null ? (
                       <Box className="flex items-center gap-2">
                         <Typography sx={{ fontFamily: 'Poppins, sans-serif', fontWeight: 600 }}>{formatNumber(submission.grade)}</Typography>
-                        <Typography sx={{ color: 'muted-foreground' }}>/ {formatNumber(submission.maxGrade)}</Typography>
+                        <Typography sx={{ color: 'muted-foreground' }}>/ {formatNumber(submission.max_grade)}</Typography>
                       </Box>
                     ) : (
                       <Typography sx={{ color: 'muted-foreground' }}>-</Typography>
@@ -856,19 +746,19 @@ export default function HomeworkPage() {
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             <TextField label="Title" value={assignmentForm.title} onChange={(e) => setAssignmentForm(prev => ({ ...prev, title: e.target.value }))} fullWidth />
             <TextField label="Description" value={assignmentForm.description} onChange={(e) => setAssignmentForm(prev => ({ ...prev, description: e.target.value }))} multiline rows={3} fullWidth />
-            <TextField label="Due Date" type="date" value={assignmentForm.dueDate} onChange={(e) => setAssignmentForm(prev => ({ ...prev, dueDate: e.target.value }))} InputLabelProps={{ shrink: true }} fullWidth />
-            <TextField label="Total Points" type="number" value={assignmentForm.totalPoints} onChange={(e) => setAssignmentForm(prev => ({ ...prev, totalPoints: Number(e.target.value) }))} fullWidth />
-            <FormControlLabel control={<Switch checked={assignmentForm.latePenaltyEnabled} onChange={(e) => setAssignmentForm(prev => ({ ...prev, latePenaltyEnabled: e.target.checked }))} />} label="Enable Late Submission Penalty" />
-            {assignmentForm.latePenaltyEnabled && (
+            <TextField label="Due Date" type="date" value={assignmentForm.due_date} onChange={(e) => setAssignmentForm(prev => ({ ...prev, due_date: e.target.value }))} InputLabelProps={{ shrink: true }} fullWidth />
+            <TextField label="Total Points" type="number" value={assignmentForm.total_points} onChange={(e) => setAssignmentForm(prev => ({ ...prev, total_points: Number(e.target.value) }))} fullWidth />
+            <FormControlLabel control={<Switch checked={assignmentForm.late_penalty_enabled} onChange={(e) => setAssignmentForm(prev => ({ ...prev, late_penalty_enabled: e.target.checked }))} />} label="Enable Late Submission Penalty" />
+            {assignmentForm.late_penalty_enabled && (
               <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
-                <TextField label="Penalty (%) per interval" type="number" value={assignmentForm.latePenaltyPercent} onChange={(e) => setAssignmentForm(prev => ({ ...prev, latePenaltyPercent: Number(e.target.value) }))} fullWidth />
+                <TextField label="Penalty (%) per interval" type="number" value={assignmentForm.late_penalty_percent} onChange={(e) => setAssignmentForm(prev => ({ ...prev, late_penalty_percent: Number(e.target.value) }))} fullWidth />
                 <FormControl fullWidth>
                   <InputLabel id="penalty-interval-label">Interval</InputLabel>
                   <Select 
                     native 
                     labelId="penalty-interval-label" 
-                    value={assignmentForm.latePenaltyInterval} 
-                    onChange={(e) => setAssignmentForm(prev => ({ ...prev, latePenaltyInterval: (e.target as HTMLSelectElement).value as 'day' | 'week' }))}
+                    value={assignmentForm.late_penalty_interval} 
+                    onChange={(e) => setAssignmentForm(prev => ({ ...prev, late_penalty_interval: (e.target as HTMLSelectElement).value as 'day' | 'week' }))}
                   >
                     <option value="day">Per day</option>
                     <option value="week">Per week</option>

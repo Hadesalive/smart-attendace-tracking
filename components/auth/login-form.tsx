@@ -12,7 +12,11 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { signIn } from "@/lib/auth"
 import { GraduationCap } from "lucide-react"
 
-export default function LoginForm() {
+interface LoginFormProps {
+  redirectUrl?: string | null;
+}
+
+export default function LoginForm({ redirectUrl }: LoginFormProps) {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [loading, setLoading] = useState(false)
@@ -29,9 +33,11 @@ export default function LoginForm() {
     if (error) {
       setError(error.message)
     } else if (data.user) {
+      // Redirect to the specified URL or default dashboard
+      const redirectTo = redirectUrl || "/dashboard"
       // We are using a hard refresh here to ensure the new session cookie is sent to the server
       // and the middleware can correctly validate the user.
-      window.location.href = "/dashboard"
+      window.location.href = redirectTo
     }
 
     setLoading(false)

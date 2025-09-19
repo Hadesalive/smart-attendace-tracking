@@ -87,7 +87,8 @@ import {
 import { formatDate, formatNumber } from "@/lib/utils"
 import { TYPOGRAPHY_STYLES } from "@/lib/design/fonts"
 import { BUTTON_STYLES } from "@/lib/constants/admin-constants"
-import { supabase } from "@/lib/supabase"
+import { useData } from "@/lib/contexts/DataContext"
+import { useMockData } from "@/lib/hooks/useMockData"
 import PageHeader from "@/components/admin/PageHeader"
 import StatsGrid from "@/components/admin/StatsGrid"
 import SearchFilters from "@/components/admin/SearchFilters"
@@ -184,13 +185,11 @@ export default function CoursesPage() {
   // ============================================================================
   
   const router = useRouter()
-  const [courses, setCourses] = useState<Course[]>([])
-  const [stats, setStats] = useState<CourseStats>({
-    totalCourses: 0,
-    activeCourses: 0,
-    totalStudents: 0,
-    lecturers: 0
-  })
+  
+  // Data Context
+  const { state } = useData()
+  const { isInitialized } = useMockData()
+  
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedDepartment, setSelectedDepartment] = useState<string>("all")
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null)
@@ -198,52 +197,48 @@ export default function CoursesPage() {
   const [isAddCourseOpen, setAddCourseOpen] = useState(false)
   const [isEditCourseOpen, setEditCourseOpen] = useState(false)
   const [isDeleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
-  const [loading, setLoading] = useState(true)
 
   // ============================================================================
-  // DATA FETCHING
+  // COMPUTED DATA
   // ============================================================================
 
-  useEffect(() => {
-    fetchCourses()
-  }, [])
+  // Get courses from DataContext
+  const courses = useMemo(() => {
+    return state.courses.map(course => ({
+      id: course.id,
+      course_code: course.course_code,
+      course_name: course.course_name,
+      credits: course.credits || 3,
+      department: course.department || 'Computer Science',
+      lecturer_id: course.lecturer_id,
+      created_at: course.created_at,
+      status: 'active' as 'active' | 'inactive', // Default to active
+      users: {
+        full_name: course.lecturer_name || 'Not assigned',
+        email: '' // No lecturer email in Course type
+      },
+      _count: {
+        enrollments: state.enrollments.filter(e => e.course_id === course.id).length
+      }
+    }))
+  }, [state.courses, state.enrollments])
 
-  const fetchCourses = useCallback(async () => {
-    try {
-      setLoading(true)
-      const { data: courses, error } = await supabase
-        .from("courses")
-        .select(`
-          *,
-          users(full_name, email),
-          enrollments(count)
-        `)
-        .order("created_at", { ascending: false })
+  // Calculate stats from DataContext
+  const stats = useMemo(() => {
+    const totalCourses = courses.length
+    const activeCourses = courses.filter(c => c.status === 'active').length
+    
+    // Get unique lecturers
+    const lecturerIds = new Set(courses.map(c => c.lecturer_id).filter(Boolean))
+    const lecturers = lecturerIds.size
 
-      if (error) throw error
+    // Calculate total enrollments
+    const totalStudents = courses.reduce((acc, course) => {
+      return acc + (course._count?.enrollments || 0)
+    }, 0)
 
-      setCourses(courses || [])
-      
-      // Calculate stats
-      const totalCourses = courses?.length || 0
-      const activeCourses = courses?.filter(c => c.status === 'active').length || 0
-      
-      // Get unique lecturers
-      const lecturerIds = new Set(courses?.map(c => c.lecturer_id))
-      const lecturers = lecturerIds.size
-
-      // Calculate total enrollments
-      const totalStudents = courses?.reduce((acc, course) => {
-        return acc + (course.enrollments?.length || 0)
-      }, 0) || 0
-
-      setStats({ totalCourses, activeCourses, totalStudents, lecturers })
-    } catch (error) {
-      console.error("Error fetching courses:", error)
-    } finally {
-      setLoading(false)
-    }
-  }, [])
+    return { totalCourses, activeCourses, totalStudents, lecturers }
+  }, [courses])
 
   // ============================================================================
   // EVENT HANDLERS
@@ -284,24 +279,14 @@ export default function CoursesPage() {
     handleMenuClose()
   }, [selectedCourse, router, handleMenuClose])
 
-  const confirmDeleteCourse = useCallback(async () => {
+  const confirmDeleteCourse = useCallback(() => {
     if (!selectedCourse) return
 
-    try {
-      const { error } = await supabase
-        .from("courses")
-        .delete()
-        .eq("id", selectedCourse.id)
-
-      if (error) throw error
-
-      fetchCourses()
-      setDeleteConfirmOpen(false)
-      setSelectedCourse(null)
-    } catch (error) {
-      console.error("Error deleting course:", error)
-    }
-  }, [selectedCourse, fetchCourses])
+    // TODO: Implement delete course functionality in DataContext
+    console.log("Delete course:", selectedCourse.id)
+    setDeleteConfirmOpen(false)
+    setSelectedCourse(null)
+  }, [selectedCourse])
 
   // ============================================================================
   // MEMOIZED VALUES
@@ -462,6 +447,22 @@ export default function CoursesPage() {
       )
     }
   ]
+
+  // Loading state
+  if (!isInitialized) {
+    return (
+      <Box sx={{ p: { xs: 2, sm: 3 } }}>
+        <PageHeader
+          title="Course Management"
+          subtitle="Oversee all courses and academic programs"
+          actions={null}
+        />
+        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 400 }}>
+          <Typography variant="body1">Loading courses...</Typography>
+        </Box>
+      </Box>
+    )
+  }
 
   return (
     <Box sx={{ p: { xs: 2, sm: 3 } }}>

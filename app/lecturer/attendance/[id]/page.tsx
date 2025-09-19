@@ -1,11 +1,11 @@
 "use client"
 
-import React, { useMemo, useState } from "react"
+import React, { useMemo, useState, useEffect } from "react"
 import { motion } from "framer-motion"
 import { useParams } from "next/navigation"
 import { Box, Card as MUICard, CardContent as MUICardContent, Typography, Chip, Table, TableBody, TableCell, TableHead, TableRow, TableContainer, TextField, Checkbox, Button as MUIButton } from "@mui/material"
-import SessionQrCodeDialog from "@/components/attendance/session-qr-code-dialog"
 import { formatSeconds, exportRowsToCsv } from "@/lib/utils"
+import { useData } from "@/lib/contexts/DataContext"
 
 // ============================================================================
 // TYPES & CONSTANTS
@@ -376,27 +376,49 @@ interface StudentAttendance {
 export default function LecturerSessionAttendancePage() {
   const params = useParams()
   const sessionId = params?.id as string
+  const { state, fetchAttendanceRecords, fetchAttendanceSessions, updateAttendanceSessionSupabase } = useData()
 
-  // Mock session details
-  const session = {
-    id: sessionId,
-    courseCode: "CS101",
-    courseName: "Introduction to Computer Science",
-    className: "Lecture",
-    date: "2024-01-20",
-    startTime: "09:00",
-    endTime: "10:30",
-    location: "Room 201",
-    status: "scheduled" as LiveStatus
-  }
+  // Ensure data is available
+  useEffect(() => {
+    if (!state.attendanceSessions.length) fetchAttendanceSessions()
+    if (!state.attendanceRecords.length) fetchAttendanceRecords()
+  }, [state.attendanceSessions.length, state.attendanceRecords.length, fetchAttendanceSessions, fetchAttendanceRecords])
 
-  // Mock students attendance (stateful for bulk updates)
-  const [students, setStudents] = useState<StudentAttendance[]>([
-    { id: "s1", name: "John Doe", matric: "LIM-2023001", status: "present", checkInTime: "09:03" },
-    { id: "s2", name: "Jane Smith", matric: "LIM-2023002", status: "present", checkInTime: "09:01" },
-    { id: "s3", name: "Mike Johnson", matric: "LIM-2023003", status: "late", checkInTime: "09:18" },
-    { id: "s4", name: "Alice Brown", matric: "LIM-2023004", status: "absent" }
-  ])
+  // Read session details from shared state
+  const session = useMemo(() => {
+    const s = state.attendanceSessions.find(ss => ss.id === sessionId)
+    if (!s) return null
+    return {
+      id: s.id,
+      courseCode: s.course_code,
+      courseName: s.course_name,
+      className: s.class_name || "Lecture",
+      date: s.session_date,
+      startTime: s.start_time,
+      endTime: s.end_time,
+      location: s.location || "",
+      status: (s.status === 'active' ? 'active' : s.status === 'completed' ? 'closed' : 'scheduled') as LiveStatus,
+      qr_code: s.qr_code as string | undefined
+    }
+  }, [state.attendanceSessions, sessionId])
+
+  // Build students list from attendance records for this session
+  const [students, setStudents] = useState<StudentAttendance[]>([])
+  useEffect(() => {
+    const records = state.attendanceRecords.filter(r => r.session_id === sessionId)
+    if (records.length) {
+      const mapped = records.map(r => ({
+        id: r.student_id,
+        name: r.student_name || 'Student',
+        matric: r.student_id,
+        status: (r.status || 'present') as "present" | "late" | "absent",
+        checkInTime: r.check_in_time ? new Date(r.check_in_time).toLocaleTimeString() : undefined
+      }))
+      setStudents(mapped)
+    } else {
+      setStudents([])
+    }
+  }, [state.attendanceRecords, sessionId])
 
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const allSelected = selected.size > 0 && selected.size === students.length
@@ -455,10 +477,10 @@ export default function LecturerSessionAttendancePage() {
 
   // QR dialog state
   const [qrOpen, setQrOpen] = useState(false)
-  const qrSession = useMemo(() => ({ id: session.id, course_name: session.courseName, course_code: session.courseCode }), [session])
+  const qrSession = useMemo(() => session ? ({ id: session.id, course_name: session.courseName, course_code: session.courseCode, qr_code: (session as any).qr_code }) : null, [session])
 
   // Live controls state
-  const [liveStatus, setLiveStatus] = useState<LiveStatus>(session.status)
+  const [liveStatus, setLiveStatus] = useState<LiveStatus>(session?.status ?? 'scheduled')
   const [locked, setLocked] = useState(false)
   const [timeRemainingSec, setTimeRemainingSec] = useState<number>(() => 90 * 60)
 
@@ -469,16 +491,58 @@ export default function LecturerSessionAttendancePage() {
     return () => clearInterval(id)
   }, [liveStatus])
 
+  // Sync live status when session loads
+  useEffect(() => {
+    if (session) setLiveStatus(session.status)
+  }, [session])
+
   const startSession = () => {
     setLiveStatus('active')
     setLocked(false)
     setQrOpen(true)
   }
   const lockSession = () => setLocked(prev => !prev)
-  const extendSession = (minutes: number) => setTimeRemainingSec(prev => prev + minutes * 60)
+  const extendSession = async (minutes: number) => {
+    if (!session) return
+    
+    try {
+      // Calculate new end time
+      const currentEndTime = session.endTime
+      const [hours, mins] = currentEndTime.split(':').map(Number)
+      const currentEndMinutes = hours * 60 + mins
+      const newEndMinutes = currentEndMinutes + minutes
+      const newHours = Math.floor(newEndMinutes / 60)
+      const newMins = newEndMinutes % 60
+      const newEndTime = `${newHours.toString().padStart(2, '0')}:${newMins.toString().padStart(2, '0')}`
+      
+      // Update in database
+      await updateAttendanceSessionSupabase(session.id, {
+        end_time: newEndTime
+      })
+      
+      // Update local state
+      setTimeRemainingSec(prev => prev + minutes * 60)
+      
+      // Refresh sessions to get updated data
+      await fetchAttendanceSessions()
+    } catch (error) {
+      console.error('Error extending session:', error)
+    }
+  }
   const closeSession = () => {
     setLiveStatus('closed')
     setLocked(true)
+  }
+
+  if (!session) {
+    return (
+      <div className="space-y-4 sm:space-y-6">
+        <div className="px-1">
+          <h1 className="text-2xl sm:text-3xl font-bold">Session Attendance</h1>
+          <p className="text-muted-foreground text-sm sm:text-base">Session not found</p>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -727,7 +791,6 @@ export default function LecturerSessionAttendancePage() {
       )}
 
       {/* QR Dialog - Teachers show QR codes */}
-      <SessionQrCodeDialog isOpen={qrOpen} onOpenChange={setQrOpen} session={qrSession} />
     </div>
   )
 }

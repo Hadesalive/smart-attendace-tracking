@@ -16,6 +16,7 @@ interface DashboardLayoutProps {
   userName: string
   userRole: string
   className?: string
+  onSignOut?: () => void
 }
 
 interface BreakpointConfig {
@@ -213,16 +214,19 @@ const SidebarWrapper = ({
 const TopNavWrapper = ({ 
   onMenuClick, 
   userName, 
-  userRole 
+  userRole,
+  onSignOut
 }: { 
   onMenuClick: () => void
   userName: string
-  userRole: string 
+  userRole: string
+  onSignOut?: () => void
 }) => (
   <TopNav 
     onMenuClick={onMenuClick}
     userName={userName}
     userRole={userRole}
+    onSignOut={onSignOut}
   />
 )
 
@@ -249,7 +253,8 @@ export default function DashboardLayout({
   children, 
   userName, 
   userRole, 
-  className 
+  className,
+  onSignOut
 }: DashboardLayoutProps) {
   // ============================================================================
   // STATE & HOOKS
@@ -322,6 +327,7 @@ export default function DashboardLayout({
           onMenuClick={handleMenuClick}
           userName={userName}
           userRole={userRole}
+          onSignOut={onSignOut}
         />
         
         {/* Page Content */}

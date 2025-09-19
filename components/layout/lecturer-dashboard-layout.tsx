@@ -13,6 +13,7 @@ interface LecturerDashboardLayoutProps {
   children: React.ReactNode
   userName: string
   className?: string
+  onSignOut?: () => void
 }
 
 interface BreakpointConfig {
@@ -169,7 +170,8 @@ const PageContent = ({
 export default function LecturerDashboardLayout({ 
   children, 
   userName, 
-  className 
+  className,
+  onSignOut
 }: LecturerDashboardLayoutProps) {
   const {
     sidebarOpen,
@@ -208,6 +210,7 @@ export default function LecturerDashboardLayout({
           onMenuClick={handleMenuClick}
           userName={userName}
           userRole="Lecturer"
+          onSignOut={onSignOut}
         />
         
         {/* Page Content */}

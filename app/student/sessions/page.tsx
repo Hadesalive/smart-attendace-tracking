@@ -42,6 +42,10 @@ import {
   PresentationChartLineIcon
 } from "@heroicons/react/24/outline"
 import { formatDate, formatNumber } from "@/lib/utils"
+import { useData } from "@/lib/contexts/DataContext"
+import { useMockData } from "@/lib/hooks/useMockData"
+import { AttendanceSession, Course } from "@/lib/types/shared"
+import { mapSessionStatus } from "@/lib/utils/statusMapping"
 
 // ============================================================================
 // CONSTANTS
@@ -110,32 +114,9 @@ const INPUT_STYLES = {
 // TYPES
 // ============================================================================
 
-interface StudentSession {
-  id: string
-  title: string
-  courseCode: string
-  courseName: string
-  type: "lecture" | "tutorial" | "lab" | "quiz" | "exam" | "seminar"
-  date: string
-  startTime: string
-  endTime: string
-  location: string
-  instructor: string
-  status: "upcoming" | "active" | "completed" | "missed"
-  attendanceStatus: "present" | "absent" | "late" | "pending"
-  sessionCode?: string
-  materials?: string[]
-  description?: string
-  capacity: number
-  enrolled: number
-}
-
-interface Course {
-  id: string
-  courseCode: string
-  courseName: string
-  instructor: string
-}
+// Using shared types from DataContext
+// StudentSession is mapped from AttendanceSession
+// Course is imported from shared types
 
 // ============================================================================
 // COMPONENT
@@ -145,127 +126,77 @@ export default function StudentSessionsPage() {
   const router = useRouter()
   
   // ============================================================================
+  // DATA CONTEXT
+  // ============================================================================
+  
+  const { 
+    state, 
+    getCoursesByLecturer, 
+    getAttendanceSessionsByCourse,
+    getAttendanceRecordsBySession,
+    fetchCourses,
+    fetchEnrollments,
+    fetchAttendanceSessions,
+    fetchAttendanceRecords
+  } = useData()
+  const { isInitialized } = useMockData()
+  
+  // ============================================================================
   // STATE
   // ============================================================================
   
   const [selectedCourse, setSelectedCourse] = useState<string>("")
   const [statusTab, setStatusTab] = useState<"all" | "upcoming" | "active" | "completed">("all")
   const [searchQuery, setSearchQuery] = useState<string>("")
-  const [selectedSession, setSelectedSession] = useState<StudentSession | null>(null)
+  const [selectedSession, setSelectedSession] = useState<AttendanceSession | null>(null)
 
   // ============================================================================
-  // MOCK DATA
+  // EFFECTS
   // ============================================================================
 
-  const courses: Course[] = [
-    { id: "1", courseCode: "CS101", courseName: "Introduction to Computer Science", instructor: "Dr. Smith" },
-    { id: "2", courseCode: "MATH201", courseName: "Calculus II", instructor: "Prof. Johnson" },
-    { id: "3", courseCode: "ENG101", courseName: "English Composition", instructor: "Dr. Brown" },
-    { id: "4", courseCode: "PHYS101", courseName: "Physics I", instructor: "Dr. Wilson" },
-  ]
+  // Load data on component mount
+  React.useEffect(() => {
+    fetchCourses()
+    fetchEnrollments()
+    fetchAttendanceSessions()
+    fetchAttendanceRecords()
+  }, [fetchCourses, fetchEnrollments, fetchAttendanceSessions, fetchAttendanceRecords])
 
-  const sessions: StudentSession[] = [
-    {
-      id: "1",
-      title: "Introduction to Programming",
-      courseCode: "CS101",
-      courseName: "Introduction to Computer Science",
-      type: "lecture",
-      date: "2024-01-22T10:00:00",
-      startTime: "10:00",
-      endTime: "11:30",
-      location: "Room 101",
-      instructor: "Dr. Smith",
-      status: "upcoming",
-      attendanceStatus: "pending",
-      sessionCode: "CS101-001",
-      capacity: 50,
-      enrolled: 45,
-      description: "Basic programming concepts and syntax"
-    },
-    {
-      id: "2",
-      title: "Data Structures Lab",
-      courseCode: "CS101",
-      courseName: "Introduction to Computer Science",
-      type: "lab",
-      date: "2024-01-22T14:00:00",
-      startTime: "14:00",
-      endTime: "16:00",
-      location: "Lab 201",
-      instructor: "Dr. Smith",
-      status: "active",
-      attendanceStatus: "pending",
-      sessionCode: "CS101-LAB-002",
-      capacity: 25,
-      enrolled: 23
-    },
-    {
-      id: "3",
-      title: "Derivatives and Applications",
-      courseCode: "MATH201",
-      courseName: "Calculus II",
-      type: "lecture",
-      date: "2024-01-21T09:00:00",
-      startTime: "09:00",
-      endTime: "10:30",
-      location: "Room 301",
-      instructor: "Prof. Johnson",
-      status: "completed",
-      attendanceStatus: "present",
-      capacity: 60,
-      enrolled: 55
-    },
-    {
-      id: "4",
-      title: "Integration Techniques",
-      courseCode: "MATH201",
-      courseName: "Calculus II",
-      type: "tutorial",
-      date: "2024-01-20T11:00:00",
-      startTime: "11:00",
-      endTime: "12:00",
-      location: "Room 302",
-      instructor: "Prof. Johnson",
-      status: "completed",
-      attendanceStatus: "late",
-      capacity: 30,
-      enrolled: 28
-    },
-    {
-      id: "5",
-      title: "Essay Writing Workshop",
-      courseCode: "ENG101",
-      courseName: "English Composition",
-      type: "seminar",
-      date: "2024-01-19T13:00:00",
-      startTime: "13:00",
-      endTime: "15:00",
-      location: "Room 205",
-      instructor: "Dr. Brown",
-      status: "completed",
-      attendanceStatus: "absent",
-      capacity: 20,
-      enrolled: 18
-    },
-    {
-      id: "6",
-      title: "Mechanics Quiz",
-      courseCode: "PHYS101",
-      courseName: "Physics I",
-      type: "quiz",
-      date: "2024-01-23T15:00:00",
-      startTime: "15:00",
-      endTime: "16:00",
-      location: "Room 401",
-      instructor: "Dr. Wilson",
-      status: "upcoming",
-      attendanceStatus: "pending",
-      sessionCode: "PHYS101-QUIZ-001",
-      capacity: 40,
-      enrolled: 38
-    }
-  ]
+  // ============================================================================
+  // COMPUTED DATA
+  // ============================================================================
+
+  // Get student's courses (based on authenticated user)
+  const courses = useMemo(() => {
+    console.log('Student Sessions - State data:', {
+      courses: state.courses.length,
+      enrollments: state.enrollments.length,
+      attendanceSessions: state.attendanceSessions.length
+    })
+    
+    const filteredCourses = state.courses.filter(course => 
+      state.enrollments.some(enrollment => 
+        (!!state.currentUser?.id && enrollment.student_id === state.currentUser.id) && enrollment.course_id === course.id
+      )
+    )
+    
+    console.log('Student Sessions - Filtered courses:', filteredCourses.length)
+    return filteredCourses
+  }, [state.courses, state.enrollments, state.currentUser?.id])
+
+  // Get student's sessions from shared data
+  const sessions = useMemo(() => {
+    const allSessions: AttendanceSession[] = []
+    
+    courses.forEach(course => {
+      const courseSessions = getAttendanceSessionsByCourse(course.id)
+      console.log(`Student Sessions - Course ${course.course_code} sessions:`, courseSessions.length)
+      allSessions.push(...courseSessions)
+    })
+    
+    console.log('Student Sessions - Total sessions:', allSessions.length)
+    return allSessions
+  }, [courses, getAttendanceSessionsByCourse])
 
   // ============================================================================
   // COMPUTED VALUES
@@ -276,69 +207,95 @@ export default function StudentSessionsPage() {
     
     // Filter by course
     if (selectedCourse) {
-      filtered = filtered.filter(session => session.courseCode === selectedCourse)
+      filtered = filtered.filter(session => session.course_code === selectedCourse)
     }
     
-    // Filter by status
+    // Filter by status (map shared status to student display status)
     if (statusTab !== "all") {
-      filtered = filtered.filter(session => session.status === statusTab)
+      filtered = filtered.filter(session => {
+        const studentStatus = mapSessionStatus(session.status, 'student')
+        return studentStatus === statusTab
+      })
     }
     
     // Filter by search query
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase()
       filtered = filtered.filter(session => 
-        session.title.toLowerCase().includes(query) ||
-        session.courseCode.toLowerCase().includes(query) ||
-        session.courseName.toLowerCase().includes(query) ||
-        session.instructor.toLowerCase().includes(query)
+        session.session_name.toLowerCase().includes(query) ||
+        session.course_code.toLowerCase().includes(query) ||
+        session.course_name.toLowerCase().includes(query) ||
+        (session.lecturer_name || '').toLowerCase().includes(query)
       )
     }
     
     // Sort by date (most recent first for completed, soonest first for upcoming)
     return filtered.sort((a, b) => {
-      if (a.status === 'upcoming' || a.status === 'active') {
-        return new Date(a.date).getTime() - new Date(b.date).getTime()
+      if (mapSessionStatus(a.status, 'student') === 'upcoming' || mapSessionStatus(a.status, 'student') === 'active') {
+        return new Date(a.session_date).getTime() - new Date(b.session_date).getTime()
       }
-      return new Date(b.date).getTime() - new Date(a.date).getTime()
+      return new Date(b.session_date).getTime() - new Date(a.session_date).getTime()
     })
-  }, [selectedCourse, statusTab, searchQuery])
+  }, [selectedCourse, statusTab, searchQuery, sessions])
 
   const stats = useMemo(() => {
     const totalSessions = sessions.length
-    const upcomingSessions = sessions.filter(s => s.status === "upcoming").length
-    const activeSessions = sessions.filter(s => s.status === "active").length
-    const completedSessions = sessions.filter(s => s.status === "completed").length
+    const upcomingSessions = sessions.filter(s => mapSessionStatus(s.status, 'student') === "upcoming").length
+    const activeSessions = sessions.filter(s => mapSessionStatus(s.status, 'student') === "active").length
+    const completedSessions = sessions.filter(s => mapSessionStatus(s.status, 'student') === "completed").length
     
-    const attendedSessions = sessions.filter(s => s.attendanceStatus === "present" || s.attendanceStatus === "late").length
+    // Calculate attendance rate from attendance records
+    const completedSessionsWithRecords = sessions.filter(s => mapSessionStatus(s.status, 'student') === "completed")
+    let attendedSessions = 0
+    
+    completedSessionsWithRecords.forEach(session => {
+      const records = getAttendanceRecordsBySession(session.id)
+      const studentRecord = records.find(r => !!state.currentUser?.id && r.student_id === state.currentUser.id)
+      if (studentRecord && (studentRecord.status === "present" || studentRecord.status === "late")) {
+        attendedSessions++
+      }
+    })
+    
     const attendanceRate = completedSessions > 0 ? (attendedSessions / completedSessions) * 100 : 0
 
     return {
       totalSessions,
       upcomingSessions,
       activeSessions,
-      attendanceRate
+      completedSessions,
+      attendanceRate: Math.round(attendanceRate)
     }
-  }, [sessions])
+  }, [sessions, getAttendanceRecordsBySession])
 
   const urgentSessions = useMemo(() => {
     const now = new Date()
     const nextHour = new Date(now.getTime() + 60 * 60 * 1000)
     
     const dueSoon = sessions.filter(session => {
-      const sessionDate = new Date(session.date)
-      return sessionDate <= nextHour && session.status === 'upcoming'
+      const sessionDate = new Date(session.session_date)
+      return sessionDate <= nextHour && mapSessionStatus(session.status, 'student') === 'upcoming'
     })
     
-    const active = sessions.filter(s => s.status === "active")
-    const missed = sessions.filter(s => s.attendanceStatus === "absent").length
+    const active = sessions.filter(s => mapSessionStatus(s.status, 'student') === "active")
+    
+    // Calculate missed sessions
+    const completedSessionsWithRecords = sessions.filter(s => mapSessionStatus(s.status, 'student') === "completed")
+    let missed = 0
+    
+    completedSessionsWithRecords.forEach(session => {
+      const records = getAttendanceRecordsBySession(session.id)
+      const studentRecord = records.find(r => !!state.currentUser?.id && r.student_id === state.currentUser.id)
+      if (studentRecord && studentRecord.status === "absent") {
+        missed++
+      }
+    })
     
     return {
       dueSoon: dueSoon.slice(0, 3),
       active: active.slice(0, 3),
       missed
     }
-  }, [sessions])
+  }, [sessions, getAttendanceRecordsBySession])
 
   // ============================================================================
   // HANDLERS
@@ -348,7 +305,7 @@ export default function StudentSessionsPage() {
     router.push(`/student/sessions/${sessionId}`)
   }
 
-  const handleJoinSession = (session: StudentSession) => {
+  const handleJoinSession = (session: AttendanceSession) => {
     // Always redirect to QR code scanning for attendance
     router.push(`/student/scan-attendance?sessionId=${session.id}`)
   }
@@ -364,30 +321,30 @@ export default function StudentSessionsPage() {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "upcoming":
-        return <Badge variant="secondary">Upcoming</Badge>
+        return <Chip label="Upcoming" sx={{ bgcolor: '#666666', color: 'white', fontWeight: 600, border: '1px solid #000000' }} />
       case "active":
-        return <Badge variant="default" className="bg-green-500">Active</Badge>
+        return <Chip label="Active" sx={{ bgcolor: '#000000', color: 'white', fontWeight: 600, border: '1px solid #000000' }} />
       case "completed":
-        return <Badge variant="outline">Completed</Badge>
+        return <Chip label="Completed" sx={{ bgcolor: '#333333', color: 'white', fontWeight: 600, border: '1px solid #000000' }} />
       case "missed":
-        return <Badge variant="destructive">Missed</Badge>
+        return <Chip label="Missed" sx={{ bgcolor: '#999999', color: 'white', fontWeight: 600, border: '1px solid #000000' }} />
       default:
-        return <Badge variant="secondary">{status}</Badge>
+        return <Chip label={status} sx={{ bgcolor: '#cccccc', color: 'white', fontWeight: 600, border: '1px solid #000000' }} />
     }
   }
 
   const getAttendanceBadge = (status: string) => {
     switch (status) {
       case "present":
-        return <Badge variant="default" className="bg-green-500">Present</Badge>
+        return <Chip label="Present" sx={{ bgcolor: '#000000', color: 'white', fontWeight: 600, border: '1px solid #000000' }} />
       case "late":
-        return <Badge variant="default" className="bg-yellow-500">Late</Badge>
+        return <Chip label="Late" sx={{ bgcolor: '#666666', color: 'white', fontWeight: 600, border: '1px solid #000000' }} />
       case "absent":
-        return <Badge variant="destructive">Absent</Badge>
+        return <Chip label="Absent" sx={{ bgcolor: '#999999', color: 'white', fontWeight: 600, border: '1px solid #000000' }} />
       case "pending":
-        return <Badge variant="secondary">Pending</Badge>
+        return <Chip label="Pending" sx={{ bgcolor: '#cccccc', color: 'white', fontWeight: 600, border: '1px solid #000000' }} />
       default:
-        return <Badge variant="secondary">{status}</Badge>
+        return <Chip label={status} sx={{ bgcolor: '#cccccc', color: 'white', fontWeight: 600, border: '1px solid #000000' }} />
     }
   }
 
@@ -560,10 +517,10 @@ export default function StudentSessionsPage() {
               >
                 <option value="">All Courses ({sessions.length} sessions)</option>
                 {courses.map(course => {
-                  const courseSessions = sessions.filter(s => s.courseCode === course.courseCode)
+                  const courseSessions = sessions.filter(s => s.course_code === course.course_code)
                   return (
-                    <option key={course.id} value={course.courseCode}>
-                      {course.courseCode} • {course.courseName} ({courseSessions.length} sessions)
+                    <option key={course.id} value={course.course_code}>
+                      {course.course_code} • {course.course_name} ({courseSessions.length} sessions)
                     </option>
                   )
                 })}
@@ -614,9 +571,9 @@ export default function StudentSessionsPage() {
             }}
           >
             <Tab label={`All (${filteredSessions.length})`} value="all" />
-            <Tab label={`Upcoming (${filteredSessions.filter(s => s.status === 'upcoming').length})`} value="upcoming" />
-            <Tab label={`Active (${filteredSessions.filter(s => s.status === 'active').length})`} value="active" />
-            <Tab label={`Completed (${filteredSessions.filter(s => s.status === 'completed').length})`} value="completed" />
+            <Tab label={`Upcoming (${filteredSessions.filter(s => mapSessionStatus(s.status, 'student') === 'upcoming').length})`} value="upcoming" />
+            <Tab label={`Active (${filteredSessions.filter(s => mapSessionStatus(s.status, 'student') === 'active').length})`} value="active" />
+            <Tab label={`Completed (${filteredSessions.filter(s => mapSessionStatus(s.status, 'student') === 'completed').length})`} value="completed" />
           </Tabs>
         </MUICardContent>
       </MUICard>
@@ -725,9 +682,9 @@ export default function StudentSessionsPage() {
                         color: 'hsl(var(--card-foreground))',
                         fontSize: { xs: '1rem', sm: '1.125rem' }
                       }}>
-                        {getSessionTypeIcon(session.type)} {session.title}
+                        {getSessionTypeIcon(session.type || 'lecture')} {session.session_name}
                       </Typography>
-                      {session.status === 'active' && (
+                      {mapSessionStatus(session.status, 'student') === 'active' && (
                         <Chip label="LIVE NOW" size="small" sx={{ bgcolor: 'hsl(var(--success))', color: 'white', fontSize: '0.75rem', fontWeight: 600 }} />
                       )}
                     </Box>
@@ -736,13 +693,13 @@ export default function StudentSessionsPage() {
                       mb: 0.5,
                       fontSize: { xs: '0.875rem', sm: '0.875rem' }
                     }}>
-                      {session.courseCode} - {session.courseName}
+                      {session.course_code} - {session.course_name}
                     </Typography>
                     <Typography variant="body2" sx={{ 
                       color: 'hsl(var(--muted-foreground))', 
                       fontSize: { xs: '0.875rem', sm: '0.875rem' }
                     }}>
-                      {session.instructor}
+                      {session.lecturer_name || 'TBD'}
                     </Typography>
                   </Box>
                   <Box sx={{ 
@@ -753,8 +710,12 @@ export default function StudentSessionsPage() {
                     width: { xs: '100%', sm: 'auto' },
                     justifyContent: { xs: 'space-between', sm: 'flex-end' }
                   }}>
-                    {getStatusBadge(session.status)}
-                    {session.status === 'completed' && getAttendanceBadge(session.attendanceStatus)}
+                    {getStatusBadge(mapSessionStatus(session.status, 'student'))}
+                    {mapSessionStatus(session.status, 'student') === 'completed' && (() => {
+                      const records = getAttendanceRecordsBySession(session.id)
+                      const studentRecord = records.find(r => !!state.currentUser?.id && r.student_id === state.currentUser.id)
+                      return studentRecord ? getAttendanceBadge(studentRecord.status) : null
+                    })()}
                   </Box>
                 </Box>
 
@@ -773,7 +734,7 @@ export default function StudentSessionsPage() {
                         color: 'hsl(var(--muted-foreground))',
                         fontSize: { xs: '0.875rem', sm: '0.875rem' }
                       }}>
-                        {formatDate(session.date)}
+                        {formatDate(session.session_date)}
                       </Typography>
                     </Box>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -782,7 +743,7 @@ export default function StudentSessionsPage() {
                         color: 'hsl(var(--muted-foreground))',
                         fontSize: { xs: '0.875rem', sm: '0.875rem' }
                       }}>
-                        {session.startTime} - {session.endTime}
+                        {session.start_time} - {session.end_time}
                       </Typography>
                     </Box>
                   </Box>
@@ -802,7 +763,7 @@ export default function StudentSessionsPage() {
                         color: 'hsl(var(--muted-foreground))',
                         fontSize: { xs: '0.875rem', sm: '0.875rem' }
                       }}>
-                        {session.enrolled}/{session.capacity} students
+                        {session.enrolled || 0}/{session.capacity || 0} students
                       </Typography>
                     </Box>
                   </Box>
@@ -814,7 +775,7 @@ export default function StudentSessionsPage() {
                   gap: { xs: 1.5, sm: 2 }, 
                   pt: 1 
                 }}>
-                  {(session.status === 'upcoming' || session.status === 'active') && (
+                  {(mapSessionStatus(session.status, 'student') === 'upcoming' || mapSessionStatus(session.status, 'student') === 'active') && (
                     <MUIButton 
                       variant="contained"
                       size="small" 

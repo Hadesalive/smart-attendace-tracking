@@ -24,7 +24,11 @@ import {
   TableBody,
   TableCell,
   TableHead,
-  TableRow
+  TableRow,
+  CircularProgress,
+  Skeleton,
+  Alert,
+  AlertTitle
 } from "@mui/material"
 import StatCard from "@/components/dashboard/stat-card"
 import { Badge } from "@/components/ui/badge"
@@ -50,6 +54,8 @@ import {
   GlobeAltIcon
 } from "@heroicons/react/24/outline"
 import { formatDate, formatNumber } from "@/lib/utils"
+import { useData } from "@/lib/contexts/DataContext"
+import { useMockData } from "@/lib/hooks/useMockData"
 
 // Constants
 const CARD_SX = {
@@ -183,19 +189,82 @@ export default function StudentProfilePage() {
   const [isEditing, setIsEditing] = useState(false)
   const [editingSection, setEditingSection] = useState<string | null>(null)
 
-  // Mock data
+  // Data Context
+  const { state, getStudentGradesByCourse, calculateFinalGrade } = useData()
+  const { isInitialized } = useMockData()
+
+  // Get student data from DataContext
+  const studentId = "user_1" // Assuming current user is student with ID "user_1"
+  const student = state.students.find(s => s.id === studentId)
+  
+  // Calculate stats from DataContext
+  const studentStats = useMemo(() => {
+    const courses = state.courses.filter(course => 
+      state.enrollments.some(enrollment => 
+        enrollment.student_id === studentId && enrollment.course_id === course.id
+      )
+    )
+    
+    const assignments = courses.flatMap(course => 
+      state.assignments.filter(assignment => assignment.course_id === course.id)
+    )
+    
+    const submissions = assignments.flatMap(assignment =>
+      state.submissions.filter(submission => 
+        submission.student_id === studentId && submission.assignment_id === assignment.id
+      )
+    )
+    
+    // Calculate attendance rate
+    const sessions = courses.flatMap(course =>
+      state.attendanceSessions.filter(session => session.course_id === course.id)
+    )
+    
+    const attendanceRecords = sessions.flatMap(session =>
+      state.attendanceRecords.filter(record => 
+        record.student_id === studentId && record.session_id === session.id
+      )
+    )
+    
+    const presentRecords = attendanceRecords.filter(record => 
+      record.status === 'present' || record.status === 'late'
+    )
+    
+    const attendanceRate = attendanceRecords.length > 0 
+      ? Math.round((presentRecords.length / attendanceRecords.length) * 100)
+      : 0
+    
+    // Calculate average grade
+    const grades = courses.flatMap(course => getStudentGradesByCourse(studentId, course.id))
+    const averageGrade = grades.length > 0
+      ? Math.round(grades.reduce((sum, grade) => sum + grade.percentage, 0) / grades.length)
+      : 0
+
+    return {
+      totalCourses: courses.length,
+      activeCourses: courses.filter(c => c.status === 'active').length,
+      completedCourses: courses.filter(c => c.status === 'completed').length,
+      overallAttendanceRate: attendanceRate,
+      averageGrade,
+      totalAssignments: assignments.length,
+      submittedAssignments: submissions.length,
+      achievements: 12 // Mock value for now
+    }
+  }, [state, getStudentGradesByCourse, studentId])
+
+  // Create profile from DataContext data
   const profile: StudentProfile = {
-    id: "student-123",
-    studentId: "STU2024001",
-    firstName: "Alex",
-    lastName: "Johnson",
-    email: "alex.johnson@university.edu",
-    phone: "+1 (555) 123-4567",
-    dateOfBirth: "2002-03-15",
-    gender: "Non-binary",
-    nationality: "American",
+    id: student?.id || "student-123",
+    studentId: student?.student_id || "STU2024001",
+    firstName: student?.first_name || "Alex",
+    lastName: student?.last_name || "Johnson",
+    email: student?.email || "alex.johnson@university.edu",
+    phone: student?.phone || "+1 (555) 123-4567",
+    dateOfBirth: student?.date_of_birth || "2002-03-15",
+    gender: student?.gender || "Non-binary",
+    nationality: student?.nationality || "American",
     address: {
-      street: "123 University Ave, Apt 4B",
+      street: student?.address || "123 University Ave, Apt 4B",
       city: "College Town",
       state: "CA",
       zipCode: "90210",
@@ -208,7 +277,7 @@ export default function StudentProfilePage() {
     minor: "Mathematics",
     academicYear: "Junior",
     semester: "Fall 2024",
-    enrollmentDate: "2022-08-15",
+    enrollmentDate: student?.created_at || "2022-08-15",
     expectedGraduation: "2026-05-15",
     gpa: 3.75,
     credits: {
@@ -217,16 +286,7 @@ export default function StudentProfilePage() {
       required: 120
     },
     
-    stats: {
-      totalCourses: 24,
-      activeCourses: 5,
-      completedCourses: 19,
-      overallAttendanceRate: 92,
-      averageGrade: 87,
-      totalAssignments: 156,
-      submittedAssignments: 148,
-      achievements: 12
-    },
+    stats: studentStats,
     
     preferences: {
       notifications: {
@@ -351,11 +411,11 @@ export default function StudentProfilePage() {
   const getActivityColor = (status: string) => {
     switch (status) {
       case 'success':
-        return 'text-green-600'
+        return 'text-gray-600'
       case 'warning':
-        return 'text-yellow-600'
+        return 'text-gray-600'
       case 'info':
-        return 'text-blue-600'
+        return 'text-gray-600'
       default:
         return 'text-gray-600'
     }
@@ -363,15 +423,21 @@ export default function StudentProfilePage() {
 
   const getCategoryBadge = (category: string) => {
     const colors = {
-      academic: "bg-blue-500",
-      attendance: "bg-green-500", 
-      participation: "bg-purple-500",
-      special: "bg-orange-500"
+      academic: "#000000",
+      attendance: "#333333", 
+      participation: "#666666",
+      special: "#999999"
     }
     return (
-      <Badge variant="default" className={colors[category as keyof typeof colors] || "bg-gray-500"}>
-        {category.charAt(0).toUpperCase() + category.slice(1)}
-      </Badge>
+      <Chip 
+        label={category.charAt(0).toUpperCase() + category.slice(1)}
+        sx={{ 
+          bgcolor: colors[category as keyof typeof colors] || "#cccccc",
+          color: 'white',
+          fontWeight: 600,
+          border: '1px solid #000000'
+        }}
+      />
     )
   }
 
@@ -1325,6 +1391,41 @@ export default function StudentProfilePage() {
       </MUICard>
     </div>
   )
+
+  // Loading state
+  if (!isInitialized) {
+    return (
+      <div className="space-y-6">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div className="flex-1 min-w-0">
+            <Skeleton variant="text" width={300} height={40} />
+            <Skeleton variant="text" width={400} height={20} />
+          </div>
+        </div>
+        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 400 }}>
+          <CircularProgress sx={{ color: '#000000' }} />
+        </Box>
+      </div>
+    )
+  }
+
+  // Error state
+  if (!student) {
+    return (
+      <div className="space-y-6">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div className="flex-1 min-w-0">
+            <h1 className="text-2xl sm:text-3xl font-bold font-poppins">My Profile</h1>
+            <p className="text-muted-foreground font-dm-sans">Manage your personal information and account settings</p>
+          </div>
+        </div>
+        <Alert severity="error" sx={{ borderColor: '#000000', bgcolor: '#f5f5f5' }}>
+          <AlertTitle>Profile Not Found</AlertTitle>
+          Unable to load your profile information. Please try refreshing the page or contact support if the issue persists.
+        </Alert>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">

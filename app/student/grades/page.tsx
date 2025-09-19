@@ -45,59 +45,19 @@ import {
   CalendarDaysIcon
 } from "@heroicons/react/24/outline"
 import { formatDate, formatNumber } from "@/lib/utils"
+import { useData } from "@/lib/contexts/DataContext"
+import { useMockData } from "@/lib/hooks/useMockData"
+import { Course, StudentGrade, CourseGradeSummary, GradeCategory } from "@/lib/types/shared"
+import { mapSubmissionStatus } from "@/lib/utils/statusMapping"
 
 // ============================================================================
 // TYPES
 // ============================================================================
 
-interface Grade {
-  id: string
-  assignmentId: string
-  assignmentTitle: string
-  courseId: string
-  courseCode: string
-  courseName: string
-  points: number
-  maxPoints: number
-  percentage: number
-  letterGrade: string
-  category: string
-  submittedAt: string
-  gradedAt: string
-  feedback: string
-  isLate: boolean
-  latePenalty: number
-}
-
-interface CourseGrade {
-  courseId: string
-  courseCode: string
-  courseName: string
-  instructor: string
-  credits: number
-  currentGrade: number
-  letterGrade: string
-  categoryGrades: {
-    [category: string]: {
-      points: number
-      maxPoints: number
-      percentage: number
-      weight: number
-    }
-  }
-  assignments: Grade[]
-  lastUpdated: string
-}
-
-interface GradeStats {
-  totalCourses: number
-  averageGrade: number
-  gpa: number
-  totalCredits: number
-  completedCredits: number
-  assignmentsGraded: number
-  assignmentsPending: number
-}
+// Using shared types from DataContext
+// Grade is mapped from StudentGrade
+// CourseGrade is mapped from CourseGradeSummary
+// GradeStats is computed from shared data
 
 // ============================================================================
 // CONSTANTS
@@ -132,231 +92,170 @@ const BUTTON_STYLES = {
 }
 
 const GRADE_CATEGORIES = [
-  { name: 'Class Work', weight: 20, color: '#3B82F6' },
-  { name: 'Homework', weight: 30, color: '#10B981' },
-  { name: 'Group Projects', weight: 20, color: '#F59E0B' },
-  { name: 'Tests', weight: 15, color: '#EF4444' },
-  { name: 'Exams', weight: 10, color: '#8B5CF6' },
-  { name: 'Attendance', weight: 5, color: '#6B7280' }
+  { name: 'Class Work', weight: 20, color: '#000000' },
+  { name: 'Homework', weight: 30, color: '#333333' },
+  { name: 'Group Projects', weight: 20, color: '#666666' },
+  { name: 'Tests', weight: 15, color: '#999999' },
+  { name: 'Exams', weight: 10, color: '#cccccc' },
+  { name: 'Attendance', weight: 5, color: '#000000' }
 ]
 
 const LETTER_GRADES = [
-  { letter: 'A+', min: 97, max: 100, points: 4.0, color: '#10B981' },
-  { letter: 'A', min: 93, max: 96, points: 4.0, color: '#10B981' },
-  { letter: 'A-', min: 90, max: 92, points: 3.7, color: '#10B981' },
-  { letter: 'B+', min: 87, max: 89, points: 3.3, color: '#3B82F6' },
-  { letter: 'B', min: 83, max: 86, points: 3.0, color: '#3B82F6' },
-  { letter: 'B-', min: 80, max: 82, points: 2.7, color: '#3B82F6' },
-  { letter: 'C+', min: 77, max: 79, points: 2.3, color: '#F59E0B' },
-  { letter: 'C', min: 73, max: 76, points: 2.0, color: '#F59E0B' },
-  { letter: 'C-', min: 70, max: 72, points: 1.7, color: '#F59E0B' },
-  { letter: 'D+', min: 67, max: 69, points: 1.3, color: '#EF4444' },
-  { letter: 'D', min: 63, max: 66, points: 1.0, color: '#EF4444' },
-  { letter: 'D-', min: 60, max: 62, points: 0.7, color: '#EF4444' },
-  { letter: 'F', min: 0, max: 59, points: 0.0, color: '#6B7280' }
+  { letter: 'A+', min: 97, max: 100, points: 4.0, color: '#000000' },
+  { letter: 'A', min: 93, max: 96, points: 4.0, color: '#000000' },
+  { letter: 'A-', min: 90, max: 92, points: 3.7, color: '#000000' },
+  { letter: 'B+', min: 87, max: 89, points: 3.3, color: '#333333' },
+  { letter: 'B', min: 83, max: 86, points: 3.0, color: '#333333' },
+  { letter: 'B-', min: 80, max: 82, points: 2.7, color: '#333333' },
+  { letter: 'C+', min: 77, max: 79, points: 2.3, color: '#666666' },
+  { letter: 'C', min: 73, max: 76, points: 2.0, color: '#666666' },
+  { letter: 'C-', min: 70, max: 72, points: 1.7, color: '#666666' },
+  { letter: 'D+', min: 67, max: 69, points: 1.3, color: '#999999' },
+  { letter: 'D', min: 63, max: 66, points: 1.0, color: '#999999' },
+  { letter: 'D-', min: 60, max: 62, points: 0.7, color: '#999999' },
+  { letter: 'F', min: 0, max: 59, points: 0.0, color: '#cccccc' }
 ]
 
 // ============================================================================
-// MOCK DATA
+// MOCK DATA (REMOVED - USING SHARED DATA CONTEXT)
 // ============================================================================
 
-const mockGrades: Grade[] = [
-  {
-    id: "1",
-    assignmentId: "hw1",
-    assignmentTitle: "Introduction to Programming",
-    courseId: "CS101",
-    courseCode: "CS101",
-    courseName: "Introduction to Computer Science",
-    points: 85,
-    maxPoints: 100,
-    percentage: 85,
-    letterGrade: "B",
-    category: "Homework",
-    submittedAt: "2024-01-15T10:00:00Z",
-    gradedAt: "2024-01-17T14:30:00Z",
-    feedback: "Good work! Pay attention to variable naming conventions.",
-    isLate: false,
-    latePenalty: 0
-  },
-  {
-    id: "2",
-    assignmentId: "quiz1",
-    assignmentTitle: "Data Types Quiz",
-    courseId: "CS101",
-    courseCode: "CS101",
-    courseName: "Introduction to Computer Science",
-    points: 92,
-    maxPoints: 100,
-    percentage: 92,
-    letterGrade: "A-",
-    category: "Tests",
-    submittedAt: "2024-01-20T09:00:00Z",
-    gradedAt: "2024-01-20T11:00:00Z",
-    feedback: "Excellent understanding of data types!",
-    isLate: false,
-    latePenalty: 0
-  },
-  {
-    id: "3",
-    assignmentId: "project1",
-    assignmentTitle: "Calculator Project",
-    courseId: "CS101",
-    courseCode: "CS101",
-    courseName: "Introduction to Computer Science",
-    points: 78,
-    maxPoints: 100,
-    percentage: 78,
-    letterGrade: "C+",
-    category: "Group Projects",
-    submittedAt: "2024-01-25T23:45:00Z",
-    gradedAt: "2024-01-28T16:20:00Z",
-    feedback: "Good functionality but needs better error handling.",
-    isLate: true,
-    latePenalty: 5
-  },
-  {
-    id: "4",
-    assignmentId: "hw2",
-    assignmentTitle: "Functions and Loops",
-    courseId: "MATH201",
-    courseCode: "MATH201",
-    courseName: "Calculus II",
-    points: 88,
-    maxPoints: 100,
-    percentage: 88,
-    letterGrade: "B+",
-    category: "Homework",
-    submittedAt: "2024-01-18T14:30:00Z",
-    gradedAt: "2024-01-20T10:15:00Z",
-    feedback: "Well done! Clear step-by-step solutions.",
-    isLate: false,
-    latePenalty: 0
-  },
-  {
-    id: "5",
-    assignmentId: "midterm",
-    assignmentTitle: "Midterm Exam",
-    courseId: "MATH201",
-    courseCode: "MATH201",
-    courseName: "Calculus II",
-    points: 76,
-    maxPoints: 100,
-    percentage: 76,
-    letterGrade: "C",
-    category: "Exams",
-    submittedAt: "2024-01-30T10:00:00Z",
-    gradedAt: "2024-02-02T09:30:00Z",
-    feedback: "Good effort. Review integration techniques.",
-    isLate: false,
-    latePenalty: 0
-  }
-]
-
-const mockCourseGrades: CourseGrade[] = [
-  {
-    courseId: "CS101",
-    courseCode: "CS101",
-    courseName: "Introduction to Computer Science",
-    instructor: "Dr. Smith",
-    credits: 3,
-    currentGrade: 85,
-    letterGrade: "B",
-    categoryGrades: {
-      "Homework": { points: 85, maxPoints: 100, percentage: 85, weight: 30 },
-      "Tests": { points: 92, maxPoints: 100, percentage: 92, weight: 15 },
-      "Group Projects": { points: 78, maxPoints: 100, percentage: 78, weight: 20 },
-      "Class Work": { points: 90, maxPoints: 100, percentage: 90, weight: 20 },
-      "Attendance": { points: 95, maxPoints: 100, percentage: 95, weight: 5 }
-    },
-    assignments: mockGrades.filter(g => g.courseId === "CS101"),
-    lastUpdated: "2024-02-02T09:30:00Z"
-  },
-  {
-    courseId: "MATH201",
-    courseCode: "MATH201",
-    courseName: "Calculus II",
-    instructor: "Prof. Johnson",
-    credits: 4,
-    currentGrade: 82,
-    letterGrade: "B-",
-    categoryGrades: {
-      "Homework": { points: 88, maxPoints: 100, percentage: 88, weight: 30 },
-      "Exams": { points: 76, maxPoints: 100, percentage: 76, weight: 10 },
-      "Tests": { points: 85, maxPoints: 100, percentage: 85, weight: 15 },
-      "Class Work": { points: 80, maxPoints: 100, percentage: 80, weight: 20 },
-      "Attendance": { points: 100, maxPoints: 100, percentage: 100, weight: 5 }
-    },
-    assignments: mockGrades.filter(g => g.courseId === "MATH201"),
-    lastUpdated: "2024-02-02T09:30:00Z"
-  }
-]
+// Mock data removed - now using shared DataContext
 
 // ============================================================================
 // COMPONENT
 // ============================================================================
 
 export default function StudentGradesPage() {
+  // ============================================================================
+  // DATA CONTEXT
+  // ============================================================================
+  
+  const { 
+    state, 
+    getStudentGradesByCourse,
+    getCourseGradeSummary,
+    calculateFinalGrade
+  } = useData()
+  const { isInitialized } = useMockData()
+  
+  // ============================================================================
+  // STATE
+  // ============================================================================
+  
   const [selectedCourse, setSelectedCourse] = useState<string>("all")
   const [selectedCategory, setSelectedCategory] = useState<string>("all")
   const [activeTab, setActiveTab] = useState(0)
-  const [selectedGrade, setSelectedGrade] = useState<Grade | null>(null)
+  const [selectedGrade, setSelectedGrade] = useState<StudentGrade | null>(null)
   const [gradeDialogOpen, setGradeDialogOpen] = useState(false)
 
   // ============================================================================
   // COMPUTED VALUES
   // ============================================================================
 
-  const gradeStats: GradeStats = useMemo(() => {
-    const totalCourses = mockCourseGrades.length
-    const averageGrade = mockCourseGrades.reduce((sum, course) => sum + course.currentGrade, 0) / totalCourses
-    const gpa = mockCourseGrades.reduce((sum, course) => {
-      const letterGrade = LETTER_GRADES.find(lg => lg.letter === course.letterGrade)
-      return sum + (letterGrade?.points || 0) * course.credits
-    }, 0) / mockCourseGrades.reduce((sum, course) => sum + course.credits, 0)
+  // Get student's courses (assuming current user is student with ID "user_1")
+  const courses = useMemo(() => {
+    return state.courses.filter(course => 
+      state.enrollments.some(enrollment => 
+        enrollment.student_id === "user_1" && enrollment.course_id === course.id
+      )
+    )
+  }, [state.courses, state.enrollments])
+
+  // Get all grades for the student
+  const grades = useMemo(() => {
+    const allGrades: StudentGrade[] = []
     
-    const totalCredits = mockCourseGrades.reduce((sum, course) => sum + course.credits, 0)
-    const completedCredits = totalCredits // Assuming all courses are completed
-    const assignmentsGraded = mockGrades.length
-    const assignmentsPending = 0 // Mock data shows all graded
+    courses.forEach(course => {
+      const courseGrades = getStudentGradesByCourse("user_1", course.id)
+      allGrades.push(...courseGrades)
+    })
+    
+    return allGrades
+  }, [courses, getStudentGradesByCourse])
+
+  // Get course grade summaries
+  const courseGrades = useMemo(() => {
+    return courses.map(course => {
+      const summary = getCourseGradeSummary("user_1", course.id)
+      return {
+        course_id: course.id,
+        course_code: course.course_code,
+        course_name: course.course_name,
+        instructor: course.lecturer_name || 'TBD',
+        credits: course.credits,
+        current_grade: summary?.final_grade || 0,
+        letter_grade: summary?.final_letter_grade || 'N/A',
+        category_grades: summary?.category_grades ? 
+          Object.entries(summary.category_grades).map(([categoryId, percentage]) => {
+            const category = state.gradeCategories.find(c => c.id === categoryId)
+            return {
+              category: category?.name || 'Unknown',
+              points: percentage,
+              max_points: 100,
+              percentage: percentage,
+              weight: category?.percentage || 0
+            }
+          }) : [],
+        assignments: grades.filter(g => g.course_id === course.id),
+        last_updated: new Date().toISOString()
+      }
+    })
+  }, [courses, grades, getCourseGradeSummary])
+
+  const gradeStats = useMemo(() => {
+    const total_courses = courseGrades.length
+    const average_grade = courseGrades.length > 0 ? 
+      courseGrades.reduce((sum, course) => sum + course.current_grade, 0) / total_courses : 0
+    
+    const gpa = courseGrades.length > 0 ? 
+      courseGrades.reduce((sum, course) => {
+        const letter_grade = LETTER_GRADES.find(lg => lg.letter === course.letter_grade)
+        return sum + (letter_grade?.points || 0) * course.credits
+      }, 0) / courseGrades.reduce((sum, course) => sum + course.credits, 0) : 0
+    
+    const total_credits = courseGrades.reduce((sum, course) => sum + course.credits, 0)
+    const completed_credits = total_credits // Assuming all courses are completed
+    const assignments_graded = grades.length
+    const assignments_pending = 0 // Mock data shows all graded
 
     return {
-      totalCourses,
-      averageGrade: Math.round(averageGrade),
+      total_courses,
+      average_grade: Math.round(average_grade),
       gpa: Math.round(gpa * 100) / 100,
-      totalCredits,
-      completedCredits,
-      assignmentsGraded,
-      assignmentsPending
+      total_credits,
+      completed_credits,
+      assignments_graded,
+      assignments_pending
     }
-  }, [])
+  }, [courseGrades, grades])
 
   const filteredGrades = useMemo(() => {
-    let filtered = mockGrades
+    let filtered = grades
 
     if (selectedCourse !== "all") {
-      filtered = filtered.filter(grade => grade.courseId === selectedCourse)
+      filtered = filtered.filter(grade => grade.course_id === selectedCourse)
     }
 
     if (selectedCategory !== "all") {
-      filtered = filtered.filter(grade => grade.category === selectedCategory)
+      filtered = filtered.filter(grade => grade.category_id === selectedCategory)
     }
 
-    return filtered.sort((a, b) => new Date(b.gradedAt).getTime() - new Date(a.gradedAt).getTime())
-  }, [selectedCourse, selectedCategory])
+    return filtered.sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
+  }, [grades, selectedCourse, selectedCategory])
 
   const getGradeColor = (percentage: number) => {
-    if (percentage >= 90) return '#10B981'
-    if (percentage >= 80) return '#3B82F6'
-    if (percentage >= 70) return '#F59E0B'
-    if (percentage >= 60) return '#EF4444'
-    return '#6B7280'
+    if (percentage >= 90) return '#000000'
+    if (percentage >= 80) return '#333333'
+    if (percentage >= 70) return '#666666'
+    if (percentage >= 60) return '#999999'
+    return '#cccccc'
   }
 
-  const getGradeIcon = (letterGrade: string) => {
-    if (['A+', 'A', 'A-'].includes(letterGrade)) return TrophyIcon
-    if (['B+', 'B', 'B-'].includes(letterGrade)) return CheckCircleIcon
-    if (['C+', 'C', 'C-'].includes(letterGrade)) return ClockIcon
+  const getGradeIcon = (letter_grade: string) => {
+    if (['A+', 'A', 'A-'].includes(letter_grade)) return TrophyIcon
+    if (['B+', 'B', 'B-'].includes(letter_grade)) return CheckCircleIcon
+    if (['C+', 'C', 'C-'].includes(letter_grade)) return ClockIcon
     return ExclamationTriangleIcon
   }
 
@@ -364,7 +263,7 @@ export default function StudentGradesPage() {
   // HANDLERS
   // ============================================================================
 
-  const handleViewGrade = (grade: Grade) => {
+  const handleViewGrade = (grade: StudentGrade) => {
     setSelectedGrade(grade)
     setGradeDialogOpen(true)
   }
@@ -404,21 +303,21 @@ export default function StudentGradesPage() {
         />
         <StatCard 
           title="Average Grade" 
-          value={`${gradeStats.averageGrade}%`} 
+          value={`${gradeStats.average_grade}%`} 
           icon={ChartBarIcon} 
           color="#000000" 
           change="Across all courses" 
         />
         <StatCard 
           title="Courses" 
-          value={gradeStats.totalCourses.toString()} 
+          value={gradeStats.total_courses.toString()} 
           icon={BookOpenIcon} 
           color="#000000" 
           change="Enrolled" 
         />
         <StatCard 
           title="Credits" 
-          value={`${gradeStats.completedCredits}/${gradeStats.totalCredits}`} 
+          value={`${gradeStats.completed_credits}/${gradeStats.total_credits}`} 
           icon={AcademicCapIcon} 
           color="#000000" 
           change="Completed" 
@@ -454,9 +353,9 @@ export default function StudentGradesPage() {
               onChange={(e) => setSelectedCourse(e.target.value)}
             >
               <MenuItem value="all">All Courses</MenuItem>
-              {mockCourseGrades.map((course) => (
-                <MenuItem key={course.courseId} value={course.courseId}>
-                  {course.courseCode} - {course.courseName}
+              {courseGrades.map((course) => (
+                <MenuItem key={course.course_id} value={course.course_id}>
+                  {course.course_code} - {course.course_name}
                 </MenuItem>
               ))}
             </Select>
@@ -488,8 +387,8 @@ export default function StudentGradesPage() {
               onChange={(e) => setSelectedCategory(e.target.value)}
             >
               <MenuItem value="all">All Categories</MenuItem>
-              {GRADE_CATEGORIES.map((category) => (
-                <MenuItem key={category.name} value={category.name}>
+              {state.gradeCategories.map((category) => (
+                <MenuItem key={category.id} value={category.id}>
                   {category.name}
                 </MenuItem>
               ))}
@@ -546,20 +445,20 @@ export default function StudentGradesPage() {
                     </TableHead>
                     <TableBody>
                       {filteredGrades.map((grade) => {
-                        const GradeIcon = getGradeIcon(grade.letterGrade)
+                        const GradeIcon = getGradeIcon(grade.letter_grade)
                         return (
                           <TableRow key={grade.id} hover>
                             <TableCell>
                               <div className="flex items-center gap-3">
                                 <div>
                                   <Typography variant="body2" sx={{ fontWeight: 600, color: 'hsl(var(--foreground))' }}>
-                                    {grade.assignmentTitle}
+                                    {grade.assignment_title || 'Assignment'}
                                   </Typography>
                                   <Typography variant="caption" sx={{ color: 'hsl(var(--muted-foreground))' }}>
-                                    {grade.points}/{grade.maxPoints} points
+                                    {grade.points}/{grade.max_points} points
                                   </Typography>
                                 </div>
-                                {grade.isLate && (
+                                {grade.is_late && (
                                   <Chip 
                                     label="Late" 
                                     size="small" 
@@ -574,15 +473,15 @@ export default function StudentGradesPage() {
                             </TableCell>
                             <TableCell>
                               <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                                {grade.courseCode}
+                                {grade.course_code || 'N/A'}
                               </Typography>
                               <Typography variant="caption" sx={{ color: 'hsl(var(--muted-foreground))' }}>
-                                {grade.courseName}
+                                {grade.course_name || 'N/A'}
                               </Typography>
                             </TableCell>
                             <TableCell>
                               <Chip 
-                                label={grade.category} 
+                                label={grade.category || 'N/A'} 
                                 size="small" 
                                 sx={{ 
                                   backgroundColor: 'hsl(var(--muted))',
@@ -602,14 +501,14 @@ export default function StudentGradesPage() {
                                 />
                                 <div>
                                   <Typography variant="body2" sx={{ fontWeight: 600, color: getGradeColor(grade.percentage) }}>
-                                    {grade.letterGrade} ({grade.percentage}%)
+                                    {grade.letter_grade} ({grade.percentage}%)
                                   </Typography>
                                 </div>
                               </div>
                             </TableCell>
                             <TableCell>
                               <Typography variant="body2" sx={{ color: 'hsl(var(--muted-foreground))' }}>
-                                {formatDate(grade.gradedAt)}
+                                {formatDate(grade.updated_at)}
                               </Typography>
                             </TableCell>
                             <TableCell>
@@ -639,24 +538,24 @@ export default function StudentGradesPage() {
           {/* Course Overview Tab */}
           {activeTab === 1 && (
             <div className="space-y-6">
-              {mockCourseGrades.map((course) => (
-                <MUICard key={course.courseId} sx={CARD_SX}>
+              {courseGrades.map((course) => (
+                <MUICard key={course.course_id} sx={CARD_SX}>
                   <MUICardContent sx={{ p: { xs: 2, sm: 3 } }}>
                     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
                       <div>
                         <Typography variant="h6" sx={{ fontFamily: 'Poppins, sans-serif', fontWeight: 600, mb: 1 }}>
-                          {course.courseCode} - {course.courseName}
+                          {course.course_code} - {course.course_name}
                         </Typography>
                         <Typography variant="body2" sx={{ color: 'hsl(var(--muted-foreground))' }}>
                           {course.instructor} • {course.credits} credits
                         </Typography>
                       </div>
                       <div className="text-right">
-                        <Typography variant="h4" sx={{ fontFamily: 'Poppins, sans-serif', fontWeight: 700, color: getGradeColor(course.currentGrade) }}>
-                          {course.letterGrade}
+                        <Typography variant="h4" sx={{ fontFamily: 'Poppins, sans-serif', fontWeight: 700, color: getGradeColor(course.current_grade) }}>
+                          {course.letter_grade}
                         </Typography>
                         <Typography variant="body2" sx={{ color: 'hsl(var(--muted-foreground))' }}>
-                          {course.currentGrade}%
+                          {course.current_grade}%
                         </Typography>
                       </div>
                     </div>
@@ -664,7 +563,7 @@ export default function StudentGradesPage() {
                     <Divider sx={{ my: 2 }} />
 
                     <div className="space-y-3">
-                      {Object.entries(course.categoryGrades).map(([category, grade]) => (
+                      {Object.entries(course.category_grades).map(([category, grade]) => (
                         <div key={category} className="flex items-center justify-between">
                           <div className="flex items-center gap-3">
                             <div 
@@ -677,7 +576,7 @@ export default function StudentGradesPage() {
                           </div>
                           <div className="flex items-center gap-4">
                             <Typography variant="body2" sx={{ color: 'hsl(var(--muted-foreground))' }}>
-                              {grade.points}/{grade.maxPoints}
+                              {grade.points}/{grade.max_points}
                             </Typography>
                             <Typography variant="body2" sx={{ fontWeight: 600, color: getGradeColor(grade.percentage) }}>
                               {grade.percentage}%
@@ -705,8 +604,8 @@ export default function StudentGradesPage() {
                   </Typography>
                   <div className="space-y-4">
                     {LETTER_GRADES.map((grade) => {
-                      const count = mockGrades.filter(g => g.letterGrade === grade.letter).length
-                      const percentage = (count / mockGrades.length) * 100
+                      const count = grades.filter(g => g.letter_grade === grade.letter).length
+                      const percentage = (count / grades.length) * 100
                       
                       return (
                         <div key={grade.letter} className="flex items-center gap-4">
@@ -763,7 +662,7 @@ export default function StudentGradesPage() {
         {selectedGrade && (
           <>
             <DialogTitle sx={{ fontFamily: 'Poppins, sans-serif', fontWeight: 600, pb: 1 }}>
-              {selectedGrade.assignmentTitle}
+              {selectedGrade.assignment_title || 'Assignment'}
             </DialogTitle>
             <DialogContent>
               <div className="space-y-4">
@@ -773,7 +672,7 @@ export default function StudentGradesPage() {
                       Course
                     </Typography>
                     <Typography variant="body1" sx={{ fontWeight: 600 }}>
-                      {selectedGrade.courseCode} - {selectedGrade.courseName}
+                      {selectedGrade.course_code || 'N/A'} - {selectedGrade.course_name || 'N/A'}
                     </Typography>
                   </div>
                   <div>
@@ -781,7 +680,7 @@ export default function StudentGradesPage() {
                       Category
                     </Typography>
                     <Chip 
-                      label={selectedGrade.category} 
+                      label={selectedGrade.category || 'N/A'} 
                       size="small" 
                       sx={{ 
                         backgroundColor: 'hsl(var(--muted))',
@@ -795,14 +694,14 @@ export default function StudentGradesPage() {
                     </Typography>
                     <div className="flex items-center gap-2">
                       <Typography variant="h5" sx={{ fontWeight: 700, color: getGradeColor(selectedGrade.percentage) }}>
-                        {selectedGrade.letterGrade}
+                        {selectedGrade.letter_grade}
                       </Typography>
                       <Typography variant="body1" sx={{ color: 'hsl(var(--muted-foreground))' }}>
                         ({selectedGrade.percentage}%)
                       </Typography>
                     </div>
                     <Typography variant="body2" sx={{ color: 'hsl(var(--muted-foreground))' }}>
-                      {selectedGrade.points}/{selectedGrade.maxPoints} points
+                      {selectedGrade.points}/{selectedGrade.max_points} points
                     </Typography>
                   </div>
                   <div>
@@ -810,12 +709,12 @@ export default function StudentGradesPage() {
                       Graded On
                     </Typography>
                     <Typography variant="body1">
-                      {formatDate(selectedGrade.gradedAt)}
+                      {formatDate(selectedGrade.updated_at)}
                     </Typography>
                   </div>
                 </div>
 
-                {selectedGrade.feedback && (
+                {(selectedGrade.feedback || selectedGrade.comments) && (
                   <div>
                     <Typography variant="body2" sx={{ color: 'hsl(var(--muted-foreground))', mb: 1 }}>
                       Feedback
@@ -826,16 +725,16 @@ export default function StudentGradesPage() {
                       borderRadius: 2,
                       border: '1px solid hsl(var(--border))'
                     }}>
-                      {selectedGrade.feedback}
+                      {selectedGrade.feedback || selectedGrade.comments}
                     </Typography>
                   </div>
                 )}
 
-                {selectedGrade.isLate && (
+                {selectedGrade.is_late && (
                   <div className="flex items-center gap-2 p-2 bg-red-50 rounded-lg border border-red-200">
                     <ExclamationTriangleIcon style={{ width: 20, height: 20, color: '#EF4444' }} />
                     <Typography variant="body2" sx={{ color: '#EF4444', fontWeight: 500 }}>
-                      This assignment was submitted late. Late penalty: {selectedGrade.latePenalty}%
+                      This assignment was submitted late. Late penalty: {selectedGrade.late_penalty}%
                     </Typography>
                   </div>
                 )}

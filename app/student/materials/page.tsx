@@ -20,7 +20,9 @@ import {
   TableHead,
   TableRow,
   Tabs,
-  Tab
+  Tab,
+  CircularProgress,
+  Skeleton
 } from "@mui/material"
 import StatCard from "@/components/dashboard/stat-card"
 import { Badge } from "@/components/ui/badge"
@@ -38,6 +40,9 @@ import {
   ClockIcon
 } from "@heroicons/react/24/outline"
 import { formatDate, formatFileSize } from "@/lib/utils"
+import { useData } from "@/lib/contexts/DataContext"
+import { useMockData } from "@/lib/hooks/useMockData"
+import { Material } from "@/lib/types/shared"
 
 // Constants
 const CARD_SX = {
@@ -97,21 +102,21 @@ const INPUT_STYLES = {
 // Types
 interface Course {
   id: string
-  courseCode: string
-  courseName: string
+  course_code: string
+  course_name: string
   instructor: string
 }
 
 interface Material {
   id: string
   title: string
-  courseCode: string
-  courseName: string
+  course_code: string
+  course_name: string
   type: "document" | "video" | "image" | "link"
   size?: number
   url?: string
-  uploadedBy: string
-  uploadedAt: string
+  uploaded_by: string
+  uploaded_at: string
   description?: string
   downloads: number
   category: "lecture" | "assignment" | "reading" | "reference" | "lab"
@@ -122,29 +127,62 @@ export default function StudentMaterialsPage() {
   const searchParams = useSearchParams()
   const courseParam = searchParams?.get('course')
   
+  // Data Context
+  const { state } = useData()
+  const { isInitialized } = useMockData()
+  
   // State
   const [selectedCourse, setSelectedCourse] = useState<string>(courseParam || "")
   const [categoryTab, setCategoryTab] = useState<"all" | "lecture" | "assignment" | "reading" | "reference" | "lab">("all")
   const [searchQuery, setSearchQuery] = useState<string>("")
 
-  // Mock data
-  const courses: Course[] = [
-    { id: "1", courseCode: "CS101", courseName: "Introduction to Computer Science", instructor: "Dr. Smith" },
-    { id: "2", courseCode: "MATH201", courseName: "Calculus II", instructor: "Prof. Johnson" },
-    { id: "3", courseCode: "ENG101", courseName: "English Composition", instructor: "Dr. Brown" },
-    { id: "4", courseCode: "PHYS101", courseName: "Physics I", instructor: "Dr. Wilson" },
-  ]
+  // Get student's courses from DataContext
+  const studentId = "user_1" // Assuming current user is student with ID "user_1"
+  const courses = useMemo(() => {
+    return state.courses.filter(course => 
+      state.enrollments.some(enrollment => 
+        enrollment.student_id === studentId && enrollment.course_id === course.id
+      )
+    ).map(course => ({
+      id: course.id,
+      course_code: course.course_code,
+      course_name: course.course_name,
+      instructor: course.lecturer_name || "TBD"
+    }))
+  }, [state.courses, state.enrollments, studentId])
 
-  const materials: Material[] = [
+  // Get materials from DataContext
+  const materials = useMemo(() => {
+    return state.materials.map(material => {
+      const course = state.courses.find(c => c.id === material.course_id)
+      return {
+        id: material.id,
+        title: material.title,
+        course_code: course?.course_code || 'N/A',
+        course_name: course?.course_name || 'N/A',
+        type: material.type as "document" | "video" | "image" | "link",
+        size: material.file_size,
+        url: material.url,
+        uploaded_by: material.uploaded_by || 'Unknown',
+        uploaded_at: material.uploaded_at,
+        description: material.description,
+        downloads: material.download_count || 0,
+        category: material.category as "lecture" | "assignment" | "reading" | "reference" | "lab"
+      }
+    })
+  }, [state.materials, state.courses])
+
+  // Legacy mock data for reference
+  const legacyMaterials: Material[] = [
     {
       id: "1",
       title: "Introduction to Programming - Lecture 1",
-      courseCode: "CS101",
-      courseName: "Introduction to Computer Science",
+      course_code: "CS101",
+      course_name: "Introduction to Computer Science",
       type: "document",
       size: 2048576,
-      uploadedBy: "Dr. Smith",
-      uploadedAt: "2024-01-22T10:00:00",
+      uploaded_by: "Dr. Smith",
+      uploaded_at: "2024-01-22T10:00:00",
       description: "Basic programming concepts and syntax introduction",
       downloads: 42,
       category: "lecture"
@@ -152,12 +190,12 @@ export default function StudentMaterialsPage() {
     {
       id: "2",
       title: "Data Structures Assignment",
-      courseCode: "CS101",
-      courseName: "Introduction to Computer Science",
+      course_code: "CS101",
+      course_name: "Introduction to Computer Science",
       type: "document",
       size: 1024000,
-      uploadedBy: "Dr. Smith",
-      uploadedAt: "2024-01-20T14:00:00",
+      uploaded_by: "Dr. Smith",
+      uploaded_at: "2024-01-20T14:00:00",
       description: "Implement basic data structures: arrays, linked lists",
       downloads: 38,
       category: "assignment"
@@ -165,12 +203,12 @@ export default function StudentMaterialsPage() {
     {
       id: "3",
       title: "Algorithm Visualization Video",
-      courseCode: "CS101",
-      courseName: "Introduction to Computer Science",
+      course_code: "CS101",
+      course_name: "Introduction to Computer Science",
       type: "video",
       size: 52428800,
-      uploadedBy: "Dr. Smith",
-      uploadedAt: "2024-01-19T16:00:00",
+      uploaded_by: "Dr. Smith",
+      uploaded_at: "2024-01-19T16:00:00",
       description: "Visual explanation of sorting algorithms",
       downloads: 35,
       category: "lecture"
@@ -178,12 +216,12 @@ export default function StudentMaterialsPage() {
     {
       id: "4",
       title: "Integration Techniques Notes",
-      courseCode: "MATH201",
-      courseName: "Calculus II",
+      course_code: "MATH201",
+      course_name: "Calculus II",
       type: "document",
       size: 3072000,
-      uploadedBy: "Prof. Johnson",
-      uploadedAt: "2024-01-21T09:00:00",
+      uploaded_by: "Prof. Johnson",
+      uploaded_at: "2024-01-21T09:00:00",
       description: "Comprehensive notes on integration by parts and substitution",
       downloads: 45,
       category: "lecture"
@@ -191,12 +229,12 @@ export default function StudentMaterialsPage() {
     {
       id: "5",
       title: "Calculus Practice Problems",
-      courseCode: "MATH201",
-      courseName: "Calculus II",
+      course_code: "MATH201",
+      course_name: "Calculus II",
       type: "document",
       size: 1536000,
-      uploadedBy: "Prof. Johnson",
-      uploadedAt: "2024-01-18T11:00:00",
+      uploaded_by: "Prof. Johnson",
+      uploaded_at: "2024-01-18T11:00:00",
       description: "Practice exercises for integration techniques",
       downloads: 30,
       category: "assignment"
@@ -204,12 +242,12 @@ export default function StudentMaterialsPage() {
     {
       id: "6",
       title: "Online Calculus Resources",
-      courseCode: "MATH201",
-      courseName: "Calculus II",
+      course_code: "MATH201",
+      course_name: "Calculus II",
       type: "link",
       url: "https://khanacademy.org/calculus",
-      uploadedBy: "Prof. Johnson",
-      uploadedAt: "2024-01-17T15:30:00",
+      uploaded_by: "Prof. Johnson",
+      uploaded_at: "2024-01-17T15:30:00",
       description: "External resources for additional practice",
       downloads: 25,
       category: "reference"
@@ -217,12 +255,12 @@ export default function StudentMaterialsPage() {
     {
       id: "7",
       title: "Essay Writing Guidelines",
-      courseCode: "ENG101",
-      courseName: "English Composition",
+      course_code: "ENG101",
+      course_name: "English Composition",
       type: "document",
       size: 512000,
-      uploadedBy: "Dr. Brown",
-      uploadedAt: "2024-01-20T13:00:00",
+      uploaded_by: "Dr. Brown",
+      uploaded_at: "2024-01-20T13:00:00",
       description: "Comprehensive guide to academic essay writing",
       downloads: 40,
       category: "reading"
@@ -230,12 +268,12 @@ export default function StudentMaterialsPage() {
     {
       id: "8",
       title: "Research Paper Examples",
-      courseCode: "ENG101",
-      courseName: "English Composition",
+      course_code: "ENG101",
+      course_name: "English Composition",
       type: "document",
       size: 2560000,
-      uploadedBy: "Dr. Brown",
-      uploadedAt: "2024-01-19T14:00:00",
+      uploaded_by: "Dr. Brown",
+      uploaded_at: "2024-01-19T14:00:00",
       description: "Sample research papers with annotations",
       downloads: 33,
       category: "reference"
@@ -249,7 +287,7 @@ export default function StudentMaterialsPage() {
     if (selectedCourse) {
       const course = courses.find(c => c.id === selectedCourse)
       if (course) {
-        filtered = filtered.filter(material => material.courseCode === course.courseCode)
+        filtered = filtered.filter(material => material.course_code === course.course_code)
       }
     }
     
@@ -262,24 +300,24 @@ export default function StudentMaterialsPage() {
       filtered = filtered.filter(material => 
         material.title.toLowerCase().includes(query) ||
         material.description?.toLowerCase().includes(query) ||
-        material.courseCode.toLowerCase().includes(query) ||
-        material.courseName.toLowerCase().includes(query)
+        material.course_code.toLowerCase().includes(query) ||
+        material.course_name.toLowerCase().includes(query)
       )
     }
     
-    return filtered.sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime())
+    return filtered.sort((a, b) => new Date(b.uploaded_at).getTime() - new Date(a.uploaded_at).getTime())
   }, [selectedCourse, categoryTab, searchQuery, materials, courses])
 
   const stats = useMemo(() => {
     const totalMaterials = materials.length
     const totalDownloads = materials.reduce((sum, m) => sum + m.downloads, 0)
     const recentMaterials = materials.filter(m => {
-      const uploadDate = new Date(m.uploadedAt)
+      const uploadDate = new Date(m.uploaded_at)
       const weekAgo = new Date()
       weekAgo.setDate(weekAgo.getDate() - 7)
       return uploadDate >= weekAgo
     }).length
-    const uniqueCourses = new Set(materials.map(m => m.courseCode)).size
+    const uniqueCourses = new Set(materials.map(m => m.course_code)).size
 
     return { totalMaterials, totalDownloads, recentMaterials, uniqueCourses }
   }, [materials])
@@ -301,13 +339,13 @@ export default function StudentMaterialsPage() {
   const getFileIcon = (type: string) => {
     switch (type) {
       case "document":
-        return <DocumentTextIcon className="h-5 w-5 text-blue-600" />
+        return <DocumentTextIcon className="h-5 w-5 text-gray-600" />
       case "video":
-        return <VideoCameraIcon className="h-5 w-5 text-red-600" />
+        return <VideoCameraIcon className="h-5 w-5 text-gray-600" />
       case "image":
-        return <PhotoIcon className="h-5 w-5 text-green-600" />
+        return <PhotoIcon className="h-5 w-5 text-gray-600" />
       case "link":
-        return <LinkIcon className="h-5 w-5 text-purple-600" />
+        return <LinkIcon className="h-5 w-5 text-gray-600" />
       default:
         return <DocumentTextIcon className="h-5 w-5 text-gray-600" />
     }
@@ -315,16 +353,39 @@ export default function StudentMaterialsPage() {
 
   const getCategoryBadge = (category: string) => {
     const colors = {
-      lecture: "bg-blue-500",
-      assignment: "bg-orange-500", 
-      reading: "bg-green-500",
-      reference: "bg-purple-500",
-      lab: "bg-red-500"
+      lecture: "#000000",
+      assignment: "#333333", 
+      reading: "#666666",
+      reference: "#999999",
+      lab: "#cccccc"
     }
     return (
-      <Badge variant="default" className={colors[category as keyof typeof colors] || "bg-gray-500"}>
-        {category.charAt(0).toUpperCase() + category.slice(1)}
-      </Badge>
+      <Chip 
+        label={category.charAt(0).toUpperCase() + category.slice(1)}
+        sx={{ 
+          bgcolor: colors[category as keyof typeof colors] || "#cccccc",
+          color: 'white',
+          fontWeight: 600,
+          border: '1px solid #000000'
+        }}
+      />
+    )
+  }
+
+  // Loading state
+  if (!isInitialized) {
+    return (
+      <div className="space-y-6">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div className="flex-1 min-w-0">
+            <Skeleton variant="text" width={300} height={40} />
+            <Skeleton variant="text" width={400} height={20} />
+          </div>
+        </div>
+        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 400 }}>
+          <CircularProgress sx={{ color: '#000000' }} />
+        </Box>
+      </div>
     )
   }
 
@@ -428,7 +489,7 @@ export default function StudentMaterialsPage() {
                 <option value="">All Courses</option>
                 {courses.map(course => (
                   <option key={course.id} value={course.id}>
-                    {course.courseCode} - {course.courseName}
+                    {course.course_code} - {course.course_name}
                   </option>
                 ))}
               </Select>
@@ -532,10 +593,10 @@ export default function StudentMaterialsPage() {
                     <TableCell>
                       <Box>
                         <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                          {material.courseCode}
+                          {material.course_code}
                         </Typography>
                         <Typography variant="caption" sx={{ color: 'hsl(var(--muted-foreground))' }}>
-                          {material.courseName}
+                          {material.course_name}
                         </Typography>
                       </Box>
                     </TableCell>
@@ -550,10 +611,10 @@ export default function StudentMaterialsPage() {
                     <TableCell>
                       <Box>
                         <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                          {formatDate(material.uploadedAt)}
+                          {formatDate(material.uploaded_at)}
                         </Typography>
                         <Typography variant="caption" sx={{ color: 'hsl(var(--muted-foreground))' }}>
-                          by {material.uploadedBy}
+                          by {material.uploaded_by}
                         </Typography>
                       </Box>
                     </TableCell>

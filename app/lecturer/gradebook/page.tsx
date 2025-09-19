@@ -12,7 +12,6 @@ import {
   MenuItem,
   InputLabel,
   FormControl,
-  Button as MUIButton,
   TextField,
   Dialog,
   DialogTitle,
@@ -26,6 +25,10 @@ import {
   StarIcon
 } from "@heroicons/react/24/outline"
 import StatCard from "@/components/dashboard/stat-card"
+import MonochromeButton from "@/components/admin/MonochromeButton"
+import { useData } from "@/lib/contexts/DataContext"
+import { useMockData } from "@/lib/hooks/useMockData"
+import { GradeCategory } from "@/lib/types/shared"
 
 // ============================================================================
 // TYPES
@@ -33,48 +36,19 @@ import StatCard from "@/components/dashboard/stat-card"
 
 interface Student {
   id: string
-  name: string
-  matric: string
+  full_name: string
+  student_id: string
   email: string
 }
 
 interface Course {
   id: string
-  courseCode: string
-  courseName: string
+  course_code: string
+  course_name: string
   enrolled: number
 }
 
-interface Class {
-  id: string
-  name: string
-  level: string
-}
-
-interface LecturerAssignment {
-  classId: string
-  courseId: string
-}
-
-interface GradeCategory {
-  id: string
-  name: string
-  percentage: number
-  isDefault: boolean
-}
-
-interface GradeCategories {
-  categories: GradeCategory[]
-  totalPercentage: number
-}
-
-interface GradeScale {
-  id: string
-  letter: string
-  minPercentage: number
-  maxPercentage: number
-  description?: string
-}
+// Using shared types from DataContext
 
 // ============================================================================
 // COMPONENT
@@ -82,6 +56,16 @@ interface GradeScale {
 
 export default function GradebookPage() {
   const router = useRouter()
+  const { 
+    state, 
+    getCoursesByLecturer, 
+    getStudentsByCourse, 
+    getStudentGradesByCourse,
+    getCourseGradeSummary,
+    calculateFinalGrade,
+    updateGradeCategory
+  } = useData()
+  const { isInitialized } = useMockData()
   
   // ============================================================================
   // STATE
@@ -100,19 +84,45 @@ export default function GradebookPage() {
   const [newGradeMin, setNewGradeMin] = useState(0)
   const [newGradeMax, setNewGradeMax] = useState(0)
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null)
-  const [gradeCategories, setGradeCategories] = useState<GradeCategories>({
-    categories: [
-      { id: 'classwork', name: 'Class Work', percentage: 20, isDefault: true },
-      { id: 'homework', name: 'Homework', percentage: 30, isDefault: true },
-      { id: 'groupprojects', name: 'Group Projects', percentage: 20, isDefault: true },
-      { id: 'tests', name: 'Tests', percentage: 15, isDefault: true },
-      { id: 'exams', name: 'Exams', percentage: 10, isDefault: true },
-      { id: 'attendance', name: 'Attendance', percentage: 5, isDefault: true }
-    ],
-    totalPercentage: 100
-  })
 
-  const [gradeScale, setGradeScale] = useState<GradeScale[]>([
+  // ============================================================================
+  // COMPUTED DATA
+  // ============================================================================
+
+  // Get lecturer's courses (assuming current user is lecturer with ID "user_2")
+  const lecturerCourses = useMemo(() => getCoursesByLecturer("user_2"), [getCoursesByLecturer])
+  
+  // Get classes from the data context
+  const classes = useMemo(() => state.classes, [state.classes])
+  
+  // Get courses available for selected class
+  const availableCourses = useMemo(() => {
+    if (!selectedClass) return []
+    const lecturerAssignments = state.lecturerAssignments.filter(assignment => 
+      assignment.class_id === selectedClass && assignment.status === 'active'
+    )
+    const courseIds = lecturerAssignments.map(assignment => assignment.course_id)
+    return lecturerCourses.filter(course => courseIds.includes(course.id))
+  }, [selectedClass, lecturerCourses, state.lecturerAssignments])
+
+  // Get students for selected class and course
+  const availableStudents = useMemo(() => {
+    if (!selectedClass || !selectedCourse) return []
+    return getStudentsByCourse(selectedCourse)
+  }, [selectedClass, selectedCourse, getStudentsByCourse])
+
+  // Get current course and class info
+  const currentCourse = lecturerCourses.find(c => c.id === selectedCourse)
+  const currentClass = classes.find(c => c.id === selectedClass)
+
+  // Grade categories for the selected course
+  const gradeCategories = useMemo(() => ({
+    categories: state.gradeCategories,
+    totalPercentage: state.gradeCategories.reduce((sum, cat) => sum + cat.percentage, 0)
+  }), [state.gradeCategories])
+
+  // Grade scale (static for now)
+  const gradeScale = useMemo(() => [
     { id: 'a-plus', letter: 'A+', minPercentage: 97, maxPercentage: 100, description: 'Excellent' },
     { id: 'a', letter: 'A', minPercentage: 93, maxPercentage: 96, description: 'Excellent' },
     { id: 'a-minus', letter: 'A-', minPercentage: 90, maxPercentage: 92, description: 'Excellent' },
@@ -126,87 +136,12 @@ export default function GradebookPage() {
     { id: 'd', letter: 'D', minPercentage: 63, maxPercentage: 66, description: 'Passing' },
     { id: 'd-minus', letter: 'D-', minPercentage: 60, maxPercentage: 62, description: 'Passing' },
     { id: 'f', letter: 'F', minPercentage: 0, maxPercentage: 59, description: 'Failing' }
-  ])
-
-  // ============================================================================
-  // MOCK DATA
-  // ============================================================================
-
-  const classes: Class[] = [
-    { id: "class1", name: "Class A", level: "Year 1" },
-    { id: "class2", name: "Class B", level: "Year 1" },
-    { id: "class3", name: "Class C", level: "Year 2" },
-    { id: "class4", name: "Class D", level: "Year 2" }
-  ]
-
-  // Lecturer's assigned courses per class
-  const lecturerAssignments: LecturerAssignment[] = [
-    { classId: "class1", courseId: "CS101" },
-    { classId: "class1", courseId: "MATH201" },
-    { classId: "class2", courseId: "CS101" },
-    { classId: "class3", courseId: "CS102" },
-    { classId: "class3", courseId: "PHYS301" },
-    { classId: "class4", courseId: "CS102" }
-  ]
-  
-  const courses: Course[] = useMemo(() => [
-    {
-      id: "CS101",
-      courseCode: "CS101",
-      courseName: "Introduction to Computer Science",
-      enrolled: 45
-    },
-    {
-      id: "MATH201",
-      courseCode: "MATH201",
-      courseName: "Calculus II",
-      enrolled: 38
-    },
-    {
-      id: "CS102",
-      courseCode: "CS102",
-      courseName: "Data Structures and Algorithms",
-      enrolled: 42
-    },
-    {
-      id: "PHYS301",
-      courseCode: "PHYS301",
-      courseName: "Physics III",
-      enrolled: 35
-    }
-  ], [])
-
-  const students: Student[] = useMemo(() => [
-    { id: "s1", name: "John Doe", matric: "LIM-2023001", email: "john.doe@student.edu" },
-    { id: "s2", name: "Jane Smith", matric: "LIM-2023002", email: "jane.smith@student.edu" },
-    { id: "s3", name: "Mike Johnson", matric: "LIM-2023003", email: "mike.johnson@student.edu" },
-    { id: "s4", name: "Alice Brown", matric: "LIM-2023004", email: "alice.brown@student.edu" },
-    { id: "s5", name: "David Wilson", matric: "LIM-2023005", email: "david.wilson@student.edu" },
-    { id: "s6", name: "Sarah Davis", matric: "LIM-2023006", email: "sarah.davis@student.edu" }
   ], [])
 
   // ============================================================================
   // COMPUTED VALUES
   // ============================================================================
 
-  // Get courses available for selected class
-  const availableCourses = useMemo(() => {
-    if (!selectedClass) return []
-    const assignedCourseIds = lecturerAssignments
-      .filter(assignment => assignment.classId === selectedClass)
-      .map(assignment => assignment.courseId)
-    return courses.filter(course => assignedCourseIds.includes(course.id))
-  }, [selectedClass])
-
-  // Get students for selected class and course
-  const availableStudents = useMemo(() => {
-    if (!selectedClass || !selectedCourse) return []
-    // In real app, this would filter students enrolled in this class/course combination
-    return students
-  }, [selectedClass, selectedCourse])
-
-  const currentCourse = courses.find(c => c.id === selectedCourse)
-  const currentClass = classes.find(c => c.id === selectedClass)
 
   // Calculate total percentage
   const totalPercentage = useMemo(() => {
@@ -217,18 +152,36 @@ export default function GradebookPage() {
   const stats = useMemo(() => {
     const totalStudents = availableStudents.length
     const totalCategories = gradeCategories.categories.length
-    const averageGrade = 78.2 // Mock value - would be calculated from actual grades
-    const passingRate = 92.1 // Mock value - would be calculated from actual grades
-    const totalGraded = Math.floor(totalStudents * 0.85) // Mock value - students with grades entered
+    
+    // Calculate average grade from actual student grades
+    let averageGrade = 0
+    let passingRate = 0
+    let totalGraded = 0
+    
+    if (selectedCourse && availableStudents.length > 0) {
+      const studentGrades = availableStudents.map(student => {
+        const grades = getStudentGradesByCourse(student.id, selectedCourse)
+        const finalGrade = calculateFinalGrade(student.id, selectedCourse)
+        return { student, grades, finalGrade }
+      })
+      
+      const studentsWithGrades = studentGrades.filter(sg => sg.finalGrade > 0)
+      totalGraded = studentsWithGrades.length
+      
+      if (studentsWithGrades.length > 0) {
+        averageGrade = studentsWithGrades.reduce((sum, sg) => sum + sg.finalGrade, 0) / studentsWithGrades.length
+        passingRate = (studentsWithGrades.filter(sg => sg.finalGrade >= 60).length / studentsWithGrades.length) * 100
+      }
+    }
 
     return {
       totalStudents,
       totalCategories,
-      averageGrade,
-      passingRate,
+      averageGrade: Math.round(averageGrade * 10) / 10,
+      passingRate: Math.round(passingRate * 10) / 10,
       totalGraded
     }
-  }, [availableStudents, gradeCategories.categories])
+  }, [availableStudents, gradeCategories.categories, selectedCourse, getStudentGradesByCourse, calculateFinalGrade])
 
   // ============================================================================
   // EVENT HANDLERS
@@ -239,12 +192,10 @@ export default function GradebookPage() {
   }
 
   const handleUpdateCategoryPercentage = (categoryId: string, percentage: number) => {
-    setGradeCategories(prev => ({
-      ...prev,
-      categories: prev.categories.map(cat => 
-        cat.id === categoryId ? { ...cat, percentage } : cat
-      )
-    }))
+    const updatedCategories = state.gradeCategories.map(cat => 
+      cat.id === categoryId ? { ...cat, percentage } : cat
+    )
+    updateGradeCategory(selectedCourse, updatedCategories)
   }
 
   const handleAddCategory = () => {
@@ -253,13 +204,12 @@ export default function GradebookPage() {
         id: `cat_${Date.now()}`,
         name: newCategoryName.trim(),
         percentage: newCategoryPercentage,
-        isDefault: false
+        is_default: false,
+        course_id: selectedCourse
       }
       
-      setGradeCategories(prev => ({
-        ...prev,
-        categories: [...prev.categories, newCategory]
-      }))
+      const updatedCategories = [...state.gradeCategories, newCategory]
+      updateGradeCategory(selectedCourse, updatedCategories)
       
       setNewCategoryName("")
       setNewCategoryPercentage(0)
@@ -268,29 +218,19 @@ export default function GradebookPage() {
   }
 
   const handleDeleteCategory = (categoryId: string) => {
-    setGradeCategories(prev => ({
-      ...prev,
-      categories: prev.categories.filter(cat => cat.id !== categoryId)
-    }))
+    const updatedCategories = state.gradeCategories.filter(cat => cat.id !== categoryId)
+    updateGradeCategory(selectedCourse, updatedCategories)
   }
 
   const handleUpdateGradeScale = (gradeId: string, field: 'minPercentage' | 'maxPercentage', value: number) => {
-    setGradeScale(prev => prev.map(grade => 
-      grade.id === gradeId ? { ...grade, [field]: value } : grade
-    ))
+    // Grade scale is static for now - could be made dynamic later
+    console.log('Update grade scale:', { gradeId, field, value })
   }
 
   const handleAddGrade = () => {
     if (newGradeLetter.trim() && newGradeMin >= 0 && newGradeMax >= newGradeMin) {
-      const newGrade: GradeScale = {
-        id: `grade_${Date.now()}`,
-        letter: newGradeLetter.trim(),
-        minPercentage: newGradeMin,
-        maxPercentage: newGradeMax,
-        description: 'Custom Grade'
-      }
-      
-      setGradeScale(prev => [...prev, newGrade].sort((a, b) => b.minPercentage - a.minPercentage))
+      // Grade scale is static for now - could be made dynamic later
+      console.log('Add grade:', { letter: newGradeLetter, min: newGradeMin, max: newGradeMax })
       
       setNewGradeLetter("")
       setNewGradeMin(0)
@@ -300,7 +240,8 @@ export default function GradebookPage() {
   }
 
   const handleDeleteGrade = (gradeId: string) => {
-    setGradeScale(prev => prev.filter(grade => grade.id !== gradeId))
+    // Grade scale is static for now - could be made dynamic later
+    console.log('Delete grade:', gradeId)
   }
 
   const getLetterGrade = (percentage: number) => {
@@ -483,18 +424,18 @@ export default function GradebookPage() {
                       '& .MuiInputLabel-root.Mui-focused': { color: '#000' }
                     }}
                   >
-                    {availableCourses.map((course) => (
-                      <MenuItem key={course.id} value={course.id}>
-                        <Box>
-                          <Typography sx={{ fontFamily: "Poppins", fontWeight: 600 }}>
-                            {course.courseCode}
-                          </Typography>
-                          <Typography variant="caption" color="text.secondary" sx={{ fontFamily: "DM Sans" }}>
-                            {course.courseName}
-                          </Typography>
-                        </Box>
-                      </MenuItem>
-                    ))}
+                     {availableCourses.map((course) => (
+                       <MenuItem key={course.id} value={course.id}>
+                         <Box>
+                           <Typography sx={{ fontFamily: "Poppins", fontWeight: 600 }}>
+                             {course.course_code}
+                           </Typography>
+                           <Typography variant="caption" color="text.secondary" sx={{ fontFamily: "DM Sans" }}>
+                             {course.course_name}
+                           </Typography>
+                         </Box>
+                       </MenuItem>
+                     ))}
                   </Select>
                 </FormControl>
               </Box>
@@ -534,21 +475,14 @@ export default function GradebookPage() {
                     fontFamily: 'Poppins, sans-serif'
                   }}
                 >
-                  Grade Categories - {currentClass?.name} - {currentCourse?.courseCode}
+                  Grade Categories - {currentClass?.name} - {currentCourse?.course_code}
                 </Typography>
-                <MUIButton
-                  variant="outlined"
-                  onClick={() => setCategoryDialogOpen(true)}
-                  sx={{
-                    borderColor: "#000",
-                    color: "#000",
-                    fontFamily: "DM Sans",
-                    textTransform: "none",
-                    "&:hover": { borderColor: "#000", backgroundColor: "#f9fafb" }
-                  }}
-                >
-                  Edit Categories
-                </MUIButton>
+                 <MonochromeButton
+                   monoVariant="outlined"
+                   onClick={() => setCategoryDialogOpen(true)}
+                 >
+                   Edit Categories
+                 </MonochromeButton>
               </Box>
               
               <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(auto-fit, minmax(150px, 1fr))' }, gap: 2 }}>
@@ -560,21 +494,21 @@ export default function GradebookPage() {
                     <Typography variant="body2" sx={{ fontFamily: "DM Sans, sans-serif", color: "#6b7280" }}>
                       {category.name}
                     </Typography>
-                    <MUIButton
-                      size="small"
-                      onClick={() => handleDeleteCategory(category.id)}
-                      sx={{
-                        position: 'absolute',
-                        top: 4,
-                        right: 4,
-                        minWidth: 'auto',
-                        p: 0.5,
-                        color: '#ef4444',
-                        '&:hover': { backgroundColor: '#fef2f2' }
-                      }}
-                    >
-                      ×
-                    </MUIButton>
+                     <MonochromeButton
+                       size="small"
+                       onClick={() => handleDeleteCategory(category.id)}
+                       sx={{
+                         position: 'absolute',
+                         top: 4,
+                         right: 4,
+                         minWidth: 'auto',
+                         p: 0.5,
+                         color: '#ef4444',
+                         '&:hover': { backgroundColor: '#fef2f2' }
+                       }}
+                     >
+                       ×
+                     </MonochromeButton>
                   </Box>
                 ))}
                 
@@ -646,21 +580,14 @@ export default function GradebookPage() {
                     fontFamily: 'Poppins, sans-serif'
                   }}
                 >
-                  Grade Scale - {currentClass?.name} - {currentCourse?.courseCode}
+                  Grade Scale - {currentClass?.name} - {currentCourse?.course_code}
                 </Typography>
-                <MUIButton
-                  variant="outlined"
-                  onClick={() => setGradeScaleDialogOpen(true)}
-                  sx={{
-                    borderColor: "#000",
-                    color: "#000",
-                    fontFamily: "DM Sans",
-                    textTransform: "none",
-                    "&:hover": { borderColor: "#000", backgroundColor: "#f9fafb" }
-                  }}
-                >
-                  Edit Grade Scale
-                </MUIButton>
+                 <MonochromeButton
+                   monoVariant="outlined"
+                   onClick={() => setGradeScaleDialogOpen(true)}
+                 >
+                   Edit Grade Scale
+                 </MonochromeButton>
               </Box>
               
               <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(3, 1fr)', lg: 'repeat(4, 1fr)' }, gap: 2 }}>
@@ -682,21 +609,21 @@ export default function GradebookPage() {
                     <Typography variant="caption" sx={{ fontFamily: "DM Sans, sans-serif", color: "#6b7280" }}>
                       {grade.description}
                     </Typography>
-                    <MUIButton
-                      size="small"
-                      onClick={() => handleDeleteGrade(grade.id)}
-                      sx={{
-                        position: 'absolute',
-                        top: 4,
-                        right: 4,
-                        minWidth: 'auto',
-                        p: 0.5,
-                        color: '#ef4444',
-                        '&:hover': { backgroundColor: '#fef2f2' }
-                      }}
-                    >
-                      ×
-                    </MUIButton>
+                     <MonochromeButton
+                       size="small"
+                       onClick={() => handleDeleteGrade(grade.id)}
+                       sx={{
+                         position: 'absolute',
+                         top: 4,
+                         right: 4,
+                         minWidth: 'auto',
+                         p: 0.5,
+                         color: '#ef4444',
+                         '&:hover': { backgroundColor: '#fef2f2' }
+                       }}
+                     >
+                       ×
+                     </MonochromeButton>
                   </Box>
                 ))}
                 
@@ -783,33 +710,26 @@ export default function GradebookPage() {
                       '&:hover': { backgroundColor: '#f9fafb' }
                     }}
                   >
-                    <Box>
-                      <Typography variant="body1" sx={{ fontFamily: "Poppins, sans-serif", fontWeight: 700 }}>
-                        {student.name}
-                      </Typography>
-                      <Typography variant="caption" sx={{ fontFamily: "DM Sans, sans-serif", color: "#6b7280" }}>
-                        {student.matric}
-                      </Typography>
-                    </Box>
-                    <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-                      <Typography variant="body2" sx={{ fontFamily: "DM Sans, sans-serif", color: "#6b7280" }}>
-                        Final Grade: 85.5%
-                      </Typography>
-                      <MUIButton
-                        size="small"
-                        variant="outlined"
-                        onClick={() => handleOpenGradeManagement(student)}
-                        sx={{
-                          borderColor: "#000",
-                          color: "#000",
-                          fontFamily: "DM Sans",
-                          textTransform: "none",
-                          "&:hover": { borderColor: "#000", backgroundColor: "#f9fafb" }
-                        }}
-                      >
-                        Manage Grades
-                      </MUIButton>
-                    </Box>
+                     <Box>
+                       <Typography variant="body1" sx={{ fontFamily: "Poppins, sans-serif", fontWeight: 700 }}>
+                         {student.full_name}
+                       </Typography>
+                       <Typography variant="caption" sx={{ fontFamily: "DM Sans, sans-serif", color: "#6b7280" }}>
+                         {student.student_id}
+                       </Typography>
+                     </Box>
+                     <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+                       <Typography variant="body2" sx={{ fontFamily: "DM Sans, sans-serif", color: "#6b7280" }}>
+                         Final Grade: {selectedCourse ? `${calculateFinalGrade(student.id, selectedCourse).toFixed(1)}%` : 'N/A'}
+                       </Typography>
+                       <MonochromeButton
+                         size="small"
+                         monoVariant="outlined"
+                         onClick={() => handleOpenGradeManagement(student)}
+                       >
+                         Manage Grades
+                       </MonochromeButton>
+                     </Box>
                   </Box>
                 ))}
               </Box>
@@ -846,14 +766,13 @@ export default function GradebookPage() {
                   variant="outlined"
                   inputProps={{ min: 0, max: 100 }}
                 />
-                <MUIButton
-                  variant="outlined"
-                  color="error"
-                  onClick={() => handleDeleteCategory(category.id)}
-                  sx={{ minWidth: 'auto', px: 2 }}
-                >
-                  Delete
-                </MUIButton>
+                 <MonochromeButton
+                   monoVariant="outlined"
+                   onClick={() => handleDeleteCategory(category.id)}
+                   sx={{ minWidth: 'auto', px: 2, color: '#ef4444', borderColor: '#ef4444' }}
+                 >
+                   Delete
+                 </MonochromeButton>
               </Box>
             ))}
             
@@ -864,22 +783,17 @@ export default function GradebookPage() {
             </Box>
           </Box>
         </DialogContent>
-        <DialogActions>
-          <MUIButton onClick={() => setCategoryDialogOpen(false)}>
-            Cancel
-          </MUIButton>
-          <MUIButton 
-            onClick={() => setCategoryDialogOpen(false)} 
-            variant="contained"
-            sx={{
-              bgcolor: "#000",
-              color: "white",
-              "&:hover": { bgcolor: "#111" }
-            }}
-          >
-            Save Categories
-          </MUIButton>
-        </DialogActions>
+         <DialogActions>
+           <MonochromeButton onClick={() => setCategoryDialogOpen(false)}>
+             Cancel
+           </MonochromeButton>
+           <MonochromeButton 
+             onClick={() => setCategoryDialogOpen(false)} 
+             monoVariant="primary"
+           >
+             Save Categories
+           </MonochromeButton>
+         </DialogActions>
       </Dialog>
 
       {/* Add New Category Dialog */}
@@ -908,27 +822,22 @@ export default function GradebookPage() {
             />
           </Box>
         </DialogContent>
-        <DialogActions>
-          <MUIButton onClick={() => {
-            setNewCategoryDialogOpen(false)
-            setNewCategoryName("")
-            setNewCategoryPercentage(0)
-          }}>
-            Cancel
-          </MUIButton>
-          <MUIButton 
-            onClick={handleAddCategory}
-            variant="contained"
-            disabled={!newCategoryName.trim() || newCategoryPercentage <= 0}
-            sx={{
-              bgcolor: "#000",
-              color: "white",
-              "&:hover": { bgcolor: "#111" }
-            }}
-          >
-            Add Category
-          </MUIButton>
-        </DialogActions>
+         <DialogActions>
+           <MonochromeButton onClick={() => {
+             setNewCategoryDialogOpen(false)
+             setNewCategoryName("")
+             setNewCategoryPercentage(0)
+           }}>
+             Cancel
+           </MonochromeButton>
+           <MonochromeButton 
+             onClick={handleAddCategory}
+             monoVariant="primary"
+             disabled={!newCategoryName.trim() || newCategoryPercentage <= 0}
+           >
+             Add Category
+           </MonochromeButton>
+         </DialogActions>
       </Dialog>
 
       {/* Grade Scale Dialog */}
@@ -966,22 +875,21 @@ export default function GradebookPage() {
                 <Typography variant="body2" sx={{ fontFamily: "DM Sans, sans-serif", color: "#6b7280", minWidth: 100 }}>
                   {grade.description}
                 </Typography>
-                <MUIButton
-                  variant="outlined"
-                  color="error"
-                  onClick={() => handleDeleteGrade(grade.id)}
-                  sx={{ minWidth: 'auto', px: 2 }}
-                >
-                  Delete
-                </MUIButton>
+                 <MonochromeButton
+                   monoVariant="outlined"
+                   onClick={() => handleDeleteGrade(grade.id)}
+                   sx={{ minWidth: 'auto', px: 2, color: '#ef4444', borderColor: '#ef4444' }}
+                 >
+                   Delete
+                 </MonochromeButton>
               </Box>
             ))}
           </Box>
         </DialogContent>
         <DialogActions>
-          <MUIButton onClick={() => setGradeScaleDialogOpen(false)}>
+          <MonochromeButton onClick={() => setGradeScaleDialogOpen(false)}>
             Close
-          </MUIButton>
+          </MonochromeButton>
         </DialogActions>
       </Dialog>
 
@@ -1022,28 +930,23 @@ export default function GradebookPage() {
             </Box>
           </Box>
         </DialogContent>
-        <DialogActions>
-          <MUIButton onClick={() => {
-            setNewGradeDialogOpen(false)
-            setNewGradeLetter("")
-            setNewGradeMin(0)
-            setNewGradeMax(0)
-          }}>
-            Cancel
-          </MUIButton>
-          <MUIButton 
-            onClick={handleAddGrade}
-            variant="contained"
-            disabled={!newGradeLetter.trim() || newGradeMin < 0 || newGradeMax < newGradeMin}
-            sx={{
-              bgcolor: "#000",
-              color: "white",
-              "&:hover": { bgcolor: "#111" }
-            }}
-          >
-            Add Grade
-          </MUIButton>
-        </DialogActions>
+         <DialogActions>
+           <MonochromeButton onClick={() => {
+             setNewGradeDialogOpen(false)
+             setNewGradeLetter("")
+             setNewGradeMin(0)
+             setNewGradeMax(0)
+           }}>
+             Cancel
+           </MonochromeButton>
+           <MonochromeButton 
+             onClick={handleAddGrade}
+             monoVariant="primary"
+             disabled={!newGradeLetter.trim() || newGradeMin < 0 || newGradeMax < newGradeMin}
+           >
+             Add Grade
+           </MonochromeButton>
+         </DialogActions>
       </Dialog>
     </Box>
   )

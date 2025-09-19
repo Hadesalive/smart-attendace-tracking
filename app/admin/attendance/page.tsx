@@ -88,10 +88,14 @@ import { formatDate, formatTime} from "@/lib/utils"
 import { TYPOGRAPHY_STYLES } from "@/lib/design/fonts"
 import { BUTTON_STYLES } from "@/lib/constants/admin-constants"
 import { supabase } from "@/lib/supabase"
+import { useData } from "@/lib/contexts/DataContext"
+// Mock data removed - using DataContext
+import { AttendanceSession, AttendanceRecord } from "@/lib/types/shared"
 import PageHeader from "@/components/admin/PageHeader"
 import StatsGrid from "@/components/admin/StatsGrid"
 import SearchFilters from "@/components/admin/SearchFilters"
 import DataTable from "@/components/admin/DataTable"
+import { mapSessionStatus } from "@/lib/utils/statusMapping"
 
 
 // ============================================================================
@@ -140,24 +144,7 @@ const STATS_CARDS = [
 // INTERFACES
 // ============================================================================
 
-interface AttendanceSession {
-  id: string
-  session_name: string
-  course_code: string
-  course_name: string
-  lecturer_name: string
-  session_date: string
-  start_time: string
-  end_time: string
-  attendance_method: string
-  total_students: number
-  present_students: number
-  absent_students: number
-  attendance_rate: number
-  status: 'scheduled' | 'active' | 'completed' | 'cancelled'
-  is_active: boolean
-}
-
+// Using shared types from DataContext
 interface AttendanceStats {
   totalSessions: number
   activeSessions: number
@@ -170,82 +157,60 @@ interface AttendanceStats {
 // ============================================================================
 
 export default function AttendancePage() {
+  const { 
+    state, 
+    getAttendanceSessionsByCourse,
+    getAttendanceRecordsBySession,
+    createAttendanceSession,
+    markAttendance,
+    fetchAttendanceSessions,
+    fetchAttendanceRecords,
+    fetchCourses
+  } = useData()
+  // Mock data removed - using DataContext
+
+  // Load data on component mount
+  useEffect(() => {
+    fetchCourses()
+    fetchAttendanceSessions()
+    fetchAttendanceRecords()
+  }, [fetchCourses, fetchAttendanceSessions, fetchAttendanceRecords])
+
   // ============================================================================
   // STATE & HOOKS
   // ============================================================================
   
   const router = useRouter()
-  const [sessions, setSessions] = useState<AttendanceSession[]>([])
-  const [stats, setStats] = useState<AttendanceStats>({
-    totalSessions: 0,
-    activeSessions: 0,
-    totalAttendance: 0,
-    absentStudents: 0
-  })
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedStatus, setSelectedStatus] = useState<string>("all")
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null)
   const [selectedSession, setSelectedSession] = useState<AttendanceSession | null>(null)
   const [isDeleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
 
   // ============================================================================
-  // DATA FETCHING
+  // COMPUTED DATA
   // ============================================================================
 
-  useEffect(() => {
-    fetchAttendanceData()
-  }, [])
+  // Get all attendance sessions from shared data
+  const sessions = useMemo(() => {
+    return state.attendanceSessions
+  }, [state.attendanceSessions])
 
-  const fetchAttendanceData = useCallback(async () => {
-    try {
-      setLoading(true)
-      const { data: sessions, error } = await supabase
-        .from("attendance_sessions")
-        .select(`
-          *,
-          courses(course_code, course_name),
-          users(full_name)
-        `)
-        .order("session_date", { ascending: false })
-        .order("start_time", { ascending: false })
+  // Compute stats from shared data
+  const stats = useMemo(() => {
+    const totalSessions = sessions.length
+    const activeSessions = sessions.filter(s => s.status === 'active').length
+    const totalAttendance = state.attendanceRecords.length
+    const absentStudents = state.attendanceRecords.filter(r => r.status === 'absent').length
 
-      if (error) throw error
-
-      // Transform data to match our interface
-      const transformedSessions: AttendanceSession[] = (sessions || []).map(session => ({
-        id: session.id,
-        session_name: session.session_name,
-        course_code: session.courses?.course_code || "N/A",
-        course_name: session.courses?.course_name || "N/A",
-        lecturer_name: session.users?.full_name || "N/A",
-        session_date: session.session_date,
-        start_time: session.start_time,
-        end_time: session.end_time,
-        attendance_method: session.attendance_method || "QR_CODE",
-        total_students: Math.floor(Math.random() * 50) + 20, // Mock data
-        present_students: Math.floor(Math.random() * 40) + 15, // Mock data
-        absent_students: Math.floor(Math.random() * 10) + 5, // Mock data
-        attendance_rate: Math.floor(Math.random() * 30) + 70, // Mock data
-        status: session.status || 'scheduled',
-        is_active: session.is_active || false
-      }))
-
-      setSessions(transformedSessions)
-      
-      // Calculate stats
-      const totalSessions = transformedSessions.length
-      const activeSessions = transformedSessions.filter(s => s.is_active).length
-      const totalAttendance = transformedSessions.reduce((acc, s) => acc + s.present_students, 0)
-      const absentStudents = transformedSessions.reduce((acc, s) => acc + s.absent_students, 0)
-
-      setStats({ totalSessions, activeSessions, totalAttendance, absentStudents })
-    } catch (error) {
-      console.error("Error fetching attendance data:", error)
-    } finally {
-      setLoading(false)
+    return {
+      totalSessions,
+      activeSessions,
+      totalAttendance,
+      absentStudents
     }
-  }, [])
+  }, [sessions, state.attendanceRecords])
 
   // ============================================================================
   // EVENT HANDLERS
@@ -284,13 +249,13 @@ export default function AttendancePage() {
 
       if (error) throw error
 
-      fetchAttendanceData()
+      // Data will be updated automatically through shared context
       setDeleteConfirmOpen(false)
       setSelectedSession(null)
     } catch (error) {
       console.error("Error deleting session:", error)
     }
-  }, [selectedSession, fetchAttendanceData])
+  }, [selectedSession])
 
   // ============================================================================
   // MEMOIZED VALUES
@@ -314,18 +279,16 @@ export default function AttendancePage() {
       filtered = filtered.filter(session => 
         session.session_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         session.course_code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        session.course_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        session.lecturer_name.toLowerCase().includes(searchTerm.toLowerCase())
+        session.course_name.toLowerCase().includes(searchTerm.toLowerCase())
       )
     }
 
-    // Filter by status
+    // Filter by status (centralized mapping with is_active override)
     if (selectedStatus !== "all") {
-      if (selectedStatus === "active") {
-        filtered = filtered.filter(session => session.is_active)
-      } else {
-        filtered = filtered.filter(session => session.status === selectedStatus)
-      }
+      filtered = filtered.filter(session => {
+        const displayStatus = session.is_active ? 'active' : mapSessionStatus(session.status, 'admin')
+        return displayStatus === selectedStatus
+      })
     }
 
     return filtered
@@ -375,7 +338,7 @@ export default function AttendancePage() {
       label: 'Lecturer',
       render: (value: any, row: AttendanceSession) => (
         <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
-          {row.lecturer_name}
+          Lecturer
         </Typography>
       )
     },
@@ -396,32 +359,45 @@ export default function AttendancePage() {
     {
       key: 'attendance',
       label: 'Attendance',
-      render: (value: any, row: AttendanceSession) => (
-        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-          <CheckCircleIcon style={{ width: 16, height: 16, color: "#000000" }} />
-          <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
-            {row.present_students}/{row.total_students}
-          </Typography>
-        </Box>
-      )
+      render: (value: any, row: AttendanceSession) => {
+        const records = getAttendanceRecordsBySession(row.id)
+        const presentCount = records.filter(r => r.status === 'present' || r.status === 'late').length
+        const totalCount = records.length
+        return (
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+            <CheckCircleIcon style={{ width: 16, height: 16, color: "#000000" }} />
+            <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
+              {presentCount}/{totalCount}
+            </Typography>
+          </Box>
+        )
+      }
     },
     {
       key: 'rate',
       label: 'Rate',
-      render: (value: any, row: AttendanceSession) => (
-        <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
-          {row.attendance_rate}%
-        </Typography>
-      )
+      render: (value: any, row: AttendanceSession) => {
+        const records = getAttendanceRecordsBySession(row.id)
+        const presentCount = records.filter(r => r.status === 'present' || r.status === 'late').length
+        const totalCount = records.length
+        const rate = totalCount > 0 ? Math.round((presentCount / totalCount) * 100) : 0
+        return (
+          <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
+            {rate}%
+          </Typography>
+        )
+      }
     },
     {
       key: 'status',
       label: 'Status',
       render: (value: any, row: AttendanceSession) => {
-        const statusColor = getStatusColor(row.status)
+        const displayStatus = row.is_active ? 'active' : mapSessionStatus(row.status, 'admin')
+        const statusColor = getStatusColor(displayStatus)
+        const label = displayStatus.charAt(0).toUpperCase() + displayStatus.slice(1)
         return (
           <Chip 
-            label={row.status} 
+            label={label} 
             size="small"
             sx={{ 
               backgroundColor: `${statusColor}20`,

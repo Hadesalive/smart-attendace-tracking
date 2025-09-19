@@ -78,9 +78,18 @@ export default function AssignmentDetailsPage() {
       <MUICard sx={{ bgcolor: 'card', border: '1px solid', borderColor: 'border', borderRadius: 3 }}>
         <MUICardContent sx={{ p: { xs: 2, sm: 2.5, md: 3 } }}>
           <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', mb: 2 }}>
-            <Chip label={`Graded: ${graded}`} />
-            <Chip label={`Pending: ${pending}`} />
-            <Chip label={`Total: ${submissions.length}`} />
+            <Chip 
+              label={`Graded: ${graded}`} 
+              sx={{ bgcolor: '#000000', color: 'white', fontWeight: 600, border: '1px solid #000000' }}
+            />
+            <Chip 
+              label={`Pending: ${pending}`} 
+              sx={{ bgcolor: '#666666', color: 'white', fontWeight: 600, border: '1px solid #000000' }}
+            />
+            <Chip 
+              label={`Total: ${submissions.length}`} 
+              sx={{ bgcolor: '#333333', color: 'white', fontWeight: 600, border: '1px solid #000000' }}
+            />
           </Box>
           <Table>
             <TableHead>
@@ -108,9 +117,15 @@ export default function AssignmentDetailsPage() {
                     )}
                   </TableCell>
                   <TableCell>
-                    <Badge variant={s.status === 'graded' ? 'default' : s.status === 'late' ? 'destructive' : 'secondary'}>
-                      {s.status}
-                    </Badge>
+                    <Chip 
+                      label={s.status}
+                      sx={{ 
+                        bgcolor: s.status === 'graded' ? '#000000' : s.status === 'late' ? '#666666' : '#333333',
+                        color: 'white',
+                        fontWeight: 600,
+                        border: '1px solid #000000'
+                      }}
+                    />
                   </TableCell>
                   <TableCell>
                     <MUIButton variant="outlined" size="small" onClick={() => openGrade(s)}>{s.status === 'graded' ? 'View' : 'Grade'}</MUIButton>

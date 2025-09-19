@@ -77,6 +77,8 @@ import {
   EyeIcon
 } from "@heroicons/react/24/outline"
 import { formatDate } from "@/lib/utils"
+import { useData } from "@/lib/contexts/DataContext"
+import { useMockData } from "@/lib/hooks/useMockData"
 import { AddUserForm } from "@/components/admin/add-user-form"
 import PageHeader from "@/components/admin/PageHeader"
 import StatsGrid from "@/components/admin/StatsGrid"
@@ -193,7 +195,11 @@ const userStats: UserStats = {
 
 export default function AdminUsersPage() {
   const router = useRouter()
-  const [users, setUsers] = useState<User[]>(mockUsers)
+  
+  // Data Context
+  const { state } = useData()
+  const { isInitialized } = useMockData()
+  
   const [searchTerm, setSearchTerm] = useState("")
   const [roleFilter, setRoleFilter] = useState<string>("all")
   const [statusFilter, setStatusFilter] = useState<string>("all")
@@ -204,6 +210,26 @@ export default function AdminUsersPage() {
   const [addUserOpen, setAddUserOpen] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [userToDelete, setUserToDelete] = useState<User | null>(null)
+
+  // Get users from DataContext
+  const users = useMemo(() => {
+    return state.users.map(user => ({
+      id: user.id,
+      name: user.full_name,
+      email: user.email,
+      role: (user.role as 'admin' | 'lecturer' | 'student') || 'student',
+      status: 'active' as 'active' | 'inactive' | 'pending', // Default to active
+      lastLogin: new Date().toISOString(), // Default to current time
+      createdAt: user.created_at,
+      avatar: user.profile_image_url,
+      courses: state.enrollments
+        .filter(e => e.student_id === user.id)
+        .map(e => {
+          const course = state.courses.find(c => c.id === e.course_id)
+          return course?.course_code || 'Unknown'
+        })
+    }))
+  }, [state.users, state.enrollments, state.courses])
 
   // ============================================================================
   // MEMOIZED VALUES
@@ -294,18 +320,16 @@ export default function AdminUsersPage() {
 
   const confirmDeleteUser = () => {
     if (userToDelete) {
-      setUsers(prev => prev.filter(user => user.id !== userToDelete.id))
+      // TODO: Implement delete user functionality in DataContext
+      console.log("Delete user:", userToDelete.id)
       setDeleteDialogOpen(false)
       setUserToDelete(null)
     }
   }
 
   const handleToggleUserStatus = (userId: string) => {
-    setUsers(prev => prev.map(user => 
-      user.id === userId 
-        ? { ...user, status: user.status === 'active' ? 'inactive' : 'active' }
-        : user
-    ))
+    // TODO: Implement toggle user status functionality in DataContext
+    console.log("Toggle user status:", userId)
   }
 
   const getRoleColor = (role: string) => {
@@ -467,6 +491,22 @@ export default function AdminUsersPage() {
       )
     }
   ]
+
+  // Loading state
+  if (!isInitialized) {
+    return (
+      <Box sx={{ p: { xs: 2, sm: 3 } }}>
+        <PageHeader
+          title="User Management"
+          subtitle="Manage users, roles, and permissions across the system"
+          actions={null}
+        />
+        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 400 }}>
+          <Typography variant="body1">Loading users...</Typography>
+        </Box>
+      </Box>
+    )
+  }
 
   return (
     <Box sx={{ p: { xs: 2, sm: 3 } }}>

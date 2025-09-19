@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useMemo } from "react"
+import React, { useState, useMemo, useEffect } from "react"
 import { 
   Box, 
   Typography, 
@@ -18,7 +18,10 @@ import {
   TableBody,
   TableCell,
   TableHead,
-  TableRow
+  TableRow,
+  Chip,
+  CircularProgress,
+  Skeleton
 } from "@mui/material"
 import StatCard from "@/components/dashboard/stat-card"
 import { Badge } from "@/components/ui/badge"
@@ -34,6 +37,9 @@ import {
   BookOpenIcon
 } from "@heroicons/react/24/outline"
 import { formatDate, formatNumber } from "@/lib/utils"
+import { useData } from "@/lib/contexts/DataContext"
+import { AttendanceRecord, Course } from "@/lib/types/shared"
+import { mapAttendanceStatus } from "@/lib/utils/statusMapping"
 
 // Constants
 const CARD_SX = {
@@ -78,106 +84,89 @@ const INPUT_STYLES = {
 }
 
 // Types
-interface AttendanceRecord {
-  id: string
-  sessionTitle: string
-  courseCode: string
-  courseName: string
-  date: string
-  startTime: string
-  endTime: string
-  status: "present" | "late" | "absent"
-  checkInTime?: string
-  instructor: string
-  location: string
-}
-
-interface Course {
-  id: string
-  courseCode: string
-  courseName: string
-  instructor: string
-}
+// Using shared types from DataContext
 
 export default function StudentAttendancePage() {
+  const { 
+    state, 
+    getCoursesByLecturer, 
+    getStudentsByCourse,
+    getAttendanceSessionsByCourse,
+    getAttendanceRecordsBySession,
+    markAttendanceSupabase,
+    subscribeToAttendanceRecords,
+    unsubscribeAll,
+    fetchAttendanceSessions,
+    fetchAttendanceRecords,
+    fetchCourses,
+    fetchEnrollments
+  } = useData()
+
+  // Load data on component mount
+  useEffect(() => {
+    fetchCourses()
+    fetchEnrollments()
+    fetchAttendanceSessions()
+    fetchAttendanceRecords()
+  }, [fetchCourses, fetchEnrollments, fetchAttendanceSessions, fetchAttendanceRecords])
+
   const [selectedCourse, setSelectedCourse] = useState<string>("")
   const [statusTab, setStatusTab] = useState<"all" | "present" | "late" | "absent">("all")
   const [searchQuery, setSearchQuery] = useState<string>("")
 
-  // Mock data
-  const courses: Course[] = [
-    { id: "1", courseCode: "CS101", courseName: "Introduction to Computer Science", instructor: "Dr. Smith" },
-    { id: "2", courseCode: "MATH201", courseName: "Calculus II", instructor: "Prof. Johnson" },
-    { id: "3", courseCode: "ENG101", courseName: "English Composition", instructor: "Dr. Brown" },
-    { id: "4", courseCode: "PHYS101", courseName: "Physics I", instructor: "Dr. Wilson" },
-  ]
+  // Get student's courses (based on authenticated user)
+  const courses = useMemo(() => {
+    console.log('Student Attendance - State data:', {
+      courses: state.courses.length,
+      enrollments: state.enrollments.length,
+      attendanceSessions: state.attendanceSessions.length,
+      attendanceRecords: state.attendanceRecords.length
+    })
+    
+    const filteredCourses = state.courses.filter(course => 
+      state.enrollments.some(enrollment => 
+        (!!state.currentUser?.id && enrollment.student_id === state.currentUser.id) && enrollment.course_id === course.id
+      )
+    )
+    
+    console.log('Student Attendance - Filtered courses:', filteredCourses.length)
+    return filteredCourses
+  }, [state.courses, state.enrollments, state.currentUser?.id])
 
-  const attendanceRecords: AttendanceRecord[] = [
-    {
-      id: "1",
-      sessionTitle: "Introduction to Programming",
-      courseCode: "CS101",
-      courseName: "Introduction to Computer Science",
-      date: "2024-01-22T10:00:00",
-      startTime: "10:00",
-      endTime: "11:30",
-      status: "present",
-      checkInTime: "10:02",
-      instructor: "Dr. Smith",
-      location: "Room 101"
-    },
-    {
-      id: "2",
-      sessionTitle: "Data Structures Lab",
-      courseCode: "CS101",
-      courseName: "Introduction to Computer Science",
-      date: "2024-01-22T14:00:00",
-      startTime: "14:00",
-      endTime: "16:00",
-      status: "late",
-      checkInTime: "14:15",
-      instructor: "Dr. Smith",
-      location: "Lab 201"
-    },
-    {
-      id: "3",
-      sessionTitle: "Derivatives and Applications",
-      courseCode: "MATH201",
-      courseName: "Calculus II",
-      date: "2024-01-21T09:00:00",
-      startTime: "09:00",
-      endTime: "10:30",
-      status: "present",
-      checkInTime: "08:58",
-      instructor: "Prof. Johnson",
-      location: "Room 301"
-    },
-    {
-      id: "4",
-      sessionTitle: "Integration Techniques",
-      courseCode: "MATH201",
-      courseName: "Calculus II",
-      date: "2024-01-20T11:00:00",
-      startTime: "11:00",
-      endTime: "12:00",
-      status: "absent",
-      instructor: "Prof. Johnson",
-      location: "Room 302"
-    },
-    {
-      id: "5",
-      sessionTitle: "Essay Writing Workshop",
-      courseCode: "ENG101",
-      courseName: "English Composition",
-      date: "2024-01-19T13:00:00",
-      startTime: "13:00",
-      endTime: "15:00",
-      status: "present",
-      checkInTime: "12:58",
-      instructor: "Dr. Brown",
-      location: "Room 205"
-    }
-  ]
+  // Get student's attendance records from shared data
+  const attendanceRecords = useMemo(() => {
+    const studentId = state.currentUser?.id
+    const allRecords: any[] = []
+    
+    // Get all sessions for student's courses
+    courses.forEach(course => {
+      const sessions = getAttendanceSessionsByCourse(course.id)
+      sessions.forEach(session => {
+        const records = getAttendanceRecordsBySession(session.id)
+        const studentRecord = records.find(r => !!studentId && r.student_id === studentId)
+        
+        // Only include sessions where student has an attendance record
+        // This is correct behavior - students only see their own attendance history
+        if (studentRecord) {
+          allRecords.push({
+            id: studentRecord.id,
+            sessionTitle: session.session_name,
+            courseCode: session.course_code,
+            courseName: session.course_name,
+            date: session.session_date,
+            startTime: session.start_time,
+            endTime: session.end_time,
+            status: studentRecord.status,
+            checkInTime: studentRecord.check_in_time,
+            instructor: "Instructor", // Would need to get from lecturer data
+            location: session.location
+          })
+        }
+      })
+    })
+    
+    return allRecords
+  }, [courses, getAttendanceSessionsByCourse, getAttendanceRecordsBySession, state.currentUser?.id])
 
   // Computed values
   const filteredRecords = useMemo(() => {
@@ -188,7 +177,10 @@ export default function StudentAttendancePage() {
     }
     
     if (statusTab !== "all") {
-      filtered = filtered.filter(record => record.status === statusTab)
+      filtered = filtered.filter(record => {
+        const mappedStatus = mapAttendanceStatus(record.status, 'student')
+        return mappedStatus === statusTab
+      })
     }
     
     if (searchQuery.trim()) {
@@ -204,10 +196,21 @@ export default function StudentAttendancePage() {
     return filtered.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
   }, [selectedCourse, statusTab, searchQuery])
 
+  // Subscribe to real-time attendance record updates
+  useEffect(() => {
+    // Subscribe to attendance record changes for the current student
+    subscribeToAttendanceRecords()
+    
+    // Cleanup subscriptions on unmount
+    return () => {
+      unsubscribeAll()
+    }
+  }, [subscribeToAttendanceRecords, unsubscribeAll])
+
   const stats = useMemo(() => {
     const totalSessions = attendanceRecords.length
-    const presentSessions = attendanceRecords.filter(r => r.status === 'present').length
-    const lateSessions = attendanceRecords.filter(r => r.status === 'late').length
+    const presentSessions = attendanceRecords.filter(r => mapAttendanceStatus(r.status, 'student') === 'present').length
+    const lateSessions = attendanceRecords.filter(r => mapAttendanceStatus(r.status, 'student') === 'late').length
     const attendanceRate = totalSessions > 0 ? ((presentSessions + lateSessions) / totalSessions) * 100 : 0
 
     return { totalSessions, presentSessions, lateSessions, attendanceRate }
@@ -217,13 +220,16 @@ export default function StudentAttendancePage() {
     const courseStatsMap = new Map()
     
     courses.forEach(course => {
-      const courseRecords = attendanceRecords.filter(r => r.courseCode === course.courseCode)
-      const present = courseRecords.filter(r => r.status === 'present' || r.status === 'late').length
+      const courseRecords = attendanceRecords.filter(r => r.courseCode === course.course_code)
+      const present = courseRecords.filter(r => {
+        const mappedStatus = mapAttendanceStatus(r.status, 'student')
+        return mappedStatus === 'present' || mappedStatus === 'late'
+      }).length
       const total = courseRecords.length
       const rate = total > 0 ? (present / total) * 100 : 0
       
-      courseStatsMap.set(course.courseCode, {
-        courseName: course.courseName,
+      courseStatsMap.set(course.course_code, {
+        courseName: course.course_name,
         present,
         total,
         rate
@@ -245,28 +251,30 @@ export default function StudentAttendancePage() {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "present":
-        return <Badge variant="default" className="bg-green-500">Present</Badge>
+        return <Chip label="Present" sx={{ bgcolor: '#000000', color: 'white', fontWeight: 600, border: '1px solid #000000' }} />
       case "late":
-        return <Badge variant="default" className="bg-yellow-500">Late</Badge>
+        return <Chip label="Late" sx={{ bgcolor: '#666666', color: 'white', fontWeight: 600, border: '1px solid #000000' }} />
       case "absent":
-        return <Badge variant="destructive">Absent</Badge>
+        return <Chip label="Absent" sx={{ bgcolor: '#999999', color: 'white', fontWeight: 600, border: '1px solid #000000' }} />
       default:
-        return <Badge variant="secondary">{status}</Badge>
+        return <Chip label={status} sx={{ bgcolor: '#cccccc', color: 'white', fontWeight: 600, border: '1px solid #000000' }} />
     }
   }
 
   const getStatusIcon = (status: string) => {
     switch (status) {
       case "present":
-        return <CheckCircleIcon className="h-4 w-4 text-green-500" />
+        return <CheckCircleIcon className="h-4 w-4 text-gray-600" />
       case "late":
-        return <ExclamationTriangleIcon className="h-4 w-4 text-yellow-500" />
+        return <ExclamationTriangleIcon className="h-4 w-4 text-gray-600" />
       case "absent":
-        return <XCircleIcon className="h-4 w-4 text-red-500" />
+        return <XCircleIcon className="h-4 w-4 text-gray-600" />
       default:
         return null
     }
   }
+
+  // Loading state - removed mock data dependency
 
   return (
     <div className="space-y-6">
@@ -406,8 +414,8 @@ export default function StudentAttendancePage() {
               >
                 <option value="">All Courses</option>
                 {courses.map(course => (
-                  <option key={course.id} value={course.courseCode}>
-                    {course.courseCode} - {course.courseName}
+                  <option key={course.id} value={course.course_code}>
+                    {course.course_code} - {course.course_name}
                   </option>
                 ))}
               </Select>
@@ -437,9 +445,9 @@ export default function StudentAttendancePage() {
             }}
           >
             <Tab label={`All (${filteredRecords.length})`} value="all" />
-            <Tab label={`Present (${filteredRecords.filter(r => r.status === 'present').length})`} value="present" />
-            <Tab label={`Late (${filteredRecords.filter(r => r.status === 'late').length})`} value="late" />
-            <Tab label={`Absent (${filteredRecords.filter(r => r.status === 'absent').length})`} value="absent" />
+            <Tab label={`Present (${filteredRecords.filter(r => mapAttendanceStatus(r.status, 'student') === 'present').length})`} value="present" />
+            <Tab label={`Late (${filteredRecords.filter(r => mapAttendanceStatus(r.status, 'student') === 'late').length})`} value="late" />
+            <Tab label={`Absent (${filteredRecords.filter(r => mapAttendanceStatus(r.status, 'student') === 'absent').length})`} value="absent" />
           </Tabs>
         </MUICardContent>
       </MUICard>
@@ -506,8 +514,8 @@ export default function StudentAttendancePage() {
                     </TableCell>
                     <TableCell>
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        {getStatusIcon(record.status)}
-                        {getStatusBadge(record.status)}
+                        {getStatusIcon(mapAttendanceStatus(record.status, 'student'))}
+                        {getStatusBadge(mapAttendanceStatus(record.status, 'student'))}
                       </Box>
                     </TableCell>
                     <TableCell>

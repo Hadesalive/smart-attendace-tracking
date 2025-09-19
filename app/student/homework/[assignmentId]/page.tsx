@@ -306,26 +306,26 @@ Unsatisfactory (0-59): Major issues, no documentation, no tests
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "pending":
-        return <Badge variant="secondary">Pending</Badge>
+        return <Chip label="Pending" sx={{ bgcolor: '#666666', color: 'white', fontWeight: 600, border: '1px solid #000000' }} />
       case "submitted":
-        return <Badge variant="default">Submitted</Badge>
+        return <Chip label="Submitted" sx={{ bgcolor: '#000000', color: 'white', fontWeight: 600, border: '1px solid #000000' }} />
       case "graded":
-        return <Badge variant="outline">Graded</Badge>
+        return <Chip label="Graded" sx={{ bgcolor: '#333333', color: 'white', fontWeight: 600, border: '1px solid #000000' }} />
       case "late":
-        return <Badge variant="destructive">Late</Badge>
+        return <Chip label="Late" sx={{ bgcolor: '#666666', color: 'white', fontWeight: 600, border: '1px solid #000000' }} />
       case "overdue":
-        return <Badge variant="destructive">Overdue</Badge>
+        return <Chip label="Overdue" sx={{ bgcolor: '#999999', color: 'white', fontWeight: 600, border: '1px solid #000000' }} />
       default:
-        return <Badge variant="secondary">{status}</Badge>
+        return <Chip label={status} sx={{ bgcolor: '#666666', color: 'white', fontWeight: 600, border: '1px solid #000000' }} />
     }
   }
 
   const getGradeColor = (grade: number, total: number) => {
     const percentage = (grade / total) * 100
-    if (percentage >= 90) return "hsl(var(--success))"
-    if (percentage >= 80) return "hsl(var(--primary))"
-    if (percentage >= 70) return "hsl(var(--warning))"
-    return "hsl(var(--destructive))"
+    if (percentage >= 90) return "#000000"
+    if (percentage >= 80) return "#333333"
+    if (percentage >= 70) return "#666666"
+    return "#999999"
   }
 
   if (loading) {
@@ -503,9 +503,15 @@ Unsatisfactory (0-59): Major issues, no documentation, no tests
                           {formatDate(submission.submittedAt)}
                         </TableCell>
                         <TableCell>
-                          <Badge variant={submission.status === 'graded' ? 'default' : 'secondary'}>
-                            {submission.status}
-                          </Badge>
+                          <Chip 
+                            label={submission.status}
+                            sx={{ 
+                              bgcolor: submission.status === 'graded' ? '#000000' : '#666666',
+                              color: 'white',
+                              fontWeight: 600,
+                              border: '1px solid #000000'
+                            }}
+                          />
                         </TableCell>
                         <TableCell sx={{ fontFamily: 'DM Sans, sans-serif' }}>
                           {submission.attachments?.length || 0} file(s)

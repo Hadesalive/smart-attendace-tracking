@@ -41,10 +41,16 @@
 
 "use client"
 
-import React from "react"
+import React, { useMemo } from "react"
 import { Box } from "@mui/material"
 import { motion } from "framer-motion"
 import StatCard from "@/components/dashboard/stat-card"
+import { 
+  BookOpenIcon, 
+  UsersIcon, 
+  CalendarDaysIcon, 
+  CheckCircleIcon 
+} from "@heroicons/react/24/outline"
 
 interface StatCardData {
   title: string
@@ -55,9 +61,17 @@ interface StatCardData {
   change: string
 }
 
+interface LecturerStats {
+  totalCourses: number
+  totalStudents: number
+  todaySessions: number
+  averageAttendance: number
+}
+
 interface StatsGridProps {
-  stats: StatCardData[]
+  stats: StatCardData[] | LecturerStats
   loading?: boolean
+  className?: string
 }
 
 const ANIMATION_CONFIG = {
@@ -69,12 +83,61 @@ const ANIMATION_CONFIG = {
   }
 } as const
 
-export default function StatsGrid({ stats, loading = false }: StatsGridProps) {
+export default function StatsGrid({ stats, loading = false, className }: StatsGridProps) {
+  // Transform lecturer stats to stat card data if needed
+  const statCards = useMemo(() => {
+    if (Array.isArray(stats)) {
+      return stats
+    }
+    
+    // Transform LecturerStats to StatCardData array
+    const lecturerStats = stats as LecturerStats
+    return [
+      {
+        title: "Total Courses",
+        value: lecturerStats.totalCourses,
+        subtitle: "Active courses",
+        icon: BookOpenIcon,
+        color: "#000000",
+        trend: { value: 0, isPositive: true },
+        change: "All time"
+      },
+      {
+        title: "Total Students",
+        value: lecturerStats.totalStudents,
+        subtitle: "Enrolled students",
+        icon: UsersIcon,
+        color: "#000000",
+        trend: { value: 0, isPositive: true },
+        change: "Across all courses"
+      },
+      {
+        title: "Today's Sessions",
+        value: lecturerStats.todaySessions,
+        subtitle: "Scheduled sessions",
+        icon: CalendarDaysIcon,
+        color: "#000000",
+        trend: { value: 0, isPositive: true },
+        change: "Today"
+      },
+      {
+        title: "Average Attendance",
+        value: `${lecturerStats.averageAttendance}%`,
+        subtitle: "Overall attendance",
+        icon: CheckCircleIcon,
+        color: "#000000",
+        trend: { value: 0, isPositive: true },
+        change: "This semester"
+      }
+    ]
+  }, [stats])
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ ...ANIMATION_CONFIG.spring, delay: 0.1 }}
+      className={className}
     >
       <Box sx={{ 
         display: "grid", 
@@ -82,7 +145,7 @@ export default function StatsGrid({ stats, loading = false }: StatsGridProps) {
         gap: 3,
         mb: 4 
       }}>
-        {stats.map((stat, index) => (
+        {statCards.map((stat, index) => (
           <StatCard
             key={stat.title}
             title={stat.title}

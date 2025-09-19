@@ -11,7 +11,8 @@ import {
   TextField,
   IconButton,
   Avatar,
-  LinearProgress
+  LinearProgress,
+  Chip
 } from "@mui/material"
 import StatCard from "@/components/dashboard/stat-card"
 import { Badge } from "@/components/ui/badge"
@@ -26,6 +27,10 @@ import {
   CheckCircleIcon
 } from "@heroicons/react/24/outline"
 import { formatDate, formatNumber } from "@/lib/utils"
+import { useData } from "@/lib/contexts/DataContext"
+import { useMockData } from "@/lib/hooks/useMockData"
+import { Course, Student, Assignment, Submission, AttendanceSession } from "@/lib/types/shared"
+import { mapSessionStatus, mapAttendanceStatus } from "@/lib/utils/statusMapping"
 
 // Constants
 const CARD_SX = {
@@ -64,8 +69,8 @@ const BUTTON_STYLES = {
 // Types
 interface StudentCourse {
   id: string
-  courseCode: string
-  courseName: string
+  course_code: string
+  course_name: string
   instructor: string
   credits: number
   semester: string
@@ -90,15 +95,101 @@ interface StudentCourse {
 }
 
 export default function StudentCoursesPage() {
+  const { 
+    state, 
+    getCoursesByLecturer, 
+    getStudentsByCourse,
+    getAssignmentsByCourse,
+    getSubmissionsByAssignment,
+    getAttendanceSessionsByCourse,
+    getAttendanceRecordsBySession,
+    getStudentGradesByCourse,
+    calculateFinalGrade
+  } = useData()
+  const { isInitialized } = useMockData()
+
   const router = useRouter()
   const [searchQuery, setSearchQuery] = useState<string>("")
 
-  // Mock data
-  const courses: StudentCourse[] = [
+  // Get student's courses from shared data
+  const studentId = "user_1" // Assuming current user is student with ID "user_1"
+  
+  const courses = useMemo(() => {
+    return state.courses.filter(course => 
+      state.enrollments.some(enrollment => 
+        enrollment.student_id === studentId && enrollment.course_id === course.id
+      )
+    ).map(course => {
+      // Calculate course-specific stats
+      const assignments = getAssignmentsByCourse(course.id)
+      const submittedAssignments = assignments.filter(assignment => {
+        const submissions = getSubmissionsByAssignment(assignment.id)
+        return submissions.some(s => s.student_id === studentId)
+      }).length
+      
+      // Calculate attendance rate
+      let totalSessions = 0
+      let presentSessions = 0
+      const courseSessions = getAttendanceSessionsByCourse(course.id)
+      courseSessions.forEach(session => {
+        const records = getAttendanceRecordsBySession(session.id)
+        const studentRecord = records.find(r => r.student_id === studentId)
+        if (studentRecord) {
+          totalSessions++
+          const mappedStatus = mapAttendanceStatus(studentRecord.status, 'student')
+          if (mappedStatus === 'present' || mappedStatus === 'late') {
+            presentSessions++
+          }
+        }
+      })
+      const attendanceRate = totalSessions > 0 ? Math.round((presentSessions / totalSessions) * 100) : 0
+      
+      // Calculate average grade
+      const grades = getStudentGradesByCourse(studentId, course.id)
+      const averageGrade = grades.length > 0 ? Math.round(calculateFinalGrade(studentId, course.id)) : 0
+      
+      // Get next session
+      const futureSessions = courseSessions.filter(session => 
+        new Date(session.session_date || '') >= new Date()
+      ).sort((a, b) => new Date(a.session_date || '').getTime() - new Date(b.session_date || '').getTime())
+      
+      const nextSession = futureSessions[0]
+      
+      return {
+        id: course.id,
+        course_code: course.course_code,
+        course_name: course.course_name,
+        instructor: "Instructor", // Would need to get from lecturer data
+        credits: course.credits || 3,
+        semester: "Fall 2024", // Would need to get from enrollment data
+        status: "active" as const,
+        attendanceRate,
+        averageGrade,
+        materialsCount: state.materials.filter(m => m.course_id === course.id).length,
+        totalAssignments: assignments.length,
+        submittedAssignments,
+        progress: assignments.length > 0 ? Math.round((submittedAssignments / assignments.length) * 100) : 0,
+        description: "Course description not available", // Would need to get from course data
+        schedule: {
+          days: ["Monday", "Wednesday", "Friday"], // Would need to get from course data
+          time: "10:00 - 11:30", // Would need to get from course data
+          location: "Room TBD" // Would need to get from course data
+        },
+        nextSession: nextSession ? {
+          title: nextSession.session_name,
+          date: nextSession.session_date || new Date().toISOString(),
+          time: `${nextSession.start_time || 'TBD'} - ${nextSession.end_time || 'TBD'}`
+        } : undefined
+      }
+    })
+  }, [state.courses, state.enrollments, state.materials, getAssignmentsByCourse, getSubmissionsByAssignment, getAttendanceSessionsByCourse, getAttendanceRecordsBySession, getStudentGradesByCourse, calculateFinalGrade, studentId])
+
+  // Legacy mock data for reference
+  const legacyCourses: StudentCourse[] = [
     {
       id: "1",
-      courseCode: "CS101",
-      courseName: "Introduction to Computer Science",
+      course_code: "CS101",
+      course_name: "Introduction to Computer Science",
       instructor: "Dr. Smith",
       credits: 3,
       semester: "Fall 2024",
@@ -123,8 +214,8 @@ export default function StudentCoursesPage() {
     },
     {
       id: "2",
-      courseCode: "MATH201",
-      courseName: "Calculus II",
+      course_code: "MATH201",
+      course_name: "Calculus II",
       instructor: "Prof. Johnson",
       credits: 4,
       semester: "Fall 2024",
@@ -149,8 +240,8 @@ export default function StudentCoursesPage() {
     },
     {
       id: "3",
-      courseCode: "ENG101",
-      courseName: "English Composition",
+      course_code: "ENG101",
+      course_name: "English Composition",
       instructor: "Dr. Brown",
       credits: 3,
       semester: "Fall 2024",
@@ -180,8 +271,8 @@ export default function StudentCoursesPage() {
     if (!searchQuery.trim()) return courses
     const query = searchQuery.toLowerCase()
     return courses.filter(course => 
-      course.courseCode.toLowerCase().includes(query) ||
-      course.courseName.toLowerCase().includes(query) ||
+      course.course_code.toLowerCase().includes(query) ||
+      course.course_name.toLowerCase().includes(query) ||
       course.instructor.toLowerCase().includes(query)
     )
   }, [searchQuery])
@@ -207,21 +298,21 @@ export default function StudentCoursesPage() {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "active":
-        return <Badge variant="default" className="bg-green-500">Active</Badge>
+        return <Chip label="Active" sx={{ bgcolor: '#000000', color: 'white', fontWeight: 600, border: '1px solid #000000' }} />
       case "completed":
-        return <Badge variant="outline">Completed</Badge>
+        return <Chip label="Completed" sx={{ bgcolor: '#666666', color: 'white', fontWeight: 600, border: '1px solid #000000' }} />
       case "dropped":
-        return <Badge variant="destructive">Dropped</Badge>
+        return <Chip label="Dropped" sx={{ bgcolor: '#999999', color: 'white', fontWeight: 600, border: '1px solid #000000' }} />
       default:
-        return <Badge variant="secondary">{status}</Badge>
+        return <Chip label={status} sx={{ bgcolor: '#cccccc', color: 'white', fontWeight: 600, border: '1px solid #000000' }} />
     }
   }
 
   const getGradeColor = (grade: number) => {
-    if (grade >= 90) return "text-green-600"
-    if (grade >= 80) return "text-blue-600"
-    if (grade >= 70) return "text-yellow-600"
-    return "text-red-600"
+    if (grade >= 90) return "#000000"
+    if (grade >= 80) return "#333333"
+    if (grade >= 70) return "#666666"
+    return "#999999"
   }
 
   return (
@@ -366,7 +457,7 @@ export default function StudentCoursesPage() {
                         fontWeight: 600,
                         fontSize: { xs: '1.125rem', sm: '1.25rem' }
                       }}>
-                        {course.courseCode} - {course.courseName}
+                        {course.course_code} - {course.course_name}
                       </Typography>
                       {getStatusBadge(course.status)}
                     </Box>
@@ -386,7 +477,7 @@ export default function StudentCoursesPage() {
                     <Typography variant="h6" sx={{ 
                       fontFamily: 'Poppins, sans-serif', 
                       fontWeight: 700,
-                      className: getGradeColor(course.averageGrade)
+                      color: getGradeColor(course.averageGrade)
                     }}>
                       {Math.round(course.averageGrade)}%
                     </Typography>

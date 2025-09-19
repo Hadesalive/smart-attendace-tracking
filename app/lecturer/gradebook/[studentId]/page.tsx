@@ -110,11 +110,11 @@ export default function StudentGradeManagementPage({ params }: { params: Promise
   }
 
   const getGradeColor = (percentage: number) => {
-    if (percentage >= 90) return '#22c55e'
-    if (percentage >= 80) return '#16a34a'
-    if (percentage >= 70) return '#eab308'
-    if (percentage >= 60) return '#f59e0b'
-    return '#ef4444'
+    if (percentage >= 90) return '#000000'
+    if (percentage >= 80) return '#333333'
+    if (percentage >= 70) return '#666666'
+    if (percentage >= 60) return '#999999'
+    return '#cccccc'
   }
 
   const finalGrade = calculateFinalGrade()
@@ -506,10 +506,11 @@ export default function StudentGradeManagementPage({ params }: { params: Promise
                     icon={finalGrade >= 60 ? <CheckCircleIcon className="w-4 h-4" /> : <ExclamationTriangleIcon className="w-4 h-4" />}
                     label={finalGrade >= 60 ? 'Passing' : 'Failing'}
                     sx={{
-                      bgcolor: finalGrade >= 60 ? '#dcfce7' : '#fef2f2',
-                      color: finalGrade >= 60 ? '#16a34a' : '#dc2626',
+                      bgcolor: finalGrade >= 60 ? '#000000' : '#666666',
+                      color: 'white',
                       fontFamily: 'DM Sans, sans-serif',
-                      fontWeight: 600
+                      fontWeight: 600,
+                      border: '1px solid #000000'
                     }}
                   />
                 </Box>

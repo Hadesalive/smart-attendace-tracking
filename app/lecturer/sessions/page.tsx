@@ -29,7 +29,8 @@ import {
   TableRow
 } from "@mui/material"
 import StatCard from "@/components/dashboard/stat-card"
-import CreateSessionModal from "@/components/attendance/session-creation-modal"
+import CreateSessionModal from "@/components/attendance/session-creation-modal-new"
+import SessionQrCodeDialog from "@/components/attendance/session-qr-code-dialog-new"
 import { 
   CalendarDaysIcon,
   PlusIcon,
@@ -47,7 +48,11 @@ import {
   EllipsisVerticalIcon,
   QrCodeIcon
 } from "@heroicons/react/24/outline"
+import { QRCodeCanvas } from 'qrcode.react'
 import { formatDate, formatTime } from "@/lib/utils"
+import { mapSessionStatus } from "@/lib/utils/statusMapping"
+import { useData } from "@/lib/contexts/DataContext"
+import { toast } from "sonner"
 
 // ============================================================================
 // TYPES & INTERFACES
@@ -74,6 +79,7 @@ interface Session {
   materials?: string[]
   createdAt: string
   updatedAt: string
+  qrCode?: string
 }
 
 interface SessionStats {
@@ -165,73 +171,16 @@ const STATUS_COLORS = {
   cancelled: "hsl(var(--muted-foreground))"
 }
 
+// Map local SessionStatus (which includes 'draft') to shared SessionStatus
+const toSharedSessionStatus = (status: SessionStatus): 'scheduled' | 'active' | 'completed' | 'cancelled' => {
+  return status === 'draft' ? 'scheduled' : status
+}
+
 // ============================================================================
 // MOCK DATA
 // ============================================================================
 
-const mockStats: SessionStats = {
-  totalSessions: 24,
-  activeSessions: 2,
-  scheduledSessions: 8,
-  completedSessions: 14
-}
-
-const mockSessions: Session[] = [
-    {
-      id: "1",
-    title: "Introduction to Database Design",
-    courseCode: "CS301",
-    courseName: "Database Systems",
-    type: "lecture",
-      date: "2024-01-20",
-    startTime: "10:00",
-    endTime: "11:30",
-      location: "Room 201",
-    capacity: 50,
-    enrolled: 45,
-    status: "scheduled",
-    description: "This session covers database design principles and normalization.",
-    materials: ["lecture-notes.pdf", "assignment-3.pdf"],
-    createdAt: "2024-01-15T10:00:00Z",
-    updatedAt: "2024-01-15T10:00:00Z"
-    },
-    {
-      id: "2",
-    title: "Data Structures Tutorial",
-    courseCode: "CS201",
-    courseName: "Data Structures",
-    type: "tutorial",
-      date: "2024-01-21",
-      startTime: "14:00",
-      endTime: "15:30",
-    location: "Lab A",
-    capacity: 30,
-    enrolled: 28,
-    status: "active",
-    description: "Hands-on practice with arrays and linked lists.",
-    materials: ["tutorial-guide.pdf"],
-    createdAt: "2024-01-16T09:00:00Z",
-    updatedAt: "2024-01-16T09:00:00Z"
-  },
-    {
-      id: "3",
-    title: "Programming Fundamentals",
-      courseCode: "CS101",
-    courseName: "Introduction to Programming",
-    type: "lecture",
-    date: "2024-01-19",
-      startTime: "09:00",
-      endTime: "10:30",
-    location: "Room 105",
-    capacity: 60,
-    enrolled: 55,
-    status: "completed",
-    description: "Basic programming concepts and syntax.",
-    materials: ["slides.pdf", "code-examples.zip"],
-    createdAt: "2024-01-14T08:00:00Z",
-    updatedAt: "2024-01-19T10:30:00Z"
-  }
-]
+// Mock data removed - now using DataContext
 
 // ============================================================================
 // MAIN COMPONENT
@@ -239,6 +188,12 @@ const mockSessions: Session[] = [
 
 export default function LecturerSessionsPage() {
   const router = useRouter()
+  const { 
+    state, 
+    fetchAttendanceSessions, 
+    deleteAttendanceSessionSupabase, 
+    updateAttendanceSessionSupabase 
+  } = useData()
   
   // ============================================================================
   // STATE
@@ -251,13 +206,80 @@ export default function LecturerSessionsPage() {
   const [showCreateDialog, setShowCreateDialog] = useState(false)
   const [showQRDialog, setShowQRDialog] = useState(false)
   const [selectedSession, setSelectedSession] = useState<Session | null>(null)
+  const [editModalOpen, setEditModalOpen] = useState(false)
+  const [editingSession, setEditingSession] = useState<any>(null)
+
+  // Load sessions data on component mount
+  React.useEffect(() => {
+    console.log('Lecturer Sessions Page: Loading attendance sessions...')
+    fetchAttendanceSessions()
+  }, [fetchAttendanceSessions])
+
+  // Debug: Log current state
+  React.useEffect(() => {
+    console.log('Lecturer Sessions Page: Current state:', {
+      attendanceSessions: state.attendanceSessions,
+      attendanceSessionsCount: state.attendanceSessions.length,
+      loading: state.loading,
+      error: state.error
+    })
+  }, [state.attendanceSessions, state.loading, state.error])
+
+  // Transform attendance sessions to match the Session interface
+  const sessions = React.useMemo(() => {
+    const now = new Date()
+    const deriveStatus = (s: any): SessionStatus => {
+      // Build JS Date objects from date and time strings
+      const start = new Date(`${s.session_date}T${(s.start_time || '00:00').padStart(5, '0')}:00`)
+      const end = new Date(`${s.session_date}T${(s.end_time || '23:59').padStart(5, '0')}:00`)
+
+      if (now > end) return 'completed'
+      if (now >= start && now <= end) return 'active'
+      return (s.status as SessionStatus) || 'scheduled'
+    }
+
+    return state.attendanceSessions.map(session => ({
+      id: session.id,
+      title: session.session_name,
+      courseCode: session.course_code,
+      courseName: session.course_name,
+      type: (session.type || 'lecture') as SessionType,
+      date: session.session_date,
+      startTime: session.start_time,
+      endTime: session.end_time,
+      location: session.location || 'TBA',
+      capacity: session.capacity || 50,
+      enrolled: session.enrolled || 0,
+      status: deriveStatus(session),
+      description: session.description,
+      materials: [],
+      createdAt: session.created_at,
+      updatedAt: session.created_at,
+      qrCode: session.qr_code
+    }))
+  }, [state.attendanceSessions])
+
+  // Calculate stats from sessions
+  const stats: SessionStats = useMemo(() => {
+    const total = sessions.length
+    const active = sessions.filter(s => s.status === "active").length
+    const scheduled = sessions.filter(s => s.status === "scheduled").length
+    const completed = sessions.filter(s => s.status === "completed").length
+
+    return {
+      totalSessions: total,
+      activeSessions: active,
+      scheduledSessions: scheduled,
+      completedSessions: completed
+    }
+  }, [sessions])
 
   // ============================================================================
   // COMPUTED VALUES
   // ============================================================================
 
   const filteredSessions = useMemo(() => {
-    let filtered = mockSessions
+    let filtered = sessions
 
     // Filter by search query
     if (searchQuery) {
@@ -270,9 +292,9 @@ export default function LecturerSessionsPage() {
       )
     }
 
-    // Filter by status
+    // Filter by status (use centralized mapping for lecturer)
     if (statusFilter !== "all") {
-      filtered = filtered.filter(session => session.status === statusFilter)
+      filtered = filtered.filter(session => mapSessionStatus(toSharedSessionStatus(session.status), 'lecturer') === statusFilter)
     }
 
     // Filter by type
@@ -281,7 +303,7 @@ export default function LecturerSessionsPage() {
     }
 
     return filtered.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
-  }, [searchQuery, statusFilter, typeFilter])
+  }, [sessions, searchQuery, statusFilter, typeFilter])
 
 // ============================================================================
   // EVENT HANDLERS
@@ -304,8 +326,17 @@ export default function LecturerSessionsPage() {
   }
 
   const handleEditSession = (session: Session) => {
-    setSelectedSession(session)
-    // Open edit dialog or navigate to edit page
+    console.log('Edit button clicked for session:', session)
+    // Find the original session data from the database (not the transformed UI data)
+    const originalSession = state.attendanceSessions.find(s => s.id === session.id)
+    if (originalSession) {
+      console.log('Found original session data for editing:', originalSession)
+      setEditingSession(originalSession)
+      setEditModalOpen(true)
+    } else {
+      console.error('Original session not found for editing:', session.id)
+      toast.error('Session data not found for editing')
+    }
   }
 
   const handleStartSession = (session: Session) => {
@@ -313,14 +344,57 @@ export default function LecturerSessionsPage() {
     console.log('Starting session:', session.id)
   }
 
-  const handleDeleteSession = (sessionId: string) => {
-    // Delete session
-    console.log('Deleting session:', sessionId)
+  const handleDeleteSession = async (sessionId: string) => {
+    console.log('Delete button clicked for session:', sessionId)
+    
+    if (!confirm('Are you sure you want to delete this session? This action cannot be undone.')) {
+      console.log('Delete cancelled by user')
+      return
+    }
+    
+    // Show loading toast
+    const loadingToast = toast.loading('Deleting session...')
+    
+    try {
+      console.log('Deleting session:', sessionId)
+      
+      // Check if session exists
+      const session = state.attendanceSessions.find(s => s.id === sessionId)
+      if (!session) {
+        throw new Error('Session not found')
+      }
+      
+      console.log('Session found:', session)
+      
+      // Delete the session
+      await deleteAttendanceSessionSupabase(sessionId)
+      console.log('Session deleted successfully from database')
+      
+      // Refresh the sessions list
+      console.log('Refreshing sessions list...')
+      await fetchAttendanceSessions()
+      
+      // Dismiss loading toast and show success
+      toast.dismiss(loadingToast)
+      toast.success(`Session "${session.session_name}" deleted successfully!`)
+      
+    } catch (error: any) {
+      console.error('Error deleting session:', error)
+      
+      // Dismiss loading toast and show error
+      toast.dismiss(loadingToast)
+      toast.error(`Failed to delete session: ${error.message || 'Unknown error'}`)
+    }
   }
 
   const handleShowQR = (session: Session) => {
     setSelectedSession(session)
     setShowQRDialog(true)
+  }
+
+  const handleEditModalClose = () => {
+    setEditModalOpen(false)
+    setEditingSession(null)
   }
 
   const getStatusColor = (status: SessionStatus) => {
@@ -371,15 +445,20 @@ export default function LecturerSessionsPage() {
                   fontWeight: 600
                 }}
               />
-              <Chip 
-                label={session.status.charAt(0).toUpperCase() + session.status.slice(1)}
-                size="small"
-                sx={{ 
-                  bgcolor: getStatusColor(session.status),
-                  color: 'white',
-                  fontWeight: 600
-                }}
-              />
+              {(() => {
+                const displayStatus = mapSessionStatus(toSharedSessionStatus(session.status), 'lecturer') as 'draft' | 'scheduled' | 'active' | 'completed' | 'cancelled'
+                return (
+                  <Chip 
+                    label={displayStatus.charAt(0).toUpperCase() + displayStatus.slice(1)}
+                    size="small"
+                    sx={{ 
+                      bgcolor: getStatusColor(displayStatus),
+                      color: 'white',
+                      fontWeight: 600
+                    }}
+                  />
+                )
+              })()}
             </Box>
           </Box>
           <IconButton size="small">
@@ -427,7 +506,7 @@ export default function LecturerSessionsPage() {
           >
             <PencilIcon style={{ width: 16, height: 16 }} />
           </IconButton>
-          {(session.status === 'active' || session.status === 'scheduled') && (
+          {(mapSessionStatus(toSharedSessionStatus(session.status), 'lecturer') === 'active' || mapSessionStatus(toSharedSessionStatus(session.status), 'lecturer') === 'scheduled') && (
             <IconButton 
               size="small" 
               onClick={() => handleShowQR(session)}
@@ -436,7 +515,7 @@ export default function LecturerSessionsPage() {
               <QrCodeIcon style={{ width: 16, height: 16 }} />
             </IconButton>
           )}
-          {session.status === 'scheduled' && (
+          {mapSessionStatus(toSharedSessionStatus(session.status), 'lecturer') === 'scheduled' && (
                 <IconButton 
                   size="small"
               onClick={() => handleStartSession(session)}
@@ -460,6 +539,47 @@ export default function LecturerSessionsPage() {
   // ============================================================================
   // RENDER
   // ============================================================================
+
+  // Show loading state while data is being fetched (but still allow modals to show)
+  const showLoading = state.loading && !showCreateDialog && !editModalOpen
+  if (showLoading) {
+    return (
+      <Box sx={{ 
+        maxWidth: 1400, 
+        mx: 'auto', 
+        p: { xs: 2, sm: 3, md: 4 },
+        bgcolor: 'transparent',
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        minHeight: '50vh'
+      }}>
+        <Typography sx={{ fontSize: '1.2rem', color: '#666' }}>
+          Loading sessions...
+        </Typography>
+      </Box>
+    )
+  }
+
+  // Show error state if there's an error
+  if (state.error) {
+    return (
+      <Box sx={{ 
+        maxWidth: 1400, 
+        mx: 'auto', 
+        p: { xs: 2, sm: 3, md: 4 },
+        bgcolor: 'transparent',
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        minHeight: '50vh'
+      }}>
+        <Typography sx={{ fontSize: '1.2rem', color: 'red' }}>
+          Error loading sessions: {state.error}
+        </Typography>
+      </Box>
+    )
+  }
 
   return (
           <Box sx={{ 
@@ -504,7 +624,11 @@ export default function LecturerSessionsPage() {
                             <MUIButton 
                               variant="contained" 
             startIcon={<PlusIcon style={{ width: 16, height: 16 }} />}
-            onClick={() => setShowCreateDialog(true)}
+            onClick={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              setShowCreateDialog(true)
+            }}
                               sx={BUTTON_STYLES.primary}
                 >
                   Create Session
@@ -524,28 +648,28 @@ export default function LecturerSessionsPage() {
       }}>
         <StatCard
           title="Total Sessions"
-            value={mockStats.totalSessions.toString()}
+            value={stats.totalSessions.toString()}
           icon={CalendarDaysIcon}
             color="hsl(var(--muted-foreground))"
             trend={{ value: 12, isPositive: true }}
           />
           <StatCard
             title="Active Sessions"
-            value={mockStats.activeSessions.toString()}
+            value={stats.activeSessions.toString()}
             icon={PlayIcon}
             color="hsl(var(--muted-foreground))"
             trend={{ value: 25, isPositive: true }}
         />
         <StatCard
           title="Scheduled"
-            value={mockStats.scheduledSessions.toString()}
+            value={stats.scheduledSessions.toString()}
           icon={ClockIcon}
           color="hsl(var(--muted-foreground))"
             trend={{ value: 8, isPositive: true }}
         />
         <StatCard
           title="Completed"
-            value={mockStats.completedSessions.toString()}
+            value={stats.completedSessions.toString()}
           icon={CheckCircleIcon}
           color="hsl(var(--muted-foreground))"
             trend={{ value: 15, isPositive: true }}
@@ -753,15 +877,20 @@ export default function LecturerSessionsPage() {
                       </Box>
                         </TableCell>
                         <TableCell>
-                          <Chip 
-                            label={session.status.charAt(0).toUpperCase() + session.status.slice(1)}
-                            size="small"
-                            sx={{ 
-                              bgcolor: getStatusColor(session.status),
-                              color: 'white',
-                              fontWeight: 600
-                            }}
-                          />
+                          {(() => {
+                            const displayStatus = mapSessionStatus(toSharedSessionStatus(session.status), 'lecturer') as 'draft' | 'scheduled' | 'active' | 'completed' | 'cancelled'
+                            return (
+                              <Chip 
+                                label={displayStatus.charAt(0).toUpperCase() + displayStatus.slice(1)}
+                                size="small"
+                                sx={{ 
+                                  bgcolor: getStatusColor(displayStatus),
+                                  color: 'white',
+                                  fontWeight: 600
+                                }}
+                              />
+                            )
+                          })()}
                         </TableCell>
                         <TableCell>
                           <Typography variant="body2" sx={{ fontWeight: 600 }}>
@@ -784,7 +913,7 @@ export default function LecturerSessionsPage() {
                             >
                               <PencilIcon style={{ width: 16, height: 16 }} />
                             </IconButton>
-                            {(session.status === 'active' || session.status === 'scheduled') && (
+                            {(mapSessionStatus(toSharedSessionStatus(session.status), 'lecturer') === 'active' || mapSessionStatus(toSharedSessionStatus(session.status), 'lecturer') === 'scheduled') && (
                               <IconButton 
                             size="small"
                                 onClick={() => handleShowQR(session)}
@@ -793,7 +922,7 @@ export default function LecturerSessionsPage() {
                                 <QrCodeIcon style={{ width: 16, height: 16 }} />
                               </IconButton>
                             )}
-                        {session.status === 'scheduled' && (
+                            {mapSessionStatus(toSharedSessionStatus(session.status), 'lecturer') === 'scheduled' && (
                               <IconButton 
                           size="small"
                             onClick={() => handleStartSession(session)}
@@ -802,6 +931,13 @@ export default function LecturerSessionsPage() {
                                 <PlayIcon style={{ width: 16, height: 16 }} />
                               </IconButton>
                             )}
+                            <IconButton 
+                              size="small"
+                              onClick={() => handleDeleteSession(session.id)}
+                              sx={{ color: 'hsl(var(--muted-foreground))' }}
+                            >
+                              <TrashIcon style={{ width: 16, height: 16 }} />
+                            </IconButton>
                       </Box>
                         </TableCell>
                       </TableRow>
@@ -817,70 +953,42 @@ export default function LecturerSessionsPage() {
       <CreateSessionModal
         open={showCreateDialog}
         onOpenChange={setShowCreateDialog}
-          lecturerId="lecturer-1" // Mock lecturer ID - replace with actual auth
-        onSessionCreated={() => {
+        lecturerId="d541b573-003d-469c-bef0-fa392dcdbdbd" // Using a more realistic user ID - replace with actual auth
+        onSessionCreated={(sessionId) => {
             setShowCreateDialog(false)
-            // Refresh sessions data here
+            fetchAttendanceSessions()
+            // Don't redirect - we're already on the sessions page
+            // Just refresh the data to show the new session
           }}
         />
 
         {/* QR Code Dialog */}
-        <Dialog 
-          open={showQRDialog} 
-          onClose={() => setShowQRDialog(false)}
-          maxWidth="sm"
-          fullWidth
-          PaperProps={{
-            sx: {
-              border: '2px solid #000',
-              borderRadius: 2
-            }
+        <SessionQrCodeDialog
+          isOpen={showQRDialog}
+          onOpenChange={setShowQRDialog}
+          session={selectedSession ? {
+            id: selectedSession.id,
+            course_name: selectedSession.courseName,
+            session_name: selectedSession.title,
+            session_date: selectedSession.date,
+            start_time: selectedSession.startTime,
+            end_time: selectedSession.endTime
+          } : null}
+        />
+        
+        {/* Edit Session Modal */}
+        <CreateSessionModal 
+          open={editModalOpen}
+          onOpenChange={handleEditModalClose}
+          lecturerId="d541b573-003d-469c-bef0-fa392dcdbdbd" // Using a more realistic user ID - replace with actual auth
+          onSessionCreated={() => {}} // Not used in edit mode
+          editSession={editingSession}
+          onSessionUpdated={() => {
+            // Modal handles its own refresh logic
+            handleEditModalClose()
+            fetchAttendanceSessions()
           }}
-        >
-          <DialogTitle sx={{ borderBottom: '1px solid #000', textAlign: 'center' }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 2 }}>
-              <QrCodeIcon style={{ width: 24, height: 24, color: 'hsl(var(--muted-foreground))' }} />
-              QR Code for Attendance
-            </Box>
-          </DialogTitle>
-          <DialogContent sx={{ p: 4, textAlign: 'center' }}>
-            {selectedSession && (
-              <>
-                <Box sx={{ 
-                  width: 200,
-                  height: 200,
-                  border: '2px solid #000',
-                  borderRadius: 2,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  mx: 'auto',
-                  mb: 3,
-                  bgcolor: 'hsl(var(--muted))'
-                }}>
-                  <QrCodeIcon style={{ width: 96, height: 96, color: 'hsl(var(--muted-foreground))' }} />
-                </Box>
-                <Typography variant="h6" sx={{ mb: 1, fontWeight: 700 }}>
-                  {selectedSession.title}
-                </Typography>
-                <Typography variant="body2" sx={{ color: 'hsl(var(--muted-foreground))', mb: 1 }}>
-                  {selectedSession.courseCode} • {selectedSession.courseName}
-                </Typography>
-                <Typography variant="body2" sx={{ color: 'hsl(var(--muted-foreground))' }}>
-                  Students can scan this QR code to mark their attendance
-                </Typography>
-              </>
-            )}
-          </DialogContent>
-          <DialogActions sx={{ p: 3, borderTop: '1px solid #000', justifyContent: 'center' }}>
-            <MUIButton 
-              onClick={() => setShowQRDialog(false)}
-              sx={BUTTON_STYLES.outlined}
-            >
-              Close
-            </MUIButton>
-          </DialogActions>
-        </Dialog>
+        />
       </motion.div>
     </Box>
   )
