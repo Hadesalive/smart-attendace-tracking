@@ -69,14 +69,24 @@ export default function StudentScanAttendancePage() {
       // Check if session exists and is active
       const session = state.attendanceSessions.find(s => s.id === sessionId)
       if (!session) {
+        console.error('Session not found in state:', { sessionId, availableSessions: state.attendanceSessions.map(s => s.id) })
         throw new Error('Session not found or no longer active')
       }
+      
+      console.log('Found session:', session)
       
       // Check if user is enrolled in this course
       const isEnrolled = state.enrollments.some(e => 
         e.course_id === session.course_id && 
         e.student_id === state.currentUser?.id
       )
+      
+      console.log('Enrollment check:', { 
+        courseId: session.course_id, 
+        userId: state.currentUser?.id, 
+        isEnrolled,
+        enrollments: state.enrollments.filter(e => e.course_id === session.course_id)
+      })
       
       if (!isEnrolled) {
         throw new Error('You are not enrolled in this course')
@@ -86,6 +96,12 @@ export default function StudentScanAttendancePage() {
       if (!state.currentUser?.id) {
         throw new Error('User not authenticated')
       }
+      
+      console.log('About to call markAttendanceSupabase with:', {
+        sessionId,
+        studentId: state.currentUser.id,
+        method: 'qr_code'
+      })
       
       await markAttendanceSupabase(sessionId, state.currentUser.id, 'qr_code')
       
@@ -105,11 +121,27 @@ export default function StudentScanAttendancePage() {
       
     } catch (error) {
       console.error('Error marking attendance:', error)
+      
+      // Extract more detailed error message
+      let errorMessage = 'Failed to mark attendance. Please try again.'
+      
+      if (error instanceof Error) {
+        errorMessage = error.message
+      } else if (typeof error === 'object' && error !== null) {
+        // Handle Supabase function errors
+        const errorObj = error as any
+        if (errorObj.error) {
+          errorMessage = errorObj.error
+        } else if (errorObj.message) {
+          errorMessage = errorObj.message
+        }
+      }
+      
       setScanResult({
         success: false,
-        message: error instanceof Error ? error.message : 'Failed to mark attendance. Please try again.'
+        message: errorMessage
       })
-      toast.error('Failed to mark attendance')
+      toast.error(errorMessage)
     } finally {
       setLoading(false)
     }

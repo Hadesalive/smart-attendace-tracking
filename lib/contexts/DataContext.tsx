@@ -906,6 +906,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
   const markAttendanceSupabase = useCallback(async (sessionId: string, studentId: string, method: 'qr_code' | 'facial_recognition') => {
     try {
+      console.log('Calling mark-attendance function with:', { sessionId, studentId, method })
+      
       // Call the edge function to mark attendance
       const { data, error } = await supabase.functions.invoke('mark-attendance', {
         body: {
@@ -914,7 +916,24 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         }
       })
 
-      if (error) throw error
+      console.log('Function response:', { data, error })
+
+      if (error) {
+        console.error('Supabase function error:', error)
+        // Try to extract error message from context
+        let errorMessage = error.message
+        if (error.context) {
+          try {
+            const context = JSON.parse(error.context)
+            if (context.error) {
+              errorMessage = context.error
+            }
+          } catch (e) {
+            // Ignore parsing error, use original message
+          }
+        }
+        throw new Error(errorMessage)
+      }
 
       // Refresh attendance records to get the latest data
       await fetchAttendanceRecords()
