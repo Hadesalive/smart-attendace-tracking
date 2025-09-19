@@ -16,6 +16,7 @@ export interface User {
 }
 
 export interface Course {
+  status: string
   id: string
   course_code: string
   course_name: string
