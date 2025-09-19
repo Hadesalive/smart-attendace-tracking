@@ -80,11 +80,7 @@ export default function StudentScanAttendancePage() {
           start_time,
           end_time,
           status,
-          is_active,
-          courses (
-            course_code,
-            course_name
-          )
+          is_active
         `)
         .eq('id', sessionId)
         .single()
@@ -95,6 +91,15 @@ export default function StudentScanAttendancePage() {
       }
       
       console.log('Found session in database:', dbSessionData)
+      
+      // Fetch course information separately
+      const { data: courseData, error: courseError } = await supabase
+        .from('courses')
+        .select('course_code, course_name')
+        .eq('id', dbSessionData.course_id)
+        .single()
+
+      console.log('Course data:', { courseData, courseError })
       
       // Check if user is enrolled in this course
       const { data: enrollment, error: enrollmentError } = await supabase
@@ -132,7 +137,7 @@ export default function StudentScanAttendancePage() {
         success: true,
         message: 'Attendance marked successfully!',
         sessionId: sessionId,
-        courseName: (dbSessionData.courses as any)?.course_name || 'Unknown Course'
+        courseName: courseData?.course_name || 'Unknown Course'
       })
       
       toast.success('Attendance marked successfully!')

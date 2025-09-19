@@ -35,17 +35,7 @@ export default function AttendSessionPage() {
         // Fetch session data directly from database
         const { data: sessionData, error } = await supabase
           .from('attendance_sessions')
-          .select(`
-            *,
-            courses (
-              course_code,
-              course_name,
-              lecturer_id
-            ),
-            users!courses_lecturer_id_fkey (
-              full_name
-            )
-          `)
+          .select('*')
           .eq('id', sessionId)
           .single()
 
@@ -58,17 +48,35 @@ export default function AttendSessionPage() {
           return
         }
 
+        // Fetch course information separately
+        const { data: courseData, error: courseError } = await supabase
+          .from('courses')
+          .select('course_code, course_name, lecturer_id')
+          .eq('id', sessionData.course_id)
+          .single()
+
+        // Fetch lecturer information separately
+        let lecturerName = 'Unknown Lecturer'
+        if (courseData?.lecturer_id) {
+          const { data: lecturerData } = await supabase
+            .from('users')
+            .select('full_name')
+            .eq('id', courseData.lecturer_id)
+            .single()
+          lecturerName = lecturerData?.full_name || 'Unknown Lecturer'
+        }
+
         // Transform the data to match expected format
         const transformedSession = {
           id: sessionData.id,
           course_id: sessionData.course_id,
-          course_code: sessionData.courses?.course_code || 'Unknown',
-          course_name: sessionData.courses?.course_name || 'Unknown Course',
+          course_code: courseData?.course_code || 'Unknown',
+          course_name: courseData?.course_name || 'Unknown Course',
           session_name: sessionData.session_name,
           session_date: sessionData.session_date,
           start_time: sessionData.start_time,
           end_time: sessionData.end_time,
-          lecturer_name: sessionData.users?.full_name || 'Unknown Lecturer',
+          lecturer_name: lecturerName,
           attendance_method: sessionData.attendance_method,
           status: sessionData.status,
           is_active: sessionData.is_active
