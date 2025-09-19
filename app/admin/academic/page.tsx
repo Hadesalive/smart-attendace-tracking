@@ -23,7 +23,7 @@
 
 "use client"
 
-import React, { useMemo, useState } from "react"
+import React, { useMemo, useState, useEffect } from "react"
 import { Box, Button, Dialog, DialogTitle, DialogContent, Typography } from "@mui/material"
 import { PlusIcon, UserPlusIcon, BuildingOffice2Icon, ArrowPathIcon } from "@heroicons/react/24/outline"
 import { useData } from "@/lib/contexts/DataContext"
@@ -36,7 +36,21 @@ import DetailTabs from "@/components/admin/DetailTabs"
 import ErrorAlert from "@/components/admin/ErrorAlert"
 import { TYPOGRAPHY_STYLES } from "@/lib/design/fonts"
 import { BUTTON_STYLES } from "@/lib/constants/admin-constants"
-import { AddUserForm } from "@/components/admin/add-user-form"
+import { 
+  AcademicYearForm, 
+  SemesterForm, 
+  DepartmentForm, 
+  ProgramForm, 
+  ClassroomForm, 
+  SectionForm,
+  CourseForm,
+  CourseAssignmentForm,
+  TeacherAssignmentForm,
+  EnrollmentForm,
+  LecturerForm,
+  StudentForm,
+  AdminForm
+} from "@/components/admin/forms"
 
 // ============================================================================
 // TYPES (MVP)
@@ -99,27 +113,63 @@ const mockEnrollments: Enrollment[] = [
 // ============================================================================
 
 export default function AcademicHubPage() {
-  const [activeTab, setActiveTab] = useState("classes")
+  const [activeTab, setActiveTab] = useState("academic-years")
   const [searchTerm, setSearchTerm] = useState("")
   const [error, setError] = useState<string | null>(null)
-  const [addUserOpen, setAddUserOpen] = useState<false | 'student' | 'lecturer' | 'admin'>(false)
+  
+  // Form states
+  const [formState, setFormState] = useState({
+    type: null as string | null,
+    mode: null as 'create' | 'edit' | null,
+    data: null as any
+  })
 
   // Data Context
   const { state } = useData()
   const { isInitialized } = useMockData()
 
-  // Get data from DataContext
+  // Academic data state with proper types
+  const [academicData, setAcademicData] = useState({
+    academicYears: [] as any[],
+    semesters: [] as any[],
+    departments: [] as any[],
+    programs: [] as any[],
+    classrooms: [] as any[],
+    sections: [] as any[],
+    studentProfiles: [] as any[],
+    lecturerProfiles: [] as any[]
+  })
+
+  // Fetch academic data on component mount
+  useEffect(() => {
+    const loadAcademicData = async () => {
+      try {
+        // This would be implemented in DataContext
+        // await fetchAcademicData()
+        console.log('Loading academic data...')
+      } catch (error) {
+        console.error('Error loading academic data:', error)
+        setError('Failed to load academic data')
+      }
+    }
+    
+    if (isInitialized) {
+      loadAcademicData()
+    }
+  }, [isInitialized])
+
+  // Get data from database (will replace mock data)
   const classes = useMemo(() => {
-    // For now, use mock data structure but get courses from DataContext
-    return state.courses.map((course, index) => ({
-      id: `cl${index + 1}`,
-      year: 1 as Year,
-      semester: 2 as Semester,
-      program: course.department || 'BSEM',
-      section: course.course_code.slice(-4),
-      size: state.enrollments.filter(e => e.course_id === course.id).length
+    // Use sections from database instead of mock data
+    return academicData.sections.map(section => ({
+      id: section.id,
+      year: section.year as Year,
+      semester: section.semester_number as Semester,
+      program: section.program?.program_code || 'N/A',
+      section: section.section_code,
+      size: section.current_enrollment || 0
     }))
-  }, [state.courses, state.enrollments])
+  }, [academicData.sections])
 
   const courses = useMemo(() => {
     return state.courses.map(course => ({
@@ -131,9 +181,13 @@ export default function AcademicHubPage() {
   }, [state.courses])
 
   const classrooms = useMemo(() => {
-    // Mock classrooms for now - this would come from a classrooms table
-    return mockClassrooms
-  }, [])
+    return academicData.classrooms.map(classroom => ({
+      id: classroom.id,
+      building: classroom.building,
+      room: classroom.room_number,
+      capacity: classroom.capacity
+    }))
+  }, [academicData.classrooms])
 
   const assignments = useMemo(() => {
     // Get lecturer assignments from DataContext
@@ -150,7 +204,7 @@ export default function AcademicHubPage() {
         year: 1 as Year,
         semester: 2 as Semester,
         program: course?.department || 'BSEM',
-        section: '2101' // Mock section
+        section: '2101' // Will be updated when sections are properly linked
       }
     })
   }, [state.lecturerAssignments, state.courses, state.users])
@@ -167,18 +221,18 @@ export default function AcademicHubPage() {
         year: 1 as Year,
         semester: 2 as Semester,
         program: course?.department || 'BSEM',
-        section: '2101' // Mock section
+        section: '2101' // Will be updated when sections are properly linked
       }
     })
   }, [state.enrollments, state.students, state.courses])
 
-  // KPI stats from DataContext
+  // KPI stats from academic data
   const statsCards = useMemo(() => ([
-    { title: "Classes", value: classes.length, icon: BuildingOffice2Icon, color: "#000000", subtitle: "Total classes", change: "+2 this term" },
-    { title: "Courses", value: courses.length, icon: ArrowPathIcon, color: "#000000", subtitle: "Catalog size", change: "+1 added" },
-    { title: "Classrooms", value: classrooms.length, icon: BuildingOffice2Icon, color: "#000000", subtitle: "Rooms available", change: "Stable" },
-    { title: "Assignments", value: assignments.length, icon: UserPlusIcon, color: "#000000", subtitle: "Teacher-course", change: "+1" },
-  ]), [classes.length, courses.length, classrooms.length, assignments.length])
+    { title: "Academic Years", value: academicData.academicYears.length, icon: BuildingOffice2Icon, color: "#000000", subtitle: "Active years", change: "Current: 2024-2025" },
+    { title: "Semesters", value: academicData.semesters.length, icon: ArrowPathIcon, color: "#000000", subtitle: "Total semesters", change: "Fall & Spring" },
+    { title: "Departments", value: academicData.departments.length, icon: BuildingOffice2Icon, color: "#000000", subtitle: "Active departments", change: "CS, BSEM, MT" },
+    { title: "Programs", value: academicData.programs.length, icon: UserPlusIcon, color: "#000000", subtitle: "Degree programs", change: "Bachelor programs" },
+  ]), [academicData.academicYears.length, academicData.semesters.length, academicData.departments.length, academicData.programs.length])
 
   // Columns per tab
   const classColumns = [
@@ -220,28 +274,176 @@ export default function AcademicHubPage() {
   ]
 
   // Filtered data
-  const filteredClasses = useMemo(() => mockClasses.filter(c => `${c.program} ${c.section}`.toLowerCase().includes(searchTerm.toLowerCase())), [searchTerm])
-  const filteredCourses = useMemo(() => mockCourses.filter(c => `${c.code} ${c.name}`.toLowerCase().includes(searchTerm.toLowerCase())), [searchTerm])
-  const filteredRooms = useMemo(() => mockClassrooms.filter(r => `${r.building} ${r.room}`.toLowerCase().includes(searchTerm.toLowerCase())), [searchTerm])
-  const filteredAssignments = useMemo(() => mockAssignments.filter(a => `${a.course_code} ${a.teacher_name}`.toLowerCase().includes(searchTerm.toLowerCase())), [searchTerm])
-  const filteredEnrollments = useMemo(() => mockEnrollments.filter(e => `${e.student_name}`.toLowerCase().includes(searchTerm.toLowerCase())), [searchTerm])
+  const filteredClasses = useMemo(() => classes.filter(c => `${c.program} ${c.section}`.toLowerCase().includes(searchTerm.toLowerCase())), [classes, searchTerm])
+  const filteredCourses = useMemo(() => courses.filter(c => `${c.code} ${c.name}`.toLowerCase().includes(searchTerm.toLowerCase())), [courses, searchTerm])
+  const filteredRooms = useMemo(() => classrooms.filter(r => `${r.building} ${r.room}`.toLowerCase().includes(searchTerm.toLowerCase())), [classrooms, searchTerm])
+  const filteredAssignments = useMemo(() => assignments.filter(a => `${a.course_code} ${a.teacher_name}`.toLowerCase().includes(searchTerm.toLowerCase())), [assignments, searchTerm])
+  const filteredEnrollments = useMemo(() => enrollments.filter(e => `${e.student_name}`.toLowerCase().includes(searchTerm.toLowerCase())), [enrollments, searchTerm])
+
+  // Form handlers
+  const openForm = (type: string, mode: 'create' | 'edit', data?: any) => {
+    setFormState({ type, mode, data })
+  }
+
+  const closeForm = () => {
+    setFormState({ type: null, mode: null, data: null })
+  }
+
+  const handleSave = async (data: any) => {
+    try {
+      // This would integrate with the database
+      console.log('Saving data:', data)
+      // await saveToDatabase(formState.type, data)
+      closeForm()
+    } catch (error) {
+      console.error('Error saving data:', error)
+      setError('Failed to save data')
+    }
+  }
 
   const tabs = [
     {
-      label: "Classes",
-      value: "classes",
+      label: "Academic Years",
+      value: "academic-years",
       content: (
         <>
           <Box sx={{ display: "flex", gap: 1.5, mb: 2 }}>
-            <Button variant="contained" startIcon={<PlusIcon className="h-4 w-4" />} sx={{ ...BUTTON_STYLES.primary, ...TYPOGRAPHY_STYLES.buttonText }}>Create Class</Button>
+            <Button 
+              variant="contained" 
+              startIcon={<PlusIcon className="h-4 w-4" />} 
+              sx={{ ...BUTTON_STYLES.primary, ...TYPOGRAPHY_STYLES.buttonText }}
+              onClick={() => openForm('academic-year', 'create')}
+            >
+              Create Academic Year
+            </Button>
           </Box>
           <SearchFilters
             searchTerm={searchTerm}
             onSearchChange={setSearchTerm}
-            searchPlaceholder="Search classes..."
+            searchPlaceholder="Search academic years..."
             filters={[]}
           />
-          <DataTable title="Classes" columns={classColumns as any} data={filteredClasses as any} />
+          <DataTable title="Academic Years" columns={[
+            { key: "year_name", label: "Year" },
+            { key: "start_date", label: "Start Date" },
+            { key: "end_date", label: "End Date" },
+            { key: "is_current", label: "Current" }
+          ] as any} data={academicData.academicYears as any} />
+        </>
+      )
+    },
+    {
+      label: "Semesters",
+      value: "semesters",
+      content: (
+        <>
+          <Box sx={{ display: "flex", gap: 1.5, mb: 2 }}>
+            <Button 
+              variant="contained" 
+              startIcon={<PlusIcon className="h-4 w-4" />} 
+              sx={{ ...BUTTON_STYLES.primary, ...TYPOGRAPHY_STYLES.buttonText }}
+              onClick={() => openForm('semester', 'create')}
+            >
+              Create Semester
+            </Button>
+          </Box>
+          <SearchFilters
+            searchTerm={searchTerm}
+            onSearchChange={setSearchTerm}
+            searchPlaceholder="Search semesters..."
+            filters={[]}
+          />
+          <DataTable title="Semesters" columns={[
+            { key: "semester_name", label: "Name" },
+            { key: "semester_number", label: "Number" },
+            { key: "start_date", label: "Start Date" },
+            { key: "end_date", label: "End Date" },
+            { key: "is_current", label: "Current" }
+          ] as any} data={academicData.semesters as any} />
+        </>
+      )
+    },
+    {
+      label: "Departments",
+      value: "departments",
+      content: (
+        <>
+          <Box sx={{ display: "flex", gap: 1.5, mb: 2 }}>
+            <Button 
+              variant="contained" 
+              startIcon={<PlusIcon className="h-4 w-4" />} 
+              sx={{ ...BUTTON_STYLES.primary, ...TYPOGRAPHY_STYLES.buttonText }}
+              onClick={() => openForm('department', 'create')}
+            >
+              Create Department
+            </Button>
+          </Box>
+          <SearchFilters
+            searchTerm={searchTerm}
+            onSearchChange={setSearchTerm}
+            searchPlaceholder="Search departments..."
+            filters={[]}
+          />
+          <DataTable title="Departments" columns={[
+            { key: "department_code", label: "Code" },
+            { key: "department_name", label: "Name" },
+            { key: "description", label: "Description" }
+          ] as any} data={academicData.departments as any} />
+        </>
+      )
+    },
+    {
+      label: "Programs",
+      value: "programs",
+      content: (
+        <>
+          <Box sx={{ display: "flex", gap: 1.5, mb: 2 }}>
+            <Button 
+              variant="contained" 
+              startIcon={<PlusIcon className="h-4 w-4" />} 
+              sx={{ ...BUTTON_STYLES.primary, ...TYPOGRAPHY_STYLES.buttonText }}
+              onClick={() => openForm('program', 'create')}
+            >
+              Create Program
+            </Button>
+          </Box>
+          <SearchFilters
+            searchTerm={searchTerm}
+            onSearchChange={setSearchTerm}
+            searchPlaceholder="Search programs..."
+            filters={[]}
+          />
+          <DataTable title="Programs" columns={[
+            { key: "program_code", label: "Code" },
+            { key: "program_name", label: "Name" },
+            { key: "degree_type", label: "Degree Type" },
+            { key: "duration_years", label: "Duration" }
+          ] as any} data={academicData.programs as any} />
+        </>
+      )
+    },
+    {
+      label: "Sections",
+      value: "sections",
+      content: (
+        <>
+          <Box sx={{ display: "flex", gap: 1.5, mb: 2 }}>
+            <Button 
+              variant="contained" 
+              startIcon={<PlusIcon className="h-4 w-4" />} 
+              sx={{ ...BUTTON_STYLES.primary, ...TYPOGRAPHY_STYLES.buttonText }}
+              onClick={() => openForm('section', 'create')}
+            >
+              Create Section
+            </Button>
+          </Box>
+          <SearchFilters
+            searchTerm={searchTerm}
+            onSearchChange={setSearchTerm}
+            searchPlaceholder="Search sections..."
+            filters={[]}
+          />
+          <DataTable title="Sections" columns={classColumns as any} data={filteredClasses as any} />
         </>
       )
     },
@@ -251,8 +453,22 @@ export default function AcademicHubPage() {
       content: (
         <>
           <Box sx={{ display: "flex", gap: 1.5, mb: 2 }}>
-            <Button variant="contained" startIcon={<PlusIcon className="h-4 w-4" />} sx={{ ...BUTTON_STYLES.primary, ...TYPOGRAPHY_STYLES.buttonText }}>Create Course</Button>
-            <Button variant="outlined" startIcon={<PlusIcon className="h-4 w-4" />} sx={{ ...BUTTON_STYLES.outlined, ...TYPOGRAPHY_STYLES.buttonText }}>Assign Course to Class</Button>
+            <Button 
+              variant="contained" 
+              startIcon={<PlusIcon className="h-4 w-4" />} 
+              sx={{ ...BUTTON_STYLES.primary, ...TYPOGRAPHY_STYLES.buttonText }}
+              onClick={() => openForm('course', 'create')}
+            >
+              Create Course
+            </Button>
+            <Button 
+              variant="outlined" 
+              startIcon={<PlusIcon className="h-4 w-4" />} 
+              sx={{ ...BUTTON_STYLES.outlined, ...TYPOGRAPHY_STYLES.buttonText }}
+              onClick={() => openForm('course-assignment', 'create')}
+            >
+              Assign Course to Class
+            </Button>
           </Box>
           <SearchFilters
             searchTerm={searchTerm}
@@ -270,7 +486,14 @@ export default function AcademicHubPage() {
       content: (
         <>
           <Box sx={{ display: "flex", gap: 1.5, mb: 2 }}>
-            <Button variant="contained" startIcon={<BuildingOffice2Icon className="h-4 w-4" />} sx={{ ...BUTTON_STYLES.primary, ...TYPOGRAPHY_STYLES.buttonText }}>Create Classroom</Button>
+            <Button 
+              variant="contained" 
+              startIcon={<BuildingOffice2Icon className="h-4 w-4" />} 
+              sx={{ ...BUTTON_STYLES.primary, ...TYPOGRAPHY_STYLES.buttonText }}
+              onClick={() => openForm('classroom', 'create')}
+            >
+              Create Classroom
+            </Button>
           </Box>
           <SearchFilters
             searchTerm={searchTerm}
@@ -288,8 +511,22 @@ export default function AcademicHubPage() {
       content: (
         <>
           <Box sx={{ display: "flex", gap: 1.5, mb: 2, flexWrap: "wrap" }}>
-            <Button variant="outlined" startIcon={<PlusIcon className="h-4 w-4" />} sx={{ ...BUTTON_STYLES.outlined, ...TYPOGRAPHY_STYLES.buttonText }}>Assign Course → Class</Button>
-            <Button variant="contained" startIcon={<UserPlusIcon className="h-4 w-4" />} sx={{ ...BUTTON_STYLES.primary, ...TYPOGRAPHY_STYLES.buttonText }}>Assign Teacher → Course/Section</Button>
+            <Button 
+              variant="outlined" 
+              startIcon={<PlusIcon className="h-4 w-4" />} 
+              sx={{ ...BUTTON_STYLES.outlined, ...TYPOGRAPHY_STYLES.buttonText }}
+              onClick={() => openForm('course-assignment', 'create')}
+            >
+              Assign Course → Class
+            </Button>
+            <Button 
+              variant="contained" 
+              startIcon={<UserPlusIcon className="h-4 w-4" />} 
+              sx={{ ...BUTTON_STYLES.primary, ...TYPOGRAPHY_STYLES.buttonText }}
+              onClick={() => openForm('teacher-assignment', 'create')}
+            >
+              Assign Teacher → Course/Section
+            </Button>
           </Box>
           <SearchFilters
             searchTerm={searchTerm}
@@ -307,7 +544,14 @@ export default function AcademicHubPage() {
       content: (
         <>
           <Box sx={{ display: "flex", gap: 1.5, mb: 2 }}>
-            <Button variant="contained" startIcon={<UserPlusIcon className="h-4 w-4" />} sx={{ ...BUTTON_STYLES.primary, ...TYPOGRAPHY_STYLES.buttonText }}>Enroll Student</Button>
+            <Button 
+              variant="contained" 
+              startIcon={<UserPlusIcon className="h-4 w-4" />} 
+              sx={{ ...BUTTON_STYLES.primary, ...TYPOGRAPHY_STYLES.buttonText }}
+              onClick={() => openForm('enrollment', 'create')}
+            >
+              Enroll Student
+            </Button>
           </Box>
           <SearchFilters
             searchTerm={searchTerm}
@@ -326,8 +570,8 @@ export default function AcademicHubPage() {
     return (
       <Box sx={{ p: { xs: 2, sm: 3 } }}>
         <PageHeader
-          title="Academic Management"
-          subtitle="Manage classes, courses, classrooms, assignments, and enrollments"
+          title="Academic Structure Management"
+          subtitle="Manage academic years, semesters, departments, programs, sections, and classrooms"
           actions={null}
         />
         <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 400 }}>
@@ -340,23 +584,23 @@ export default function AcademicHubPage() {
   return (
     <Box sx={{ p: { xs: 2, sm: 3 } }}>
       <PageHeader
-        title="Academic Management"
-        subtitle="Manage classes, courses, classrooms, assignments, and enrollments"
+        title="Academic Structure Management"
+        subtitle="Manage academic years, semesters, departments, programs, sections, and classrooms"
         actions={
           <Box sx={{ display: "flex", gap: 1 }}>
             <Button
               variant="contained"
               startIcon={<UserPlusIcon className="h-4 w-4" />}
               sx={{ ...BUTTON_STYLES.primary, ...TYPOGRAPHY_STYLES.buttonText }}
-              onClick={() => setAddUserOpen('admin')}
+              onClick={() => openForm('admin', 'create')}
             >
-              Create User
+              Create Admin
             </Button>
             <Button
               variant="outlined"
               startIcon={<UserPlusIcon className="h-4 w-4" />}
               sx={{ ...BUTTON_STYLES.outlined, ...TYPOGRAPHY_STYLES.buttonText }}
-              onClick={() => setAddUserOpen('lecturer')}
+              onClick={() => openForm('lecturer', 'create')}
             >
               Create Lecturer
             </Button>
@@ -364,7 +608,7 @@ export default function AcademicHubPage() {
               variant="outlined"
               startIcon={<UserPlusIcon className="h-4 w-4" />}
               sx={{ ...BUTTON_STYLES.outlined, ...TYPOGRAPHY_STYLES.buttonText }}
-              onClick={() => setAddUserOpen('student')}
+              onClick={() => openForm('student', 'create')}
             >
               Create Student
             </Button>
@@ -388,13 +632,167 @@ export default function AcademicHubPage() {
         />
       </Box>
 
-      {/* Create User Dialog (for creating students/lecturers/admins) */}
-      <Dialog open={Boolean(addUserOpen)} onClose={() => setAddUserOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle sx={TYPOGRAPHY_STYLES.dialogTitle}>Create User</DialogTitle>
-        <DialogContent>
-          <AddUserForm onFormSubmit={() => setAddUserOpen(false)} defaultRole={typeof addUserOpen === 'string' ? (addUserOpen as any) : undefined} />
-        </DialogContent>
-      </Dialog>
+
+      {/* Academic Structure Forms */}
+      {formState.type === 'academic-year' && (
+        <AcademicYearForm
+          open={Boolean(formState.type)}
+          onOpenChange={closeForm}
+          academicYear={formState.data}
+          onSave={handleSave}
+          mode={formState.mode || 'create'}
+        />
+      )}
+
+      {formState.type === 'semester' && (
+        <SemesterForm
+          open={Boolean(formState.type)}
+          onOpenChange={closeForm}
+          semester={formState.data}
+          academicYears={academicData.academicYears}
+          onSave={handleSave}
+          mode={formState.mode || 'create'}
+        />
+      )}
+
+      {formState.type === 'department' && (
+        <DepartmentForm
+          open={Boolean(formState.type)}
+          onOpenChange={closeForm}
+          department={formState.data}
+          users={state.users}
+          onSave={handleSave}
+          mode={formState.mode || 'create'}
+        />
+      )}
+
+      {formState.type === 'program' && (
+        <ProgramForm
+          open={Boolean(formState.type)}
+          onOpenChange={closeForm}
+          program={formState.data}
+          departments={academicData.departments}
+          onSave={handleSave}
+          mode={formState.mode || 'create'}
+        />
+      )}
+
+      {formState.type === 'classroom' && (
+        <ClassroomForm
+          open={Boolean(formState.type)}
+          onOpenChange={closeForm}
+          classroom={formState.data}
+          onSave={handleSave}
+          mode={formState.mode || 'create'}
+        />
+      )}
+
+      {formState.type === 'section' && (
+        <SectionForm
+          open={Boolean(formState.type)}
+          onOpenChange={closeForm}
+          section={formState.data}
+          academicYears={academicData.academicYears}
+          semesters={academicData.semesters}
+          programs={academicData.programs}
+          classrooms={academicData.classrooms}
+          onSave={handleSave}
+          mode={formState.mode || 'create'}
+        />
+      )}
+
+      {/* Course Forms */}
+      {formState.type === 'course' && (
+        <CourseForm
+          open={Boolean(formState.type)}
+          onOpenChange={closeForm}
+          course={formState.data}
+          onSave={handleSave}
+          mode={formState.mode || 'create'}
+          departments={academicData.departments}
+        />
+      )}
+
+      {formState.type === 'course-assignment' && (
+        <CourseAssignmentForm
+          open={Boolean(formState.type)}
+          onOpenChange={closeForm}
+          assignment={formState.data}
+          onSave={handleSave}
+          mode={formState.mode || 'create'}
+          courses={courses}
+          academicYears={academicData.academicYears}
+          semesters={academicData.semesters}
+          programs={academicData.programs}
+          sections={academicData.sections}
+        />
+      )}
+
+      {formState.type === 'teacher-assignment' && (
+        <TeacherAssignmentForm
+          open={Boolean(formState.type)}
+          onOpenChange={closeForm}
+          assignment={formState.data}
+          onSave={handleSave}
+          mode={formState.mode || 'create'}
+          lecturers={state.users.filter(u => u.role === 'lecturer')}
+          courses={courses}
+          academicYears={academicData.academicYears}
+          semesters={academicData.semesters}
+          programs={academicData.programs}
+          sections={academicData.sections}
+        />
+      )}
+
+      {formState.type === 'enrollment' && (
+        <EnrollmentForm
+          open={Boolean(formState.type)}
+          onOpenChange={closeForm}
+          enrollment={formState.data}
+          onSave={handleSave}
+          mode={formState.mode || 'create'}
+          students={state.users.filter(u => u.role === 'student')}
+          sections={academicData.sections}
+          academicYears={academicData.academicYears}
+          semesters={academicData.semesters}
+        />
+      )}
+
+      {/* User Forms */}
+      {formState.type === 'lecturer' && (
+        <LecturerForm
+          open={Boolean(formState.type)}
+          onOpenChange={closeForm}
+          lecturer={formState.data}
+          onSave={handleSave}
+          mode={formState.mode || 'create'}
+          departments={academicData.departments}
+        />
+      )}
+
+      {formState.type === 'student' && (
+        <StudentForm
+          open={Boolean(formState.type)}
+          onOpenChange={closeForm}
+          student={formState.data}
+          onSave={handleSave}
+          mode={formState.mode || 'create'}
+          programs={academicData.programs}
+          academicYears={academicData.academicYears}
+          semesters={academicData.semesters}
+        />
+      )}
+
+      {formState.type === 'admin' && (
+        <AdminForm
+          open={Boolean(formState.type)}
+          onOpenChange={closeForm}
+          admin={formState.data}
+          onSave={handleSave}
+          mode={formState.mode || 'create'}
+          departments={academicData.departments}
+        />
+      )}
     </Box>
   )
 }
