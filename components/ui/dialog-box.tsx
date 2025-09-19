@@ -1,3 +1,5 @@
+"use client"
+
 import React, { useState, ChangeEvent, FC, ReactNode } from 'react';
 import { cn } from "@/lib/utils";
 
