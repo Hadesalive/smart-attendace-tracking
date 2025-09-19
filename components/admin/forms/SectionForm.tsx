@@ -90,16 +90,16 @@ export default function SectionForm({
     if (section && mode === 'edit') {
       setFormData({
         id: section.id,
-        section_code: section.section_code,
-        program_id: section.program_id,
-        academic_year_id: section.academic_year_id,
-        semester_id: section.semester_id,
-        year: section.year,
-        max_capacity: section.max_capacity,
-        current_enrollment: section.current_enrollment,
+        section_code: section.section_code || '',
+        program_id: section.program_id || '',
+        academic_year_id: section.academic_year_id || '',
+        semester_id: section.semester_id || '',
+        year: section.year || 1,
+        max_capacity: section.max_capacity || 50,
+        current_enrollment: section.current_enrollment || 0,
         classroom_id: section.classroom_id || '',
         description: section.description || '',
-        is_active: section.is_active
+        is_active: section.is_active ?? true
       })
     } else {
       // Reset form for create mode

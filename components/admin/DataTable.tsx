@@ -46,16 +46,17 @@
 import React from "react"
 import { 
   Box, 
+  Button,
   Card, 
   CardContent, 
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  Typography,
-  Skeleton
+  Table, 
+  TableBody, 
+  TableCell, 
+  TableContainer, 
+  TableHead, 
+  TableRow, 
+  Typography, 
+  Skeleton 
 } from "@mui/material"
 import { motion } from "framer-motion"
 import { TYPOGRAPHY_STYLES } from "@/lib/design/fonts"
@@ -74,6 +75,8 @@ interface DataTableProps {
   loading?: boolean
   emptyMessage?: string
   onRowClick?: (row: any) => void
+  onEdit?: (row: any) => void
+  onDelete?: (row: any) => void
 }
 
 const CARD_SX = {
@@ -98,7 +101,9 @@ export default function DataTable({
   data, 
   loading = false, 
   emptyMessage = "No data found",
-  onRowClick 
+  onRowClick,
+  onEdit,
+  onDelete
 }: DataTableProps) {
   return (
     <motion.div
@@ -133,6 +138,11 @@ export default function DataTable({
                       {column.label}
                     </TableCell>
                   ))}
+                  {(onEdit || onDelete) && (
+                    <TableCell sx={TYPOGRAPHY_STYLES.tableHeader}>
+                      Actions
+                    </TableCell>
+                  )}
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -144,11 +154,16 @@ export default function DataTable({
                           <Skeleton variant="text" width="80%" />
                         </TableCell>
                       ))}
+                      {(onEdit || onDelete) && (
+                        <TableCell>
+                          <Skeleton variant="text" width="60%" />
+                        </TableCell>
+                      )}
                     </TableRow>
                   ))
                 ) : data.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={columns.length} sx={{ textAlign: "center", py: 4 }}>
+                    <TableCell colSpan={columns.length + ((onEdit || onDelete) ? 1 : 0)} sx={{ textAlign: "center", py: 4 }}>
                       <Typography variant="body2" color="text.secondary">
                         {emptyMessage}
                       </Typography>
@@ -173,6 +188,49 @@ export default function DataTable({
                           {column.render ? column.render(row[column.key], row) : row[column.key]}
                         </TableCell>
                       ))}
+                      {(onEdit || onDelete) && (
+                        <TableCell>
+                          <Box sx={{ display: 'flex', gap: 1 }}>
+                            {onEdit && (
+                              <Button
+                                size="small"
+                                variant="outlined"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  onEdit(row)
+                                }}
+                                sx={{ 
+                                  minWidth: 'auto',
+                                  px: 1,
+                                  py: 0.5,
+                                  fontSize: '0.75rem'
+                                }}
+                              >
+                                Edit
+                              </Button>
+                            )}
+                            {onDelete && (
+                              <Button
+                                size="small"
+                                variant="outlined"
+                                color="error"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  onDelete(row)
+                                }}
+                                sx={{ 
+                                  minWidth: 'auto',
+                                  px: 1,
+                                  py: 0.5,
+                                  fontSize: '0.75rem'
+                                }}
+                              >
+                                Delete
+                              </Button>
+                            )}
+                          </Box>
+                        </TableCell>
+                      )}
                     </TableRow>
                   ))
                 )}

@@ -196,90 +196,143 @@ export default function CourseDetailsPage() {
       setError(null)
 
       // Fetch course details
+      console.log('CourseDetails: fetching course by id', { courseId })
       const { data: courseData, error: courseError } = await supabase
         .from("courses")
         .select(`
-          *,
-          users(full_name, email)
+          id,
+          course_code,
+          course_name,
+          credits,
+          department,
+          lecturer_id,
+          created_at,
+          lecturers:users ( full_name, email )
         `)
         .eq("id", courseId)
-        .single()
+        .maybeSingle()
 
-      if (courseError) throw courseError
+      console.log('CourseDetails: fetch result', { courseData, courseError })
+      if (courseError) {
+        console.error('Course details fetch error:', courseError)
+        throw courseError
+      }
+      if (!courseData) {
+        setError("Course not found")
+        return
+      }
 
       // Transform course data
+      const lecturerRecord = Array.isArray(courseData.lecturers) ? courseData.lecturers[0] : courseData.lecturers
       const transformedCourse: CourseDetails = {
         id: courseData.id,
         course_code: courseData.course_code,
         course_name: courseData.course_name,
         credits: courseData.credits,
         department: courseData.department,
-        description: courseData.description || "",
+        description: "",
         lecturer_id: courseData.lecturer_id,
-        lecturer_name: courseData.users?.full_name || "Not assigned",
-        lecturer_email: courseData.users?.email || "N/A",
-        status: courseData.status || 'active',
+        lecturer_name: lecturerRecord?.full_name || "Not assigned",
+        lecturer_email: lecturerRecord?.email || "N/A",
+        status: 'active',
         created_at: courseData.created_at,
-        updated_at: courseData.updated_at
+        updated_at: courseData.created_at
       }
 
       setCourse(transformedCourse)
 
-      // Mock student data
-      const mockStudents: Student[] = Array.from({ length: 25 }, (_, i) => ({
-        id: `student-${i + 1}`,
-        student_id: `STU${String(i + 1).padStart(4, '0')}`,
-        full_name: `Student ${i + 1}`,
-        email: `student${i + 1}@university.edu`,
-        enrollment_date: new Date(Date.now() - Math.random() * 90 * 24 * 60 * 60 * 1000).toISOString(),
-        status: Math.random() > 0.1 ? 'enrolled' : 'dropped',
-        attendance_rate: Math.floor(Math.random() * 40) + 60,
-        last_attended: Math.random() > 0.2 ? new Date(Date.now() - Math.random() * 7 * 24 * 60 * 60 * 1000).toISOString() : null
+      // Fetch enrolled students for this course
+      const { data: enrollmentRows, error: enrollmentError } = await supabase
+        .from("enrollments")
+        .select(`
+          id,
+          student_id,
+          course_id,
+          students:users(full_name, email)
+        `)
+        .eq("course_id", courseId)
+
+      if (enrollmentError) {
+        console.error("CourseDetails: enrollments fetch error", enrollmentError)
+        throw enrollmentError
+      }
+
+      const enrolledStudents: Student[] = (enrollmentRows || []).map((row: any) => ({
+        id: row.student_id,
+        student_id: row.student_id,
+        full_name: row.students?.full_name || "Unknown",
+        email: row.students?.email || "",
+        enrollment_date: new Date().toISOString(),
+        status: 'enrolled',
+        attendance_rate: 0,
+        last_attended: null
       }))
 
-      setStudents(mockStudents)
+      setStudents(enrolledStudents)
 
-      // Mock session data
-      const mockSessions: Session[] = Array.from({ length: 12 }, (_, i) => {
-        const sessionDate = new Date(Date.now() + (i - 6) * 7 * 24 * 60 * 60 * 1000)
-        const isPast = sessionDate < new Date()
-        const totalStudents = 25
-        const presentStudents = Math.floor(totalStudents * (0.7 + Math.random() * 0.3))
-        
+      // Fetch sessions for this course
+      console.log('CourseDetails: fetching sessions for course', { courseId })
+      const { data: sessionRows, error: sessionsError } = await supabase
+        .from('attendance_sessions')
+        .select(`
+          id,
+          session_name,
+          session_date,
+          start_time,
+          end_time,
+          location,
+          attendance_method,
+          status,
+          is_active
+        `)
+        .eq('course_id', courseId)
+        .order('session_date', { ascending: false })
+
+      console.log('CourseDetails: sessions fetch result', { sessionRows, sessionsError })
+      if (sessionsError) {
+        console.error('CourseDetails: sessions fetch error', sessionsError)
+        throw sessionsError
+      }
+
+      const courseSessions: Session[] = (sessionRows || []).map((row: any) => {
+        const totalStudents = enrolledStudents.length
+        const presentStudents = 0 // Wire from attendance table later
         return {
-          id: `session-${i + 1}`,
-          session_name: `Session ${i + 1}`,
-          session_date: sessionDate.toISOString().split('T')[0],
-          start_time: "10:00",
-          end_time: "11:30",
-          location: `Room ${201 + i}`,
-          attendance_method: "QR_CODE",
-          status: isPast ? 'completed' : 'scheduled',
-          is_active: false,
+          id: row.id,
+          session_name: row.session_name,
+          session_date: row.session_date,
+          start_time: row.start_time,
+          end_time: row.end_time,
+          location: row.location || 'TBD',
+          attendance_method: row.attendance_method || 'QR_CODE',
+          status: (row.status as Session['status']) || 'scheduled',
+          is_active: !!row.is_active,
           total_students: totalStudents,
           present_students: presentStudents,
-          attendance_rate: Math.round((presentStudents / totalStudents) * 100)
+          attendance_rate: totalStudents > 0 ? Math.round((presentStudents / totalStudents) * 100) : 0
         }
       })
 
-      setSessions(mockSessions)
+      setSessions(courseSessions)
 
       // Calculate stats
-      const activeStudents = mockStudents.filter(s => s.status === 'enrolled').length
-      const droppedStudents = mockStudents.filter(s => s.status === 'dropped').length
-      const completedStudents = mockStudents.filter(s => s.status === 'completed').length
-      const averageAttendance = Math.round(mockStudents.reduce((acc, s) => acc + s.attendance_rate, 0) / mockStudents.length)
+      const activeStudents = enrolledStudents.filter(s => s.status === 'enrolled').length
+      const droppedStudents = enrolledStudents.filter(s => s.status === 'dropped').length
+      const completedStudents = enrolledStudents.filter(s => s.status === 'completed').length
+      const averageAttendance = enrolledStudents.length > 0 
+        ? Math.round(enrolledStudents.reduce((acc, s) => acc + s.attendance_rate, 0) / enrolledStudents.length)
+        : 0
       
-      const completedSessions = mockSessions.filter(s => s.status === 'completed').length
-      const upcomingSessions = mockSessions.filter(s => s.status === 'scheduled').length
+      const completedSessions = courseSessions.filter(s => s.status === 'completed').length
+      const upcomingSessions = courseSessions.filter(s => s.status === 'scheduled').length
 
       setStats({
-        totalStudents: mockStudents.length,
+        totalStudents: enrolledStudents.length,
         activeStudents,
         droppedStudents,
         completedStudents,
         averageAttendance,
-        totalSessions: mockSessions.length,
+        totalSessions: courseSessions.length,
         completedSessions,
         upcomingSessions
       })

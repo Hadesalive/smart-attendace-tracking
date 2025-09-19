@@ -8,10 +8,10 @@ export function useMockData() {
   const { dispatch, state } = useData()
 
   useEffect(() => {
-    // Only initialize if we don't have data yet
-    if (state.users.length === 0 && !state.loading) {
-      initializeMockData(dispatch)
-    }
+    // Mock data initialization disabled - using real database data only
+    // if (state.users.length === 0 && !state.loading) {
+    //   initializeMockData(dispatch)
+    // }
   }, [dispatch, state.users.length, state.loading])
 
   return {

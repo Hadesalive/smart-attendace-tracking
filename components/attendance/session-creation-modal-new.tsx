@@ -38,12 +38,14 @@ export default function CreateSessionModal({
     createAttendanceSessionSupabase,
     updateAttendanceSessionSupabase,
     fetchAttendanceSessions,
-    fetchCourses
+    fetchCourses,
+    fetchClassrooms
   } = useData()
   
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [coursesLoading, setCoursesLoading] = useState(false)
+  const [roomsLoading, setRoomsLoading] = useState(false)
   const [formData, setFormData] = useState({
     course_id: "",
     session_name: "",
@@ -105,8 +107,14 @@ export default function CreateSessionModal({
       console.log('Fetching courses...')
       setCoursesLoading(true)
       fetchCourses().finally(() => setCoursesLoading(false))
+
+      // Also fetch classrooms when modal opens
+      console.log('Fetching classrooms...')
+      setRoomsLoading(true)
+      fetchClassrooms().finally(() => setRoomsLoading(false))
     }
-  }, [open, lecturerId, fetchCourses])
+  }, [open, lecturerId, fetchCourses, fetchClassrooms])
+
 
   const handleInputChange = (field: string, value: string | number) => {
     setFormData(prev => ({ ...prev, [field]: value }))
@@ -324,21 +332,30 @@ export default function CreateSessionModal({
           </div>
         </div>
 
-        {/* Location and Capacity */}
+        {/* Location (Room) and Capacity */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-2">
             <label className="block text-sm font-semibold text-gray-900">
               <MapPinIcon className="inline w-4 h-4 mr-2" />
-              Location
+              Room
             </label>
-            <input
-              type="text"
+            <select
               value={formData.location}
               onChange={(e) => handleInputChange('location', e.target.value)}
-              placeholder="e.g., Room 101, Building A"
               className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-gray-50 text-gray-900 focus:border-gray-500 focus:ring-2 focus:ring-gray-300 focus:outline-none transition"
               required
-            />
+            >
+              <option value="">Select a room</option>
+              {roomsLoading ? (
+                <option disabled>Loading rooms...</option>
+              ) : (
+                state.classrooms.map((room: any) => (
+                  <option key={room.id} value={`${room.building} ${room.room_number}`}>
+                    {room.building} - {room.room_number} (Cap: {room.capacity})
+                  </option>
+                ))
+              )}
+            </select>
           </div>
           <div className="space-y-2">
             <label className="block text-sm font-semibold text-gray-900">

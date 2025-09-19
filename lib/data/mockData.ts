@@ -21,7 +21,7 @@ import {
 
 export const mockUsers: User[] = [
   {
-    id: "user_1",
+    id: "123e4567-e89b-12d3-a456-426614174001",
     email: "admin@university.edu",
     full_name: "Admin User",
     role: "admin",
@@ -30,7 +30,7 @@ export const mockUsers: User[] = [
     updated_at: "2024-01-01T00:00:00Z"
   },
   {
-    id: "user_2",
+    id: "123e4567-e89b-12d3-a456-426614174002",
     email: "sarah.johnson@university.edu",
     full_name: "Dr. Sarah Johnson",
     role: "lecturer",
@@ -39,7 +39,7 @@ export const mockUsers: User[] = [
     updated_at: "2024-01-01T00:00:00Z"
   },
   {
-    id: "user_3",
+    id: "123e4567-e89b-12d3-a456-426614174003",
     email: "mike.smith@university.edu",
     full_name: "Prof. Mike Smith",
     role: "lecturer",
@@ -48,7 +48,7 @@ export const mockUsers: User[] = [
     updated_at: "2024-01-01T00:00:00Z"
   },
   {
-    id: "user_4",
+    id: "123e4567-e89b-12d3-a456-426614174004",
     email: "john.doe@student.edu",
     full_name: "John Doe",
     role: "student",
@@ -58,7 +58,7 @@ export const mockUsers: User[] = [
     updated_at: "2024-01-01T00:00:00Z"
   },
   {
-    id: "user_5",
+    id: "123e4567-e89b-12d3-a456-426614174005",
     email: "jane.smith@student.edu",
     full_name: "Jane Smith",
     role: "student",
@@ -68,7 +68,7 @@ export const mockUsers: User[] = [
     updated_at: "2024-01-01T00:00:00Z"
   },
   {
-    id: "user_6",
+    id: "123e4567-e89b-12d3-a456-426614174006",
     email: "alice.brown@student.edu",
     full_name: "Alice Brown",
     role: "student",

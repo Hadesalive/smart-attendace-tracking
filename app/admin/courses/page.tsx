@@ -1,8 +1,8 @@
 /**
- * ADMIN COURSES MANAGEMENT PAGE
+ * ADMIN COURSE ASSIGNMENTS MANAGEMENT PAGE
  * 
- * This page provides comprehensive course management functionality for system administrators.
- * It serves as the central hub for managing all academic courses and their associated data.
+ * This page provides comprehensive course assignment management functionality for system administrators.
+ * It serves as the central hub for managing course assignments to classes/sections and their associated data.
  * 
  * ARCHITECTURE:
  * - Built with Next.js 14 App Router and React 18
@@ -12,14 +12,14 @@
  * - Integrates with Supabase for real-time data management
  * 
  * FEATURES IMPLEMENTED:
- * ✅ Course listing with pagination and sorting
- * ✅ Advanced search and filtering (by department, status, lecturer)
- * ✅ Real-time course statistics dashboard
- * ✅ Course creation and editing with validation
- * ✅ Department-based course organization
- * ✅ Lecturer assignment and management
- * ✅ Student enrollment tracking
- * ✅ Course status management (active/inactive)
+ * ✅ Course assignment listing with pagination and sorting
+ * ✅ Advanced search and filtering (by course, section, academic year)
+ * ✅ Real-time course assignment statistics dashboard
+ * ✅ Course assignment creation and editing with validation
+ * ✅ Section-based course assignment organization
+ * ✅ Academic year and semester filtering
+ * ✅ Course-to-section assignment tracking
+ * ✅ Assignment status management (mandatory/optional)
  * ✅ Responsive design for all screen sizes
  * 
  * FEATURES TO IMPLEMENT:
@@ -70,6 +70,7 @@ import {
   DialogContent,
   DialogActions,
   Divider,
+  Select,
 } from "@mui/material"
 import { 
   BookOpenIcon, 
@@ -88,12 +89,12 @@ import { formatDate, formatNumber } from "@/lib/utils"
 import { TYPOGRAPHY_STYLES } from "@/lib/design/fonts"
 import { BUTTON_STYLES } from "@/lib/constants/admin-constants"
 import { useData } from "@/lib/contexts/DataContext"
-import { useMockData } from "@/lib/hooks/useMockData"
 import PageHeader from "@/components/admin/PageHeader"
 import StatsGrid from "@/components/admin/StatsGrid"
 import SearchFilters from "@/components/admin/SearchFilters"
 import DataTable from "@/components/admin/DataTable"
 import ErrorAlert from "@/components/admin/ErrorAlert"
+import { Course } from "@/lib/types/shared"
 
 // ============================================================================
 // CONSTANTS
@@ -150,36 +151,46 @@ const DEPARTMENTS = [
 // INTERFACES
 // ============================================================================
 
-interface Course {
+interface CourseAssignment {
   id: string
-  course_code: string
-  course_name: string
-  credits: number
-  department: string
-  lecturer_id: string
+  course_id: string
+  section_id: string
+  academic_year_id: string
+  semester_id: string
+  is_mandatory: boolean
+  max_students?: number
   created_at: string
-  status: 'active' | 'inactive'
-  users?: {
-    full_name: string
-    email: string
+  courses?: {
+    course_code: string
+    course_name: string
+    credits: number
+    department: string
   }
-  _count?: {
-    enrollments: number
+  sections?: {
+    section_code: string
+    year: number
+    max_capacity: number
+  }
+  academic_years?: {
+    year_name: string
+  }
+  semesters?: {
+    semester_name: string
   }
 }
 
-interface CourseStats {
+interface CourseAssignmentStats {
+  totalAssignments: number
+  mandatoryAssignments: number
+  totalSections: number
   totalCourses: number
-  activeCourses: number
-  totalStudents: number
-  lecturers: number
 }
 
 // ============================================================================
 // MAIN COMPONENT
 // ============================================================================
 
-export default function CoursesPage() {
+export default function CourseAssignmentsPage() {
   // ============================================================================
   // STATE & HOOKS
   // ============================================================================
@@ -187,106 +198,126 @@ export default function CoursesPage() {
   const router = useRouter()
   
   // Data Context
-  const { state } = useData()
-  const { isInitialized } = useMockData()
+  const { state, fetchCourseAssignments, fetchCourses, fetchLecturerProfiles, updateCourse } = useData()
   
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedDepartment, setSelectedDepartment] = useState<string>("all")
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null)
-  const [selectedCourse, setSelectedCourse] = useState<Course | null>(null)
-  const [isAddCourseOpen, setAddCourseOpen] = useState(false)
-  const [isEditCourseOpen, setEditCourseOpen] = useState(false)
+  const [selectedAssignment, setSelectedAssignment] = useState<CourseAssignment | null>(null)
+  const [isAddAssignmentOpen, setAddAssignmentOpen] = useState(false)
+  const [isEditAssignmentOpen, setEditAssignmentOpen] = useState(false)
   const [isDeleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [assignLecturerCourseId, setAssignLecturerCourseId] = useState<string>("")
+  const [assignLecturerId, setAssignLecturerId] = useState<string>("")
+  const [assignLoading, setAssignLoading] = useState(false)
+
+  // ============================================================================
+  // EFFECTS
+  // ============================================================================
+
+  useEffect(() => {
+    fetchCourseAssignments()
+    if (!state.courses || state.courses.length === 0) {
+      fetchCourses()
+    }
+    if (!state.lecturerProfiles || state.lecturerProfiles.length === 0) {
+      fetchLecturerProfiles()
+    }
+  }, [fetchCourseAssignments, fetchCourses, fetchLecturerProfiles, state.courses?.length, state.lecturerProfiles?.length])
 
   // ============================================================================
   // COMPUTED DATA
   // ============================================================================
 
-  // Get courses from DataContext
-  const courses = useMemo(() => {
-    return state.courses.map(course => ({
-      id: course.id,
-      course_code: course.course_code,
-      course_name: course.course_name,
-      credits: course.credits || 3,
-      department: course.department || 'Computer Science',
-      lecturer_id: course.lecturer_id,
-      created_at: course.created_at,
-      status: 'active' as 'active' | 'inactive', // Default to active
-      users: {
-        full_name: course.lecturer_name || 'Not assigned',
-        email: '' // No lecturer email in Course type
-      },
-      _count: {
-        enrollments: state.enrollments.filter(e => e.course_id === course.id).length
-      }
+  // Get course assignments from DataContext
+  const courseAssignments = useMemo(() => {
+    console.log('Courses page: Course assignments from state:', state.courseAssignments)
+    
+    // If no course assignments exist, show empty array
+    if (!state.courseAssignments || state.courseAssignments.length === 0) {
+      console.log('Courses page: No course assignments found, showing empty state')
+      return []
+    }
+    
+    return state.courseAssignments.map((assignment: any) => ({
+      id: assignment.id,
+      course_id: assignment.course_id,
+      section_id: assignment.section_id,
+      academic_year_id: assignment.academic_year_id,
+      semester_id: assignment.semester_id,
+      is_mandatory: assignment.is_mandatory,
+      max_students: assignment.max_students,
+      created_at: assignment.created_at,
+      courses: assignment.courses,
+      sections: assignment.sections,
+      academic_years: assignment.academic_years,
+      semesters: assignment.semesters
     }))
-  }, [state.courses, state.enrollments])
+  }, [state.courseAssignments])
 
   // Calculate stats from DataContext
   const stats = useMemo(() => {
-    const totalCourses = courses.length
-    const activeCourses = courses.filter(c => c.status === 'active').length
+    const totalAssignments = courseAssignments.length
+    const mandatoryAssignments = courseAssignments.filter(a => a.is_mandatory).length
     
-    // Get unique lecturers
-    const lecturerIds = new Set(courses.map(c => c.lecturer_id).filter(Boolean))
-    const lecturers = lecturerIds.size
+    // Get unique sections
+    const sectionIds = new Set(courseAssignments.map(a => a.section_id).filter(Boolean))
+    const totalSections = sectionIds.size
 
-    // Calculate total enrollments
-    const totalStudents = courses.reduce((acc, course) => {
-      return acc + (course._count?.enrollments || 0)
-    }, 0)
+    // Get unique courses
+    const courseIds = new Set(courseAssignments.map(a => a.course_id).filter(Boolean))
+    const totalCourses = courseIds.size
 
-    return { totalCourses, activeCourses, totalStudents, lecturers }
-  }, [courses])
+    return { totalAssignments, mandatoryAssignments, totalSections, totalCourses }
+  }, [courseAssignments])
 
   // ============================================================================
   // EVENT HANDLERS
   // ============================================================================
 
-  const handleMenuOpen = useCallback((event: React.MouseEvent<HTMLElement>, course: Course) => {
+  const handleMenuOpen = useCallback((event: React.MouseEvent<HTMLElement>, assignment: CourseAssignment) => {
     setAnchorEl(event.currentTarget)
-    setSelectedCourse(course)
+    setSelectedAssignment(assignment)
   }, [])
 
   const handleMenuClose = useCallback(() => {
     setAnchorEl(null)
-    setSelectedCourse(null)
+    setSelectedAssignment(null)
   }, [])
 
-  const handleEditCourse = useCallback(() => {
-    setEditCourseOpen(true)
+  const handleEditAssignment = useCallback(() => {
+    setEditAssignmentOpen(true)
     handleMenuClose()
   }, [handleMenuClose])
 
-  const handleDeleteCourse = useCallback(() => {
+  const handleDeleteAssignment = useCallback(() => {
     setDeleteConfirmOpen(true)
     handleMenuClose()
   }, [handleMenuClose])
 
-  const handleViewCourse = useCallback(() => {
-    if (selectedCourse) {
-      router.push(`/admin/courses/${selectedCourse.id}`)
+  const handleViewAssignment = useCallback(() => {
+    if (selectedAssignment) {
+      router.push(`/admin/courses/${selectedAssignment.id}`)
     }
     handleMenuClose()
-  }, [selectedCourse, router, handleMenuClose])
+  }, [selectedAssignment, router, handleMenuClose])
 
   const handleManageEnrollments = useCallback(() => {
-    if (selectedCourse) {
+    if (selectedAssignment) {
       // For now, navigate to course details page since enrollments page doesn't exist yet
-      router.push(`/admin/courses/${selectedCourse.id}`)
+      router.push(`/admin/courses/${selectedAssignment.id}`)
     }
     handleMenuClose()
-  }, [selectedCourse, router, handleMenuClose])
+  }, [selectedAssignment, router, handleMenuClose])
 
-  const confirmDeleteCourse = useCallback(() => {
-    if (!selectedCourse) return
+  const confirmDeleteAssignment = useCallback(() => {
+    if (!selectedAssignment) return
 
-    // TODO: Implement delete course functionality in DataContext
-    console.log("Delete course:", selectedCourse.id)
+    // TODO: Implement delete assignment functionality in DataContext
+    console.log("Delete assignment:", selectedAssignment.id)
     setDeleteConfirmOpen(false)
-    setSelectedCourse(null)
-  }, [selectedCourse])
+    setSelectedAssignment(null)
+  }, [selectedAssignment])
 
   // ============================================================================
   // MEMOIZED VALUES
@@ -296,31 +327,31 @@ export default function CoursesPage() {
     return STATS_CARDS.map(card => ({
       ...card,
       value: card.title === "Total Courses" ? stats.totalCourses :
-             card.title === "Active Courses" ? stats.activeCourses :
-             card.title === "Total Students" ? stats.totalStudents :
-             stats.lecturers
+             card.title === "Active Courses" ? stats.totalAssignments :
+             card.title === "Total Students" ? stats.totalSections :
+             stats.mandatoryAssignments
     }))
   }, [stats])
 
-  const filteredCourses = useMemo(() => {
-    let filtered = courses
+  const filteredAssignments = useMemo(() => {
+    let filtered = courseAssignments
 
     // Filter by search term
     if (searchTerm) {
-      filtered = filtered.filter(course => 
-        course.course_code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        course.course_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        course.users?.full_name.toLowerCase().includes(searchTerm.toLowerCase())
+      filtered = filtered.filter(assignment => 
+        assignment.courses?.course_code.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        assignment.courses?.course_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        assignment.sections?.section_code.toLowerCase().includes(searchTerm.toLowerCase())
       )
     }
 
     // Filter by department
     if (selectedDepartment !== "all") {
-      filtered = filtered.filter(course => course.department === selectedDepartment)
+      filtered = filtered.filter(assignment => assignment.courses?.department === selectedDepartment)
     }
 
     return filtered
-  }, [courses, searchTerm, selectedDepartment])
+  }, [courseAssignments, searchTerm, selectedDepartment])
 
   const getDepartmentColor = useCallback((department: string) => {
     const colors = [
@@ -335,91 +366,84 @@ export default function CoursesPage() {
   // RENDER
   // ============================================================================
 
-  // Define table columns
+  // Define table columns for course assignments
   const columns = [
     {
       key: 'course',
       label: 'Course',
-      render: (value: any, row: Course) => (
+      render: (value: any, row: CourseAssignment) => (
         <Box>
           <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
-            {row.course_code}
+            {row.courses?.course_code || 'N/A'}
           </Typography>
           <Typography variant="caption" sx={TYPOGRAPHY_STYLES.tableCaption}>
-            {row.course_name}
+            {row.courses?.course_name || 'No course name'}
           </Typography>
         </Box>
       )
     },
     {
-      key: 'department',
-      label: 'Department',
-      render: (value: any, row: Course) => {
-        const departmentColor = getDepartmentColor(row.department)
-        return (
-          <Chip 
-            label={row.department} 
-            size="small"
-            sx={{ 
-              backgroundColor: `${departmentColor}20`,
-              color: departmentColor,
-              fontFamily: "DM Sans",
-              fontWeight: 500
-            }}
-          />
-        )
-      }
-    },
-    {
-      key: 'lecturer',
-      label: 'Lecturer',
-      render: (value: any, row: Course) => (
-        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-          <Avatar 
-            src="/placeholder-user.jpg" 
-            alt={row.users?.full_name}
-            sx={{ width: 24, height: 24 }}
-          />
+      key: 'section',
+      label: 'Section',
+      render: (value: any, row: CourseAssignment) => (
+        <Box>
           <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
-            {row.users?.full_name || "Not assigned"}
+            {row.sections?.section_code || 'N/A'}
+          </Typography>
+          <Typography variant="caption" sx={TYPOGRAPHY_STYLES.tableCaption}>
+            Year {row.sections?.year || 'N/A'}
           </Typography>
         </Box>
+      )
+    },
+    {
+      key: 'academic_year',
+      label: 'Academic Year',
+      render: (value: any, row: CourseAssignment) => (
+        <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
+          {row.academic_years?.year_name || 'N/A'}
+        </Typography>
+      )
+    },
+    {
+      key: 'semester',
+      label: 'Semester',
+      render: (value: any, row: CourseAssignment) => (
+        <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
+          {row.semesters?.semester_name || 'N/A'}
+        </Typography>
       )
     },
     {
       key: 'credits',
       label: 'Credits',
-      render: (value: any, row: Course) => (
+      render: (value: any, row: CourseAssignment) => (
         <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
-          {row.credits}
+          {row.courses?.credits || 'N/A'}
         </Typography>
       )
     },
     {
-      key: 'students',
-      label: 'Students',
-      render: (value: any, row: Course) => (
-        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-          <UsersIcon style={{ width: 16, height: 16, color: "#6b7280" }} />
-          <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
-            {row._count?.enrollments || 0}
-          </Typography>
-        </Box>
+      key: 'capacity',
+      label: 'Max Students',
+      render: (value: any, row: CourseAssignment) => (
+        <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
+          {row.max_students || row.sections?.max_capacity || 'N/A'}
+        </Typography>
       )
     },
     {
       key: 'status',
-      label: 'Status',
-      render: (value: any, row: Course) => (
+      label: 'Type',
+      render: (value: any, row: CourseAssignment) => (
         <Chip 
-          label={row.status || "active"} 
+          label={row.is_mandatory ? "Mandatory" : "Optional"} 
           size="small"
           sx={{ 
-            backgroundColor: row.status === "active" ? "#00000020" : "#66666620",
-            color: row.status === "active" ? "#000000" : "#666666",
+            backgroundColor: row.is_mandatory ? "#00000020" : "#66666620",
+            color: row.is_mandatory ? "#000000" : "#666666",
             fontFamily: "DM Sans",
-            fontWeight: 500,
-            textTransform: "capitalize"
+            fontWeight: 500
           }}
         />
       )
@@ -427,7 +451,7 @@ export default function CoursesPage() {
     {
       key: 'created',
       label: 'Created',
-      render: (value: any, row: Course) => (
+      render: (value: any, row: CourseAssignment) => (
         <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
           {formatDate(row.created_at)}
         </Typography>
@@ -436,7 +460,7 @@ export default function CoursesPage() {
     {
       key: 'actions',
       label: 'Actions',
-      render: (value: any, row: Course) => (
+      render: (value: any, row: CourseAssignment) => (
         <IconButton
           size="small"
           onClick={(e) => handleMenuOpen(e, row)}
@@ -449,17 +473,31 @@ export default function CoursesPage() {
   ]
 
   // Loading state
-  if (!isInitialized) {
+  if (state.loading) {
     return (
       <Box sx={{ p: { xs: 2, sm: 3 } }}>
         <PageHeader
-          title="Course Management"
-          subtitle="Oversee all courses and academic programs"
+          title="Course Assignment Management"
+          subtitle="Oversee all course assignments and academic programs"
           actions={null}
         />
         <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 400 }}>
-          <Typography variant="body1">Loading courses...</Typography>
+          <Typography variant="body1">Loading course assignments...</Typography>
         </Box>
+      </Box>
+    )
+  }
+
+  // Error state
+  if (state.error) {
+    return (
+      <Box sx={{ p: { xs: 2, sm: 3 } }}>
+        <PageHeader
+          title="Course Assignment Management"
+          subtitle="Oversee all course assignments and academic programs"
+          actions={null}
+        />
+        <ErrorAlert error={state.error} />
       </Box>
     )
   }
@@ -467,8 +505,8 @@ export default function CoursesPage() {
   return (
     <Box sx={{ p: { xs: 2, sm: 3 } }}>
       <PageHeader
-        title="Course Management"
-        subtitle="Oversee all courses and academic programs"
+        title="Course Assignment Management"
+        subtitle="Oversee all course assignments and academic programs"
         actions={
           <>
             <Button
@@ -481,10 +519,10 @@ export default function CoursesPage() {
             <Button
               variant="contained"
               startIcon={<PlusIcon className="h-4 w-4" />}
-              onClick={() => setAddCourseOpen(true)}
+              onClick={() => setAddAssignmentOpen(true)}
               sx={BUTTON_STYLES.primary}
             >
-              Add Course
+              Add Assignment
             </Button>
           </>
         }
@@ -495,7 +533,7 @@ export default function CoursesPage() {
       <SearchFilters
         searchTerm={searchTerm}
         onSearchChange={setSearchTerm}
-        searchPlaceholder="Search courses..."
+        searchPlaceholder="Search course assignments..."
         filters={[
           {
             label: "Department",
@@ -509,13 +547,37 @@ export default function CoursesPage() {
         ]}
       />
 
-      <DataTable
-        title="Courses"
-        subtitle="Manage all academic courses and programs"
-        columns={columns}
-        data={filteredCourses}
-        onRowClick={(course) => router.push(`/admin/courses/${course.id}`)}
-      />
+        {courseAssignments.length === 0 ? (
+          <Box sx={{ 
+            p: 4, 
+            textAlign: 'center',
+            border: '2px dashed #e5e5e5',
+            borderRadius: 2,
+            backgroundColor: '#f9f9f9'
+          }}>
+            <Typography variant="h6" sx={{ mb: 2, color: '#666' }}>
+              No Course Assignments Found
+            </Typography>
+            <Typography variant="body2" sx={{ mb: 3, color: '#888' }}>
+              There are no course assignments in the system yet. Create some course assignments using the "Assign Course to Class" feature in the Academic Management page.
+            </Typography>
+            <Button
+              variant="contained"
+              onClick={() => router.push('/admin/academic')}
+              sx={BUTTON_STYLES.primary}
+            >
+              Go to Academic Management
+            </Button>
+          </Box>
+        ) : (
+          <DataTable
+            title="Course Assignments"
+            subtitle="Manage course assignments to sections and classes"
+            columns={columns}
+            data={filteredAssignments}
+            onRowClick={(assignment) => router.push(`/admin/courses/${assignment.course_id}`)}
+          />
+        )}
 
       {/* Delete Confirmation Dialog */}
       <Dialog 
@@ -530,14 +592,14 @@ export default function CoursesPage() {
         }}
       >
         <DialogTitle sx={TYPOGRAPHY_STYLES.dialogTitle}>
-          Delete Course
+          Delete Course Assignment
         </DialogTitle>
         <DialogContent>
           <Typography 
             variant="body2" 
             sx={TYPOGRAPHY_STYLES.dialogContent}
           >
-            Are you sure you want to delete <strong>{selectedCourse?.course_code}</strong>? 
+            Are you sure you want to delete the assignment for <strong>{selectedAssignment?.courses?.course_code}</strong>? 
             This will also remove all related enrollments and sessions. This action cannot be undone.
           </Typography>
         </DialogContent>
@@ -549,12 +611,12 @@ export default function CoursesPage() {
             Cancel
           </Button>
           <Button 
-            onClick={confirmDeleteCourse}
+            onClick={confirmDeleteAssignment}
             variant="contained"
             color="error"
             sx={TYPOGRAPHY_STYLES.buttonText}
           >
-            Delete Course
+            Delete Assignment
           </Button>
         </DialogActions>
       </Dialog>
@@ -571,7 +633,7 @@ export default function CoursesPage() {
           }
         }}
       >
-        <MenuItem onClick={handleViewCourse} sx={TYPOGRAPHY_STYLES.menuItem}>
+        <MenuItem onClick={handleViewAssignment} sx={TYPOGRAPHY_STYLES.menuItem}>
           <EyeIcon style={{ width: 16, height: 16, marginRight: 8 }} />
           View Details
         </MenuItem>
@@ -579,14 +641,14 @@ export default function CoursesPage() {
           <UsersIcon style={{ width: 16, height: 16, marginRight: 8 }} />
           Manage Enrollments
         </MenuItem>
-        <MenuItem onClick={handleEditCourse} sx={TYPOGRAPHY_STYLES.menuItem}>
+        <MenuItem onClick={handleEditAssignment} sx={TYPOGRAPHY_STYLES.menuItem}>
           <PencilIcon style={{ width: 16, height: 16, marginRight: 8 }} />
-          Edit Course
+          Edit Assignment
         </MenuItem>
         <Divider />
-        <MenuItem onClick={handleDeleteCourse} sx={{ ...TYPOGRAPHY_STYLES.menuItem, color: "#ef4444" }}>
+        <MenuItem onClick={handleDeleteAssignment} sx={{ ...TYPOGRAPHY_STYLES.menuItem, color: "#ef4444" }}>
           <TrashIcon style={{ width: 16, height: 16, marginRight: 8 }} />
-          Delete Course
+          Delete Assignment
         </MenuItem>
       </Menu>
     </Box>

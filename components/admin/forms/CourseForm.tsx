@@ -7,12 +7,9 @@ interface Course {
   id?: string
   course_code: string
   course_name: string
-  description?: string
   credits: number
-  department_id?: string
-  is_active: boolean
-  prerequisites?: string[]
-  corequisites?: string[]
+  department?: string
+  lecturer_id?: string
 }
 
 interface CourseFormProps {
@@ -22,6 +19,7 @@ interface CourseFormProps {
   mode: 'create' | 'edit'
   onSave: (course: Course) => Promise<void>
   departments?: any[]
+  lecturers?: any[]
 }
 
 export default function CourseForm({
@@ -30,17 +28,15 @@ export default function CourseForm({
   course,
   mode,
   onSave,
-  departments = []
+  departments = [],
+  lecturers = []
 }: CourseFormProps) {
   const [formData, setFormData] = useState<Course>({
     course_code: '',
     course_name: '',
-    description: '',
     credits: 3,
-    department_id: '',
-    is_active: true,
-    prerequisites: [],
-    corequisites: []
+    department: '',
+    lecturer_id: ''
   })
 
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -50,20 +46,15 @@ export default function CourseForm({
   useEffect(() => {
     if (course && mode === 'edit') {
       setFormData({
-        ...course,
-        prerequisites: course.prerequisites || [],
-        corequisites: course.corequisites || []
+        ...course
       })
     } else {
       setFormData({
         course_code: '',
         course_name: '',
-        description: '',
         credits: 3,
-        department_id: '',
-        is_active: true,
-        prerequisites: [],
-        corequisites: []
+        department: '',
+        lecturer_id: ''
       })
     }
     setErrors({})
@@ -99,9 +90,7 @@ export default function CourseForm({
       newErrors.credits = 'Credits must be between 1 and 6'
     }
 
-    if (!formData.department_id) {
-      newErrors.department_id = 'Department is required'
-    }
+    // Department is optional in the database schema
 
     setErrors(newErrors)
     return Object.keys(newErrors).length === 0
@@ -221,64 +210,52 @@ export default function CourseForm({
             </div>
 
             <div>
-              <label htmlFor="department_id" className="block text-sm font-semibold mb-2 text-gray-900">
-                Department *
+              <label htmlFor="department" className="block text-sm font-semibold mb-2 text-gray-900">
+                Department
               </label>
               <select
-                id="department_id"
-                name="department_id"
-                value={formData.department_id}
+                id="department"
+                name="department"
+                value={formData.department}
                 onChange={handleInputChange}
                 className={`w-full px-3 py-2 rounded-lg border ${
-                  errors.department_id ? 'border-red-300 bg-red-50' : 'border-gray-300 bg-white'
+                  errors.department ? 'border-red-300 bg-red-50' : 'border-gray-300 bg-white'
                 } text-gray-900 focus:border-gray-500 focus:ring-2 focus:ring-gray-300 focus:outline-none transition`}
-                required
                 disabled={loading}
               >
-                <option value="">Select Department</option>
+                <option value="">Select Department (Optional)</option>
                 {departments.map((dept) => (
-                  <option key={dept.id} value={dept.id}>
+                  <option key={dept.id} value={dept.department_name}>
                     {dept.department_name} ({dept.department_code})
                   </option>
                 ))}
               </select>
-              {errors.department_id && (
-                <p className="mt-1 text-sm text-red-600">{errors.department_id}</p>
+              {errors.department && (
+                <p className="mt-1 text-sm text-red-600">{errors.department}</p>
               )}
             </div>
-          </div>
 
-          {/* Description */}
-          <div>
-            <label htmlFor="description" className="block text-sm font-semibold mb-2 text-gray-900">
-              Description
-            </label>
-            <textarea
-              id="description"
-              name="description"
-              value={formData.description}
-              onChange={handleInputChange}
-              placeholder="Optional description for this course"
-              rows={3}
-              className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white text-gray-900 focus:border-gray-500 focus:ring-2 focus:ring-gray-300 focus:outline-none transition resize-none"
-              disabled={loading}
-            />
-          </div>
-
-          {/* Active Status */}
-          <div className="flex items-center space-x-3">
-            <input
-              id="is_active"
-              name="is_active"
-              type="checkbox"
-              checked={formData.is_active}
-              onChange={handleInputChange}
-              className="w-4 h-4 text-gray-600 bg-gray-100 border-gray-300 rounded focus:ring-gray-500 focus:ring-2"
-              disabled={loading}
-            />
-            <label htmlFor="is_active" className="text-sm font-medium text-gray-900">
-              Active Course
-            </label>
+            {/* Lecturer */}
+            <div>
+              <label htmlFor="lecturer_id" className="block text-sm font-semibold mb-2 text-gray-900">
+                Lecturer
+              </label>
+              <select
+                id="lecturer_id"
+                name="lecturer_id"
+                value={formData.lecturer_id}
+                onChange={handleInputChange}
+                className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white text-gray-900 focus:border-gray-500 focus:ring-2 focus:ring-gray-300 focus:outline-none transition"
+                disabled={loading}
+              >
+                <option value="">Select Lecturer (Optional)</option>
+                {lecturers.map((lecturer) => (
+                  <option key={lecturer.id} value={lecturer.id}>
+                    {lecturer.full_name} ({lecturer.email})
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
           {/* Action Buttons */}

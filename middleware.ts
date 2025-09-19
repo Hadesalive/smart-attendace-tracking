@@ -6,7 +6,13 @@ export async function middleware(request: NextRequest) {
     const { supabase, response } = createClient(request)
 
     // This will refresh the session cookie if it's expired.
-    const { data: { session } } = await supabase.auth.getSession()
+    const { data: { session }, error } = await supabase.auth.getSession()
+
+    // If there's an error getting the session, let it pass through
+    if (error) {
+      console.log('Session error:', error.message)
+      return response
+    }
 
     // Define protected routes that require authentication
     const protectedRoutes = ['/dashboard', '/admin', '/lecturer', '/student']
@@ -14,14 +20,7 @@ export async function middleware(request: NextRequest) {
       request.nextUrl.pathname.startsWith(route)
     )
 
-    // Define public routes that don't require authentication
-    const publicRoutes = ['/', '/login', '/attend']
-    const isPublicRoute = publicRoutes.some(route => 
-      request.nextUrl.pathname.startsWith(route)
-    )
-
-    // If the user is not logged in and is trying to access a protected route,
-    // redirect them to the home page with a redirect parameter.
+    // Only redirect if user is not logged in and trying to access a protected route
     if (!session && isProtectedRoute) {
       const url = request.nextUrl.clone()
       url.pathname = '/'
@@ -29,12 +28,8 @@ export async function middleware(request: NextRequest) {
       return NextResponse.redirect(url)
     }
 
-    // If user is logged in and trying to access login page, redirect to dashboard
-    if (session && request.nextUrl.pathname === '/') {
-      const url = request.nextUrl.clone()
-      url.pathname = '/dashboard'
-      return NextResponse.redirect(url)
-    }
+    // Don't redirect logged-in users from home page to avoid loops
+    // Let the client-side routing handle this
 
     return response
   } catch (e) {
@@ -49,12 +44,9 @@ export async function middleware(request: NextRequest) {
 export const config = {
   matcher: [
     /*
-     * Match all request paths except for the ones starting with:
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     * Feel free to modify this pattern to include more paths.
+     * Temporarily disable middleware to fix sign-in loop
+     * Re-enable by uncommenting the matcher below
      */
-    '/((?!_next/static|_next/image|favicon.ico|.*\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    // '/((?!_next/static|_next/image|favicon.ico|.*\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 }

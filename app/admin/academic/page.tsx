@@ -1,33 +1,8 @@
-/**
- * ADMIN ACADEMIC HUB PAGE
- *
- * MVP for academic structures and flows:
- * - Courses (subjects) catalog and assignment to classes
- * - Classes organized by Year → Semester → Program (class) → Section
- * - Classrooms (physical rooms) registry
- * - Teacher assignments per course and class/section
- * - Student enrollments into class/section
- *
- * Key rules (as provided):
- * - "Courses" and "Subjects" are the same entity (we use Courses).
- * - A Class is uniquely identified by (year, semester, program, section).
- * - Assigning a course to a class applies to all sections under that (year, semester, program),
- *   unless we later scope to a specific section (not in MVP).
- * - Teacher assignment uniqueness is by (course_id, year, semester, program, section).
- *   Multiple teachers can be assigned to the same course in the same class across sections;
- *   and one teacher can be assigned to all sections.
- * - Scheduling is out-of-scope for MVP.
- * - No bulk import/soft delete for MVP.
- * - Reuse shared admin components and monochrome design.
- */
-
 "use client"
-
 import React, { useMemo, useState, useEffect } from "react"
 import { Box, Button, Dialog, DialogTitle, DialogContent, Typography } from "@mui/material"
 import { PlusIcon, UserPlusIcon, BuildingOffice2Icon, ArrowPathIcon } from "@heroicons/react/24/outline"
 import { useData } from "@/lib/contexts/DataContext"
-import { useMockData } from "@/lib/hooks/useMockData"
 import PageHeader from "@/components/admin/PageHeader"
 import StatsGrid from "@/components/admin/StatsGrid"
 import SearchFilters from "@/components/admin/SearchFilters"
@@ -125,47 +100,97 @@ export default function AcademicHubPage() {
   })
 
   // Data Context
-  const { state } = useData()
-  const { isInitialized } = useMockData()
+  const { 
+    state, 
+    fetchAcademicYears,
+    fetchSemesters,
+    fetchDepartments,
+    fetchPrograms,
+    fetchClassrooms,
+    fetchSections,
+    fetchStudentProfiles,
+    fetchLecturerProfiles,
+    fetchAdminProfiles,
+    fetchCourses,
+    fetchUsers,
+    createAcademicYear,
+    updateAcademicYear,
+    deleteAcademicYear,
+    createSemester,
+    updateSemester,
+    deleteSemester,
+    createDepartment,
+    updateDepartment,
+    deleteDepartment,
+    createProgram,
+    updateProgram,
+    deleteProgram,
+    createClassroom,
+    updateClassroom,
+    deleteClassroom,
+    createSection,
+    updateSection,
+    deleteSection,
+    createCourse,
+    updateCourse,
+    deleteCourse,
+    createCourseAssignment,
+    updateCourseAssignment,
+    deleteCourseAssignment,
+    createUser,
+    updateUser
+  } = useData()
 
-  // Academic data state with proper types
-  const [academicData, setAcademicData] = useState({
-    academicYears: [] as any[],
-    semesters: [] as any[],
-    departments: [] as any[],
-    programs: [] as any[],
-    classrooms: [] as any[],
-    sections: [] as any[],
-    studentProfiles: [] as any[],
-    lecturerProfiles: [] as any[]
-  })
+  // Academic data from DataContext
+  const academicData = {
+    academicYears: state.academicYears,
+    semesters: state.semesters,
+    departments: state.departments,
+    programs: state.programs,
+    classrooms: state.classrooms,
+    sections: state.sections,
+    studentProfiles: state.studentProfiles,
+    lecturerProfiles: state.lecturerProfiles,
+    adminProfiles: state.adminProfiles
+  }
 
   // Fetch academic data on component mount
   useEffect(() => {
     const loadAcademicData = async () => {
       try {
-        // This would be implemented in DataContext
-        // await fetchAcademicData()
         console.log('Loading academic data...')
+        await Promise.all([
+          fetchAcademicYears(),
+          fetchSemesters(),
+          fetchDepartments(),
+          fetchPrograms(),
+          fetchClassrooms(),
+          fetchSections(),
+          fetchStudentProfiles(),
+          fetchLecturerProfiles(),
+          fetchAdminProfiles(),
+          fetchCourses(),
+          fetchUsers()
+        ])
+        console.log('Academic data loaded successfully')
       } catch (error) {
         console.error('Error loading academic data:', error)
         setError('Failed to load academic data')
       }
     }
     
-    if (isInitialized) {
-      loadAcademicData()
-    }
-  }, [isInitialized])
+    loadAcademicData()
+  }, [fetchAcademicYears, fetchSemesters, fetchDepartments, fetchPrograms, fetchClassrooms, fetchSections, fetchStudentProfiles, fetchLecturerProfiles, fetchAdminProfiles, fetchCourses, fetchUsers])
 
   // Get data from database (will replace mock data)
   const classes = useMemo(() => {
+    console.log('Sections data:', academicData.sections)
     // Use sections from database instead of mock data
     return academicData.sections.map(section => ({
       id: section.id,
       year: section.year as Year,
-      semester: section.semester_number as Semester,
-      program: section.program?.program_code || 'N/A',
+      semester: section.semesters?.semester_name || 'N/A',
+      program: section.programs?.program_code || 'N/A',
       section: section.section_code,
       size: section.current_enrollment || 0
     }))
@@ -246,7 +271,7 @@ export default function AcademicHubPage() {
   const courseColumns = [
     { key: "code", label: "Code" },
     { key: "name", label: "Name" },
-    { key: "program", label: "Program" },
+    { key: "program", label: "Department" },
   ]
 
   const classroomColumns = [
@@ -254,6 +279,32 @@ export default function AcademicHubPage() {
     { key: "room", label: "Room" },
     { key: "capacity", label: "Capacity" },
   ]
+
+  // Filtered data based on search term
+  const filteredCourses = useMemo(() => {
+    if (!searchTerm.trim()) return courses
+    return courses.filter(course => 
+      course.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      course.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      course.program.toLowerCase().includes(searchTerm.toLowerCase())
+    )
+  }, [courses, searchTerm])
+
+  const filteredClasses = useMemo(() => {
+    if (!searchTerm.trim()) return classes
+    return classes.filter(cls => 
+      cls.program.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      cls.section.toLowerCase().includes(searchTerm.toLowerCase())
+    )
+  }, [classes, searchTerm])
+
+  const filteredClassrooms = useMemo(() => {
+    if (!searchTerm.trim()) return classrooms
+    return classrooms.filter(room => 
+      room.building.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      room.room.toLowerCase().includes(searchTerm.toLowerCase())
+    )
+  }, [classrooms, searchTerm])
 
   const assignmentColumns = [
     { key: "course_code", label: "Course" },
@@ -273,12 +324,29 @@ export default function AcademicHubPage() {
     { key: "section", label: "Section" },
   ]
 
-  // Filtered data
-  const filteredClasses = useMemo(() => classes.filter(c => `${c.program} ${c.section}`.toLowerCase().includes(searchTerm.toLowerCase())), [classes, searchTerm])
-  const filteredCourses = useMemo(() => courses.filter(c => `${c.code} ${c.name}`.toLowerCase().includes(searchTerm.toLowerCase())), [courses, searchTerm])
-  const filteredRooms = useMemo(() => classrooms.filter(r => `${r.building} ${r.room}`.toLowerCase().includes(searchTerm.toLowerCase())), [classrooms, searchTerm])
-  const filteredAssignments = useMemo(() => assignments.filter(a => `${a.course_code} ${a.teacher_name}`.toLowerCase().includes(searchTerm.toLowerCase())), [assignments, searchTerm])
-  const filteredEnrollments = useMemo(() => enrollments.filter(e => `${e.student_name}`.toLowerCase().includes(searchTerm.toLowerCase())), [enrollments, searchTerm])
+  // Additional filtered data
+  const filteredRooms = useMemo(() => {
+    if (!searchTerm.trim()) return classrooms
+    return classrooms.filter(room => 
+      room.building.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      room.room.toLowerCase().includes(searchTerm.toLowerCase())
+    )
+  }, [classrooms, searchTerm])
+
+  const filteredAssignments = useMemo(() => {
+    if (!searchTerm.trim()) return assignments
+    return assignments.filter(assignment => 
+      assignment.course_code.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      assignment.teacher_name.toLowerCase().includes(searchTerm.toLowerCase())
+    )
+  }, [assignments, searchTerm])
+
+  const filteredEnrollments = useMemo(() => {
+    if (!searchTerm.trim()) return enrollments
+    return enrollments.filter(enrollment => 
+      enrollment.student_name.toLowerCase().includes(searchTerm.toLowerCase())
+    )
+  }, [enrollments, searchTerm])
 
   // Form handlers
   const openForm = (type: string, mode: 'create' | 'edit', data?: any) => {
@@ -289,15 +357,134 @@ export default function AcademicHubPage() {
     setFormState({ type: null, mode: null, data: null })
   }
 
+
   const handleSave = async (data: any) => {
     try {
-      // This would integrate with the database
-      console.log('Saving data:', data)
-      // await saveToDatabase(formState.type, data)
+      console.log('Saving data:', data, 'Type:', formState.type, 'Mode:', formState.mode)
+      
+      // Route to appropriate CRUD operation based on form type
+      switch (formState.type) {
+        case 'academic-year':
+          if (formState.mode === 'create') {
+            await createAcademicYear(data)
+          } else {
+            await updateAcademicYear(formState.data.id, data)
+          }
+          break
+          
+        case 'semester':
+          if (formState.mode === 'create') {
+            await createSemester(data)
+          } else {
+            await updateSemester(formState.data.id, data)
+          }
+          break
+          
+        case 'department':
+          if (formState.mode === 'create') {
+            await createDepartment(data)
+          } else {
+            await updateDepartment(formState.data.id, data)
+          }
+          break
+          
+        case 'program':
+          if (formState.mode === 'create') {
+            await createProgram(data)
+          } else {
+            await updateProgram(formState.data.id, data)
+          }
+          break
+          
+        case 'classroom':
+          if (formState.mode === 'create') {
+            await createClassroom(data)
+          } else {
+            await updateClassroom(formState.data.id, data)
+          }
+          break
+          
+        case 'section':
+          if (formState.mode === 'create') {
+            await createSection(data)
+          } else {
+            await updateSection(formState.data.id, data)
+          }
+          break
+          
+        case 'course':
+          if (formState.mode === 'create') {
+            await createCourse(data)
+          } else {
+            await updateCourse(formState.data.id, data)
+          }
+          break
+          
+        case 'course-assignment':
+          if (formState.mode === 'create') {
+            await createCourseAssignment(data)
+          } else {
+            await updateCourseAssignment(formState.data.id, data)
+          }
+          break
+          
+        case 'lecturer':
+        case 'student':
+        case 'admin':
+          if (formState.mode === 'create') {
+            await createUser(data)
+          } else {
+            await updateUser(formState.data.id, data)
+          }
+          break
+          
+        default:
+          console.warn('Unknown form type:', formState.type)
+      }
+      
       closeForm()
     } catch (error) {
       console.error('Error saving data:', error)
       setError('Failed to save data')
+    }
+  }
+
+  const handleDelete = async (type: string, id: string) => {
+    if (!confirm('Are you sure you want to delete this item?')) return
+    
+    try {
+      // Route to appropriate delete operation based on type
+      switch (type) {
+        case 'academic-year':
+          await deleteAcademicYear(id)
+          break
+        case 'semester':
+          await deleteSemester(id)
+          break
+        case 'department':
+          await deleteDepartment(id)
+          break
+        case 'program':
+          await deleteProgram(id)
+          break
+        case 'classroom':
+          await deleteClassroom(id)
+          break
+        case 'section':
+          await deleteSection(id)
+          break
+        case 'course':
+          await deleteCourse(id)
+          break
+        case 'course-assignment':
+          await deleteCourseAssignment(id)
+          break
+        default:
+          console.warn('Unknown delete type:', type)
+      }
+    } catch (error) {
+      console.error('Error deleting item:', error)
+      setError('Failed to delete item')
     }
   }
 
@@ -323,12 +510,18 @@ export default function AcademicHubPage() {
             searchPlaceholder="Search academic years..."
             filters={[]}
           />
-          <DataTable title="Academic Years" columns={[
-            { key: "year_name", label: "Year" },
-            { key: "start_date", label: "Start Date" },
-            { key: "end_date", label: "End Date" },
-            { key: "is_current", label: "Current" }
-          ] as any} data={academicData.academicYears as any} />
+          <DataTable 
+            title="Academic Years" 
+            columns={[
+              { key: "year_name", label: "Year" },
+              { key: "start_date", label: "Start Date" },
+              { key: "end_date", label: "End Date" },
+              { key: "is_current", label: "Current" }
+            ] as any} 
+            data={academicData.academicYears as any}
+            onEdit={(item: any) => openForm('academic-year', 'edit', item)}
+            onDelete={(item: any) => handleDelete('academic-year', item.id)}
+          />
         </>
       )
     },
@@ -353,13 +546,19 @@ export default function AcademicHubPage() {
             searchPlaceholder="Search semesters..."
             filters={[]}
           />
-          <DataTable title="Semesters" columns={[
-            { key: "semester_name", label: "Name" },
-            { key: "semester_number", label: "Number" },
-            { key: "start_date", label: "Start Date" },
-            { key: "end_date", label: "End Date" },
-            { key: "is_current", label: "Current" }
-          ] as any} data={academicData.semesters as any} />
+          <DataTable 
+            title="Semesters" 
+            columns={[
+              { key: "semester_name", label: "Name" },
+              { key: "semester_number", label: "Number" },
+              { key: "start_date", label: "Start Date" },
+              { key: "end_date", label: "End Date" },
+              { key: "is_current", label: "Current" }
+            ] as any} 
+            data={academicData.semesters as any}
+            onEdit={(item: any) => openForm('semester', 'edit', item)}
+            onDelete={(item: any) => handleDelete('semester', item.id)}
+          />
         </>
       )
     },
@@ -384,11 +583,17 @@ export default function AcademicHubPage() {
             searchPlaceholder="Search departments..."
             filters={[]}
           />
-          <DataTable title="Departments" columns={[
-            { key: "department_code", label: "Code" },
-            { key: "department_name", label: "Name" },
-            { key: "description", label: "Description" }
-          ] as any} data={academicData.departments as any} />
+          <DataTable 
+            title="Departments" 
+            columns={[
+              { key: "department_code", label: "Code" },
+              { key: "department_name", label: "Name" },
+              { key: "description", label: "Description" }
+            ] as any} 
+            data={academicData.departments as any}
+            onEdit={(item: any) => openForm('department', 'edit', item)}
+            onDelete={(item: any) => handleDelete('department', item.id)}
+          />
         </>
       )
     },
@@ -413,12 +618,18 @@ export default function AcademicHubPage() {
             searchPlaceholder="Search programs..."
             filters={[]}
           />
-          <DataTable title="Programs" columns={[
-            { key: "program_code", label: "Code" },
-            { key: "program_name", label: "Name" },
-            { key: "degree_type", label: "Degree Type" },
-            { key: "duration_years", label: "Duration" }
-          ] as any} data={academicData.programs as any} />
+          <DataTable 
+            title="Programs" 
+            columns={[
+              { key: "program_code", label: "Code" },
+              { key: "program_name", label: "Name" },
+              { key: "degree_type", label: "Degree Type" },
+              { key: "duration_years", label: "Duration" }
+            ] as any} 
+            data={academicData.programs as any}
+            onEdit={(item: any) => openForm('program', 'edit', item)}
+            onDelete={(item: any) => handleDelete('program', item.id)}
+          />
         </>
       )
     },
@@ -443,7 +654,17 @@ export default function AcademicHubPage() {
             searchPlaceholder="Search sections..."
             filters={[]}
           />
-          <DataTable title="Sections" columns={classColumns as any} data={filteredClasses as any} />
+          <DataTable 
+            title="Sections" 
+            columns={classColumns as any} 
+            data={filteredClasses as any}
+            onEdit={(item: any) => {
+              // Find the original section data from academicData.sections
+              const originalSection = academicData.sections.find(s => s.id === item.id)
+              openForm('section', 'edit', originalSection)
+            }}
+            onDelete={(item: any) => handleDelete('section', item.id)}
+          />
         </>
       )
     },
@@ -476,7 +697,13 @@ export default function AcademicHubPage() {
             searchPlaceholder="Search courses..."
             filters={[]}
           />
-          <DataTable title="Courses" columns={courseColumns as any} data={filteredCourses as any} />
+          <DataTable 
+            title="Courses" 
+            columns={courseColumns as any} 
+            data={filteredCourses as any}
+            onEdit={(course: any) => openForm('course', 'edit', course)}
+            onDelete={(course: any) => handleDelete('course', course.id)}
+          />
         </>
       )
     },
@@ -501,7 +728,13 @@ export default function AcademicHubPage() {
             searchPlaceholder="Search classrooms..."
             filters={[]}
           />
-          <DataTable title="Classrooms" columns={classroomColumns as any} data={filteredRooms as any} />
+          <DataTable 
+            title="Classrooms" 
+            columns={classroomColumns as any} 
+            data={filteredRooms as any}
+            onEdit={(item: any) => openForm('classroom', 'edit', item)}
+            onDelete={(item: any) => handleDelete('classroom', item.id)}
+          />
         </>
       )
     },
@@ -566,7 +799,7 @@ export default function AcademicHubPage() {
   ]
 
   // Loading state
-  if (!isInitialized) {
+  if (state.loading) {
     return (
       <Box sx={{ p: { xs: 2, sm: 3 } }}>
         <PageHeader
@@ -710,6 +943,7 @@ export default function AcademicHubPage() {
           onSave={handleSave}
           mode={formState.mode || 'create'}
           departments={academicData.departments}
+          lecturers={academicData.lecturerProfiles}
         />
       )}
 
@@ -735,8 +969,35 @@ export default function AcademicHubPage() {
           assignment={formState.data}
           onSave={handleSave}
           mode={formState.mode || 'create'}
-          lecturers={state.users.filter(u => u.role === 'lecturer')}
-          courses={courses}
+          lecturers={(() => {
+            // Try using state.users first, then fallback to lecturerProfiles
+            const lecturerUsers = state.users.filter(u => u.role === 'lecturer')
+            console.log('Lecturer users from state.users:', lecturerUsers)
+            
+            if (lecturerUsers.length > 0) {
+              return lecturerUsers.map((user: any) => ({
+                id: user.id,
+                full_name: user.full_name || 'Unknown',
+                email: user.email || 'unknown@email.com',
+                role: 'lecturer'
+              }))
+            }
+            
+            // Fallback to lecturerProfiles
+            const lecturerList = state.lecturerProfiles.map((lp: any) => ({
+              id: lp.user_id || lp.id,
+              full_name: lp.users?.full_name || lp.full_name || 'Unknown',
+              email: lp.users?.email || lp.email || 'unknown@email.com',
+              role: 'lecturer'
+            }))
+            console.log('TeacherAssignmentForm lecturers (from profiles):', lecturerList)
+            console.log('Raw lecturerProfiles data:', state.lecturerProfiles)
+            return lecturerList
+          })()}
+          courses={(() => {
+            console.log('TeacherAssignmentForm courses:', state.courses)
+            return state.courses
+          })()}
           academicYears={academicData.academicYears}
           semesters={academicData.semesters}
           programs={academicData.programs}

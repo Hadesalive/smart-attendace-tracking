@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import React, { useState, useMemo } from "react"
 import { motion } from "framer-motion"
 import { useRouter } from "next/navigation"
 import {
@@ -27,7 +27,6 @@ import {
 import StatCard from "@/components/dashboard/stat-card"
 import MonochromeButton from "@/components/admin/MonochromeButton"
 import { useData } from "@/lib/contexts/DataContext"
-import { useMockData } from "@/lib/hooks/useMockData"
 import { GradeCategory } from "@/lib/types/shared"
 
 // ============================================================================
@@ -63,9 +62,15 @@ export default function GradebookPage() {
     getStudentGradesByCourse,
     getCourseGradeSummary,
     calculateFinalGrade,
-    updateGradeCategory
+    updateGradeCategory,
+    // @ts-ignore: exposed in context
+    fetchGradeCategoriesForCourse,
+    // @ts-ignore
+    saveGradeCategoriesForCourse,
+    // @ts-ignore
+    fetchStudentGradesForCourse,
+    fetchCourses
   } = useData()
-  const { isInitialized } = useMockData()
   
   // ============================================================================
   // STATE
@@ -89,20 +94,43 @@ export default function GradebookPage() {
   // COMPUTED DATA
   // ============================================================================
 
-  // Get lecturer's courses (assuming current user is lecturer with ID "user_2")
-  const lecturerCourses = useMemo(() => getCoursesByLecturer("user_2"), [getCoursesByLecturer])
+  // Get lecturer's courses using logged-in lecturer id
+  const lecturerId = state.currentUser?.id || ""
+  const lecturerCourses = useMemo(() => (
+    lecturerId ? getCoursesByLecturer(lecturerId) : []
+  ), [lecturerId, getCoursesByLecturer])
+
+  // Load grade categories and student grades when course changes
+  React.useEffect(() => {
+    if (!selectedCourse) return
+    fetchGradeCategoriesForCourse(selectedCourse)
+    fetchStudentGradesForCourse(selectedCourse)
+  }, [selectedCourse, fetchGradeCategoriesForCourse, fetchStudentGradesForCourse])
+
+  // Ensure courses are loaded for the lecturer when opening gradebook
+  React.useEffect(() => {
+    if (!lecturerId) return
+    // If no courses in state yet, fetch from DB
+    if (!state.courses || state.courses.length === 0) {
+      fetchCourses()
+    }
+  }, [lecturerId, state.courses?.length, fetchCourses])
   
   // Get classes from the data context
   const classes = useMemo(() => state.classes, [state.classes])
   
   // Get courses available for selected class
   const availableCourses = useMemo(() => {
-    if (!selectedClass) return []
-    const lecturerAssignments = state.lecturerAssignments.filter(assignment => 
+    // If no class is selected, show all lecturer courses
+    if (!selectedClass) return lecturerCourses
+    // Otherwise, filter by assignments for the selected class
+    const lecturerClassAssignments = state.lecturerAssignments.filter(assignment => 
       assignment.class_id === selectedClass && assignment.status === 'active'
     )
-    const courseIds = lecturerAssignments.map(assignment => assignment.course_id)
-    return lecturerCourses.filter(course => courseIds.includes(course.id))
+    const courseIds = lecturerClassAssignments.map(assignment => assignment.course_id)
+    const filtered = lecturerCourses.filter(course => courseIds.includes(course.id))
+    // Fallback: if no class-linked courses, still show all lecturer courses
+    return filtered.length > 0 ? filtered : lecturerCourses
   }, [selectedClass, lecturerCourses, state.lecturerAssignments])
 
   // Get students for selected class and course
@@ -196,6 +224,9 @@ export default function GradebookPage() {
       cat.id === categoryId ? { ...cat, percentage } : cat
     )
     updateGradeCategory(selectedCourse, updatedCategories)
+    if (selectedCourse) {
+      saveGradeCategoriesForCourse(selectedCourse, updatedCategories)
+    }
   }
 
   const handleAddCategory = () => {
@@ -210,6 +241,9 @@ export default function GradebookPage() {
       
       const updatedCategories = [...state.gradeCategories, newCategory]
       updateGradeCategory(selectedCourse, updatedCategories)
+      if (selectedCourse) {
+        saveGradeCategoriesForCourse(selectedCourse, updatedCategories)
+      }
       
       setNewCategoryName("")
       setNewCategoryPercentage(0)
@@ -220,6 +254,9 @@ export default function GradebookPage() {
   const handleDeleteCategory = (categoryId: string) => {
     const updatedCategories = state.gradeCategories.filter(cat => cat.id !== categoryId)
     updateGradeCategory(selectedCourse, updatedCategories)
+    if (selectedCourse) {
+      saveGradeCategoriesForCourse(selectedCourse, updatedCategories)
+    }
   }
 
   const handleUpdateGradeScale = (gradeId: string, field: 'minPercentage' | 'maxPercentage', value: number) => {
@@ -409,7 +446,7 @@ export default function GradebookPage() {
               </Box>
               
               <Box sx={{ flex: 1, minWidth: { xs: "100%", md: "300px" } }}>
-                <FormControl fullWidth disabled={!selectedClass}>
+                <FormControl fullWidth>
                   <InputLabel>Select Course</InputLabel>
                   <Select
                     value={selectedCourse}

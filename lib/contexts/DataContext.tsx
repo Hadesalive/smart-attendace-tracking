@@ -31,6 +31,7 @@ interface DataState {
   // Core entities
   users: User[]
   courses: Course[]
+  courseAssignments: any[]
   classes: Class[]
   students: Student[]
   enrollments: Enrollment[]
@@ -50,6 +51,17 @@ interface DataState {
   studentGrades: StudentGrade[]
   courseGradeSummaries: CourseGradeSummary[]
   
+  // Academic structure
+  academicYears: any[]
+  semesters: any[]
+  departments: any[]
+  programs: any[]
+  classrooms: any[]
+  sections: any[]
+  studentProfiles: any[]
+  lecturerProfiles: any[]
+  adminProfiles: any[]
+  
   // Statistics
   courseStats: { [courseId: string]: CourseStats }
   studentStats: { [studentId: string]: StudentStats }
@@ -66,6 +78,7 @@ type DataAction =
   | { type: 'SET_CURRENT_USER'; payload: User | null }
   | { type: 'SET_USERS'; payload: User[] }
   | { type: 'SET_COURSES'; payload: Course[] }
+  | { type: 'SET_COURSE_ASSIGNMENTS'; payload: any[] }
   | { type: 'SET_CLASSES'; payload: Class[] }
   | { type: 'SET_STUDENTS'; payload: Student[] }
   | { type: 'SET_ENROLLMENTS'; payload: Enrollment[] }
@@ -90,6 +103,15 @@ type DataAction =
   | { type: 'SET_MATERIALS'; payload: Material[] }
   | { type: 'ADD_MATERIAL'; payload: Material }
   | { type: 'UPDATE_MATERIAL'; payload: Material }
+  | { type: 'SET_ACADEMIC_YEARS'; payload: any[] }
+  | { type: 'SET_SEMESTERS'; payload: any[] }
+  | { type: 'SET_DEPARTMENTS'; payload: any[] }
+  | { type: 'SET_PROGRAMS'; payload: any[] }
+  | { type: 'SET_CLASSROOMS'; payload: any[] }
+  | { type: 'SET_SECTIONS'; payload: any[] }
+  | { type: 'SET_STUDENT_PROFILES'; payload: any[] }
+  | { type: 'SET_LECTURER_PROFILES'; payload: any[] }
+  | { type: 'SET_ADMIN_PROFILES'; payload: any[] }
   | { type: 'REFRESH_DATA' }
 
 interface DataContextType {
@@ -122,10 +144,57 @@ interface DataContextType {
   // Supabase data fetching
   fetchUsers: () => Promise<void>
   fetchCourses: () => Promise<void>
+  createCourse: (data: any) => Promise<void>
+  updateCourse: (id: string, data: any) => Promise<void>
+  deleteCourse: (id: string) => Promise<void>
+  createCourseAssignment: (data: any) => Promise<void>
+  updateCourseAssignment: (id: string, data: any) => Promise<void>
+  deleteCourseAssignment: (id: string) => Promise<void>
+  fetchCourseAssignments: () => Promise<void>
   fetchEnrollments: () => Promise<void>
   fetchAttendanceSessions: () => Promise<void>
   fetchAttendanceRecords: () => Promise<void>
   fetchLecturerAssignments: () => Promise<void>
+  
+  // Academic structure data fetching
+  fetchAcademicYears: () => Promise<void>
+  fetchSemesters: () => Promise<void>
+  fetchDepartments: () => Promise<void>
+  fetchPrograms: () => Promise<void>
+  fetchClassrooms: () => Promise<void>
+  fetchSections: () => Promise<void>
+  fetchStudentProfiles: () => Promise<void>
+  fetchLecturerProfiles: () => Promise<void>
+  fetchAdminProfiles: () => Promise<void>
+  
+  // Academic structure CRUD operations
+  createAcademicYear: (data: any) => Promise<void>
+  updateAcademicYear: (id: string, data: any) => Promise<void>
+  deleteAcademicYear: (id: string) => Promise<void>
+  
+  createSemester: (data: any) => Promise<void>
+  updateSemester: (id: string, data: any) => Promise<void>
+  deleteSemester: (id: string) => Promise<void>
+  
+  createDepartment: (data: any) => Promise<void>
+  updateDepartment: (id: string, data: any) => Promise<void>
+  deleteDepartment: (id: string) => Promise<void>
+  
+  createProgram: (data: any) => Promise<void>
+  updateProgram: (id: string, data: any) => Promise<void>
+  deleteProgram: (id: string) => Promise<void>
+  
+  createClassroom: (data: any) => Promise<void>
+  updateClassroom: (id: string, data: any) => Promise<void>
+  deleteClassroom: (id: string) => Promise<void>
+  
+  createSection: (data: any) => Promise<void>
+  updateSection: (id: string, data: any) => Promise<void>
+  deleteSection: (id: string) => Promise<void>
+  
+  createUser: (data: any) => Promise<void>
+  updateUser: (id: string, data: any) => Promise<void>
+  deleteUser: (id: string) => Promise<void>
   
   // Supabase CRUD operations
   createAttendanceSessionSupabase: (session: Omit<AttendanceSession, 'id' | 'created_at'>) => Promise<AttendanceSession>
@@ -163,11 +232,21 @@ const initialState: DataState = {
   gradeCategories: [],
   studentGrades: [],
   courseGradeSummaries: [],
+  academicYears: [],
+  semesters: [],
+  departments: [],
+  programs: [],
+  classrooms: [],
+  sections: [],
+  studentProfiles: [],
+  lecturerProfiles: [],
+  adminProfiles: [],
   courseStats: {},
   studentStats: {},
   loading: false,
   error: null,
-  lastUpdated: 0
+  lastUpdated: 0,
+  courseAssignments: []
 }
 
 // ============================================================================
@@ -190,6 +269,9 @@ function dataReducer(state: DataState, action: DataAction): DataState {
     
     case 'SET_COURSES':
       return { ...state, courses: action.payload, lastUpdated: Date.now() }
+    
+    case 'SET_COURSE_ASSIGNMENTS':
+      return { ...state, courseAssignments: action.payload, lastUpdated: Date.now() }
     
     case 'SET_CLASSES':
       return { ...state, classes: action.payload, lastUpdated: Date.now() }
@@ -321,6 +403,33 @@ function dataReducer(state: DataState, action: DataAction): DataState {
         ),
         lastUpdated: Date.now()
       }
+    
+    case 'SET_ACADEMIC_YEARS':
+      return { ...state, academicYears: action.payload, lastUpdated: Date.now() }
+    
+    case 'SET_SEMESTERS':
+      return { ...state, semesters: action.payload, lastUpdated: Date.now() }
+    
+    case 'SET_DEPARTMENTS':
+      return { ...state, departments: action.payload, lastUpdated: Date.now() }
+    
+    case 'SET_PROGRAMS':
+      return { ...state, programs: action.payload, lastUpdated: Date.now() }
+    
+    case 'SET_CLASSROOMS':
+      return { ...state, classrooms: action.payload, lastUpdated: Date.now() }
+    
+    case 'SET_SECTIONS':
+      return { ...state, sections: action.payload, lastUpdated: Date.now() }
+    
+    case 'SET_STUDENT_PROFILES':
+      return { ...state, studentProfiles: action.payload, lastUpdated: Date.now() }
+    
+    case 'SET_LECTURER_PROFILES':
+      return { ...state, lecturerProfiles: action.payload, lastUpdated: Date.now() }
+    
+    case 'SET_ADMIN_PROFILES':
+      return { ...state, adminProfiles: action.payload, lastUpdated: Date.now() }
     
     case 'REFRESH_DATA':
       return { ...state, lastUpdated: Date.now() }
@@ -633,6 +742,231 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
+  const createCourse = useCallback(async (data: any) => {
+    try {
+      // Create FormData for server action
+      const formData = new FormData()
+      formData.append('course_name', data.course_name || '')
+      formData.append('course_code', data.course_code || '')
+      formData.append('credits', data.credits?.toString() || '3')
+      if (data.department && data.department !== '') {
+        formData.append('department', data.department)
+      }
+      if (data.lecturer_id && data.lecturer_id !== '') {
+        formData.append('lecturer_id', data.lecturer_id)
+      }
+
+      console.log('Creating course with data:', data)
+
+      // Import and call server action
+      const { createCourse: serverCreateCourse } = await import('@/lib/actions/admin')
+      const result = await serverCreateCourse({}, formData)
+      
+      console.log('Server action result:', result)
+      
+      if (result.type === 'error') {
+        throw new Error(result.message)
+      }
+      
+      await fetchCourses() // Refresh data
+    } catch (error) {
+      console.error('Error creating course:', error)
+      dispatch({ type: 'SET_ERROR', payload: 'Failed to create course' })
+      throw error
+    }
+  }, [fetchCourses])
+
+  const updateCourse = useCallback(async (id: string, data: any) => {
+    try {
+      // Create FormData for server action
+      const formData = new FormData()
+      formData.append('courseId', id)
+      formData.append('course_name', data.course_name || '')
+      formData.append('course_code', data.course_code || '')
+      formData.append('credits', data.credits?.toString() || '3')
+      if (data.department && data.department !== '') {
+        formData.append('department', data.department)
+      }
+      if (data.lecturer_id && data.lecturer_id !== '') {
+        formData.append('lecturer_id', data.lecturer_id)
+      }
+
+      console.log('Updating course with data:', data)
+
+      // Import and call server action
+      const { updateCourse: serverUpdateCourse } = await import('@/lib/actions/admin')
+      const result = await serverUpdateCourse({}, formData)
+      
+      console.log('Server action result:', result)
+      
+      if (result.type === 'error') {
+        throw new Error(result.message)
+      }
+      
+      await fetchCourses() // Refresh data
+    } catch (error) {
+      console.error('Error updating course:', error)
+      dispatch({ type: 'SET_ERROR', payload: 'Failed to update course' })
+      throw error
+    }
+  }, [fetchCourses])
+
+  const deleteCourse = useCallback(async (id: string) => {
+    try {
+      // Import and call server action
+      const { deleteCourse: serverDeleteCourse } = await import('@/lib/actions/admin')
+      const result = await serverDeleteCourse(id)
+      
+      console.log('Server action result:', result)
+      
+      if (result.type === 'error') {
+        throw new Error(result.message)
+      }
+      
+      await fetchCourses() // Refresh data
+    } catch (error) {
+      console.error('Error deleting course:', error)
+      dispatch({ type: 'SET_ERROR', payload: 'Failed to delete course' })
+      throw error
+    }
+  }, [fetchCourses])
+
+  const fetchCourseAssignments = useCallback(async () => {
+    try {
+      console.log('DataContext: Starting to fetch course assignments...')
+      dispatch({ type: 'SET_LOADING', payload: true })
+      
+      const { data, error } = await supabase
+        .from('course_sections')
+        .select(`
+          *,
+          courses!course_sections_course_id_fkey (
+            course_code,
+            course_name,
+            credits,
+            department
+          ),
+          sections!course_sections_section_id_fkey (
+            section_code,
+            year,
+            max_capacity
+          ),
+          academic_years!course_sections_academic_year_id_fkey (
+            year_name
+          ),
+          semesters!course_sections_semester_id_fkey (
+            semester_name
+          )
+        `)
+        .order('created_at', { ascending: false })
+
+      console.log('DataContext: Course assignments fetch result:', { data, error })
+
+      if (error) {
+        console.error('DataContext: Supabase error:', error)
+        throw error
+      }
+      
+      console.log('DataContext: Setting course assignments data:', data)
+      dispatch({ type: 'SET_COURSE_ASSIGNMENTS', payload: data || [] })
+    } catch (error) {
+      console.error('Error fetching course assignments:', error)
+      dispatch({ type: 'SET_ERROR', payload: 'Failed to fetch course assignments' })
+    } finally {
+      dispatch({ type: 'SET_LOADING', payload: false })
+    }
+  }, [])
+
+  // Course Assignment CRUD operations
+  const createCourseAssignment = useCallback(async (data: any) => {
+    try {
+      // Create FormData for server action
+      const formData = new FormData()
+      formData.append('course_id', data.course_id || '')
+      formData.append('section_id', data.section_id || '')
+      formData.append('academic_year_id', data.academic_year_id || '')
+      formData.append('semester_id', data.semester_id || '')
+      formData.append('is_mandatory', data.is_mandatory ? 'true' : 'false')
+      if (data.max_students) {
+        formData.append('max_students', data.max_students.toString())
+      }
+
+      console.log('Creating course assignment with data:', data)
+
+      // Import and call server action
+      const { createCourseAssignment: serverCreateCourseAssignment } = await import('@/lib/actions/admin')
+      const result = await serverCreateCourseAssignment({}, formData)
+      
+      console.log('Server action result:', result)
+      
+      if (result.type === 'error') {
+        throw new Error(result.message)
+      }
+      
+      // Refresh course assignments data
+      await fetchCourseAssignments()
+    } catch (error) {
+      console.error('Error creating course assignment:', error)
+      dispatch({ type: 'SET_ERROR', payload: 'Failed to create course assignment' })
+      throw error
+    }
+  }, [fetchCourseAssignments])
+
+  const updateCourseAssignment = useCallback(async (id: string, data: any) => {
+    try {
+      // Create FormData for server action
+      const formData = new FormData()
+      formData.append('course_id', data.course_id || '')
+      formData.append('section_id', data.section_id || '')
+      formData.append('academic_year_id', data.academic_year_id || '')
+      formData.append('semester_id', data.semester_id || '')
+      formData.append('is_mandatory', data.is_mandatory ? 'true' : 'false')
+      if (data.max_students) {
+        formData.append('max_students', data.max_students.toString())
+      }
+
+      console.log('Updating course assignment with data:', data)
+
+      // Import and call server action
+      const { updateCourseAssignment: serverUpdateCourseAssignment } = await import('@/lib/actions/admin')
+      const result = await serverUpdateCourseAssignment(id, {}, formData)
+      
+      console.log('Server action result:', result)
+      
+      if (result.type === 'error') {
+        throw new Error(result.message)
+      }
+      
+      // Refresh course assignments data
+      await fetchCourseAssignments()
+    } catch (error) {
+      console.error('Error updating course assignment:', error)
+      dispatch({ type: 'SET_ERROR', payload: 'Failed to update course assignment' })
+      throw error
+    }
+  }, [fetchCourseAssignments])
+
+  const deleteCourseAssignment = useCallback(async (id: string) => {
+    try {
+      // Import and call server action
+      const { deleteCourseAssignment: serverDeleteCourseAssignment } = await import('@/lib/actions/admin')
+      const result = await serverDeleteCourseAssignment(id)
+      
+      console.log('Server action result:', result)
+      
+      if (result.type === 'error') {
+        throw new Error(result.message)
+      }
+      
+      // Refresh course assignments data
+      await fetchCourseAssignments()
+    } catch (error) {
+      console.error('Error deleting course assignment:', error)
+      dispatch({ type: 'SET_ERROR', payload: 'Failed to delete course assignment' })
+      throw error
+    }
+  }, [fetchCourseAssignments])
+
   const fetchEnrollments = useCallback(async () => {
     try {
       dispatch({ type: 'SET_LOADING', payload: true })
@@ -772,6 +1106,716 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
+  // Gradebook: Fetch grade categories for a course
+  const fetchGradeCategoriesForCourse = useCallback(async (courseId: string) => {
+    try {
+      dispatch({ type: 'SET_LOADING', payload: true })
+      const { data, error } = await supabase
+        .from('grade_categories')
+        .select('*')
+        .eq('course_id', courseId)
+        .order('created_at', { ascending: true })
+
+      if (error) throw error
+      dispatch({ type: 'SET_GRADE_CATEGORIES', payload: (data || []) as unknown as GradeCategory[] })
+    } catch (e) {
+      console.error('Error fetching grade categories:', e)
+      dispatch({ type: 'SET_ERROR', payload: 'Failed to fetch grade categories' })
+    } finally {
+      dispatch({ type: 'SET_LOADING', payload: false })
+    }
+  }, [])
+
+  // Gradebook: Save grade categories (replace strategy)
+  const saveGradeCategoriesForCourse = useCallback(async (courseId: string, categories: GradeCategory[]) => {
+    try {
+      dispatch({ type: 'SET_LOADING', payload: true })
+      const { error: delErr } = await supabase
+        .from('grade_categories')
+        .delete()
+        .eq('course_id', courseId)
+      if (delErr) throw delErr
+
+      if (categories.length > 0) {
+        const payload = categories.map(c => ({
+          name: c.name,
+          percentage: c.percentage,
+          is_default: !!c.is_default,
+          course_id: courseId
+        }))
+        const { error: insErr } = await supabase.from('grade_categories').insert(payload)
+        if (insErr) throw insErr
+      }
+
+      await fetchGradeCategoriesForCourse(courseId)
+    } catch (e) {
+      console.error('Error saving grade categories:', e)
+      dispatch({ type: 'SET_ERROR', payload: 'Failed to save grade categories' })
+      throw e
+    } finally {
+      dispatch({ type: 'SET_LOADING', payload: false })
+    }
+  }, [fetchGradeCategoriesForCourse])
+
+  // Gradebook: Fetch student grades for a course
+  const fetchStudentGradesForCourse = useCallback(async (courseId: string) => {
+    try {
+      dispatch({ type: 'SET_LOADING', payload: true })
+      const { data, error } = await supabase
+        .from('student_grades')
+        .select('*')
+        .eq('course_id', courseId)
+        .order('created_at', { ascending: true })
+
+      if (error) throw error
+      dispatch({ type: 'SET_STUDENT_GRADES', payload: (data || []) as unknown as StudentGrade[] })
+    } catch (e) {
+      console.error('Error fetching student grades:', e)
+      dispatch({ type: 'SET_ERROR', payload: 'Failed to fetch student grades' })
+    } finally {
+      dispatch({ type: 'SET_LOADING', payload: false })
+    }
+  }, [])
+
+  // ============================================================================
+  // ACADEMIC STRUCTURE DATA FETCHING
+  // ============================================================================
+
+  const fetchAcademicYears = useCallback(async () => {
+    try {
+      dispatch({ type: 'SET_LOADING', payload: true })
+      const { data, error } = await supabase
+        .from('academic_years')
+        .select('*')
+        .order('start_date', { ascending: false })
+
+      if (error) throw error
+      dispatch({ type: 'SET_ACADEMIC_YEARS', payload: data || [] })
+    } catch (error) {
+      console.error('Error fetching academic years:', error)
+      dispatch({ type: 'SET_ERROR', payload: 'Failed to fetch academic years' })
+    } finally {
+      dispatch({ type: 'SET_LOADING', payload: false })
+    }
+  }, [])
+
+  const fetchSemesters = useCallback(async () => {
+    try {
+      dispatch({ type: 'SET_LOADING', payload: true })
+      const { data, error } = await supabase
+        .from('semesters')
+        .select(`
+          *,
+          academic_years!semesters_academic_year_id_fkey(year_name)
+        `)
+        .order('start_date', { ascending: false })
+
+      if (error) throw error
+      dispatch({ type: 'SET_SEMESTERS', payload: data || [] })
+    } catch (error) {
+      console.error('Error fetching semesters:', error)
+      dispatch({ type: 'SET_ERROR', payload: 'Failed to fetch semesters' })
+    } finally {
+      dispatch({ type: 'SET_LOADING', payload: false })
+    }
+  }, [])
+
+  const fetchDepartments = useCallback(async () => {
+    try {
+      dispatch({ type: 'SET_LOADING', payload: true })
+      const { data, error } = await supabase
+        .from('departments')
+        .select(`
+          *,
+          users!departments_head_id_fkey(full_name, email)
+        `)
+        .order('department_name', { ascending: true })
+
+      if (error) throw error
+      dispatch({ type: 'SET_DEPARTMENTS', payload: data || [] })
+    } catch (error) {
+      console.error('Error fetching departments:', error)
+      dispatch({ type: 'SET_ERROR', payload: 'Failed to fetch departments' })
+    } finally {
+      dispatch({ type: 'SET_LOADING', payload: false })
+    }
+  }, [])
+
+  const fetchPrograms = useCallback(async () => {
+    try {
+      dispatch({ type: 'SET_LOADING', payload: true })
+      const { data, error } = await supabase
+        .from('programs')
+        .select(`
+          *,
+          departments!programs_department_id_fkey(department_code, department_name)
+        `)
+        .order('program_name', { ascending: true })
+
+      if (error) throw error
+      dispatch({ type: 'SET_PROGRAMS', payload: data || [] })
+    } catch (error) {
+      console.error('Error fetching programs:', error)
+      dispatch({ type: 'SET_ERROR', payload: 'Failed to fetch programs' })
+    } finally {
+      dispatch({ type: 'SET_LOADING', payload: false })
+    }
+  }, [])
+
+  const fetchClassrooms = useCallback(async () => {
+    try {
+      dispatch({ type: 'SET_LOADING', payload: true })
+      const { data, error } = await supabase
+        .from('classrooms')
+        .select('*')
+        .order('building', { ascending: true })
+        .order('room_number', { ascending: true })
+
+      if (error) throw error
+      dispatch({ type: 'SET_CLASSROOMS', payload: data || [] })
+    } catch (error) {
+      console.error('Error fetching classrooms:', error)
+      dispatch({ type: 'SET_ERROR', payload: 'Failed to fetch classrooms' })
+    } finally {
+      dispatch({ type: 'SET_LOADING', payload: false })
+    }
+  }, [])
+
+  const fetchSections = useCallback(async () => {
+    try {
+      dispatch({ type: 'SET_LOADING', payload: true })
+      const { data, error } = await supabase
+        .from('sections')
+        .select(`
+          *,
+          programs!sections_program_id_fkey(program_code, program_name),
+          academic_years!sections_academic_year_id_fkey(year_name),
+          semesters!sections_semester_id_fkey(semester_name),
+          classrooms!sections_classroom_id_fkey(building, room_number)
+        `)
+        .order('section_code', { ascending: true })
+
+      if (error) throw error
+      dispatch({ type: 'SET_SECTIONS', payload: data || [] })
+    } catch (error) {
+      console.error('Error fetching sections:', error)
+      dispatch({ type: 'SET_ERROR', payload: 'Failed to fetch sections' })
+    } finally {
+      dispatch({ type: 'SET_LOADING', payload: false })
+    }
+  }, [])
+
+  const fetchStudentProfiles = useCallback(async () => {
+    try {
+      dispatch({ type: 'SET_LOADING', payload: true })
+      const { data, error } = await supabase
+        .from('student_profiles')
+        .select(`
+          *,
+          users!student_profiles_user_id_fkey(full_name, email),
+          programs!student_profiles_program_id_fkey(program_code, program_name),
+          sections!student_profiles_section_id_fkey(section_code),
+          academic_years!student_profiles_academic_year_id_fkey(year_name)
+        `)
+        .order('student_id', { ascending: true })
+
+      if (error) throw error
+      dispatch({ type: 'SET_STUDENT_PROFILES', payload: data || [] })
+    } catch (error) {
+      console.error('Error fetching student profiles:', error)
+      dispatch({ type: 'SET_ERROR', payload: 'Failed to fetch student profiles' })
+    } finally {
+      dispatch({ type: 'SET_LOADING', payload: false })
+    }
+  }, [])
+
+  const fetchLecturerProfiles = useCallback(async () => {
+    try {
+      dispatch({ type: 'SET_LOADING', payload: true })
+      const { data, error } = await supabase
+        .from('lecturer_profiles')
+        .select(`
+          *,
+          users!lecturer_profiles_user_id_fkey(full_name, email),
+          departments!lecturer_profiles_department_id_fkey(department_code, department_name)
+        `)
+        .order('employee_id', { ascending: true })
+
+      if (error) throw error
+      dispatch({ type: 'SET_LECTURER_PROFILES', payload: data || [] })
+    } catch (error) {
+      console.error('Error fetching lecturer profiles:', error)
+      dispatch({ type: 'SET_ERROR', payload: 'Failed to fetch lecturer profiles' })
+    } finally {
+      dispatch({ type: 'SET_LOADING', payload: false })
+    }
+  }, [])
+
+  const fetchAdminProfiles = useCallback(async () => {
+    try {
+      dispatch({ type: 'SET_LOADING', payload: true })
+      const { data, error } = await supabase
+        .from('admin_profiles')
+        .select(`
+          *,
+          users!admin_profiles_user_id_fkey(full_name, email),
+          departments!admin_profiles_department_id_fkey(department_code, department_name)
+        `)
+        .order('employee_id', { ascending: true })
+
+      if (error) throw error
+      dispatch({ type: 'SET_ADMIN_PROFILES', payload: data || [] })
+    } catch (error) {
+      console.error('Error fetching admin profiles:', error)
+      dispatch({ type: 'SET_ERROR', payload: 'Failed to fetch admin profiles' })
+    } finally {
+      dispatch({ type: 'SET_LOADING', payload: false })
+    }
+  }, [])
+
+  // ============================================================================
+  // ACADEMIC STRUCTURE CRUD OPERATIONS
+  // ============================================================================
+
+  const createAcademicYear = useCallback(async (data: any) => {
+    try {
+      // Create FormData for server action
+      const formData = new FormData()
+      formData.append('year_name', data.year_name)
+      formData.append('start_date', data.start_date)
+      formData.append('end_date', data.end_date)
+      formData.append('is_current', data.is_current ? 'true' : 'false')
+      if (data.description) formData.append('description', data.description)
+
+      // Import and call server action
+      const { createAcademicYear: serverCreateAcademicYear } = await import('@/lib/actions/admin')
+      const result = await serverCreateAcademicYear({}, formData)
+      
+      if (result.type === 'error') {
+        throw new Error(result.message)
+      }
+      
+      await fetchAcademicYears() // Refresh data
+    } catch (error) {
+      console.error('Error creating academic year:', error)
+      dispatch({ type: 'SET_ERROR', payload: 'Failed to create academic year' })
+      throw error
+    }
+  }, [fetchAcademicYears])
+
+  const updateAcademicYear = useCallback(async (id: string, data: any) => {
+    try {
+      // Create FormData for server action
+      const formData = new FormData()
+      formData.append('year_name', data.year_name)
+      formData.append('start_date', data.start_date)
+      formData.append('end_date', data.end_date)
+      formData.append('is_current', data.is_current ? 'true' : 'false')
+      if (data.description) formData.append('description', data.description)
+
+      // Import and call server action
+      const { updateAcademicYear: serverUpdateAcademicYear } = await import('@/lib/actions/admin')
+      const result = await serverUpdateAcademicYear(id, {}, formData)
+      
+      if (result.type === 'error') {
+        throw new Error(result.message)
+      }
+      
+      await fetchAcademicYears() // Refresh data
+    } catch (error) {
+      console.error('Error updating academic year:', error)
+      dispatch({ type: 'SET_ERROR', payload: 'Failed to update academic year' })
+      throw error
+    }
+  }, [fetchAcademicYears])
+
+  const deleteAcademicYear = useCallback(async (id: string) => {
+    try {
+      // Import and call server action
+      const { deleteAcademicYear: serverDeleteAcademicYear } = await import('@/lib/actions/admin')
+      const result = await serverDeleteAcademicYear(id)
+      
+      if (result.type === 'error') {
+        throw new Error(result.message)
+      }
+      
+      await fetchAcademicYears() // Refresh data
+    } catch (error) {
+      console.error('Error deleting academic year:', error)
+      dispatch({ type: 'SET_ERROR', payload: 'Failed to delete academic year' })
+      throw error
+    }
+  }, [fetchAcademicYears])
+
+  const createSemester = useCallback(async (data: any) => {
+    try {
+      const { error } = await supabase
+        .from('semesters')
+        .insert([data])
+
+      if (error) throw error
+      await fetchSemesters() // Refresh data
+    } catch (error) {
+      console.error('Error creating semester:', error)
+      dispatch({ type: 'SET_ERROR', payload: 'Failed to create semester' })
+      throw error
+    }
+  }, [fetchSemesters])
+
+  const updateSemester = useCallback(async (id: string, data: any) => {
+    try {
+      const { error } = await supabase
+        .from('semesters')
+        .update(data)
+        .eq('id', id)
+
+      if (error) throw error
+      await fetchSemesters() // Refresh data
+    } catch (error) {
+      console.error('Error updating semester:', error)
+      dispatch({ type: 'SET_ERROR', payload: 'Failed to update semester' })
+      throw error
+    }
+  }, [fetchSemesters])
+
+  const deleteSemester = useCallback(async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from('semesters')
+        .delete()
+        .eq('id', id)
+
+      if (error) throw error
+      await fetchSemesters() // Refresh data
+    } catch (error) {
+      console.error('Error deleting semester:', error)
+      dispatch({ type: 'SET_ERROR', payload: 'Failed to delete semester' })
+      throw error
+    }
+  }, [fetchSemesters])
+
+  const createDepartment = useCallback(async (data: any) => {
+    try {
+      // Create FormData for server action
+      const formData = new FormData()
+      formData.append('department_code', data.department_code || '')
+      formData.append('department_name', data.department_name || '')
+      if (data.head_id) {
+        formData.append('head_id', data.head_id)
+      }
+      if (data.description) {
+        formData.append('description', data.description)
+      }
+      formData.append('is_active', data.is_active ? 'true' : 'false')
+
+      console.log('Creating department with data:', {
+        department_code: data.department_code,
+        department_name: data.department_name,
+        head_id: data.head_id,
+        description: data.description,
+        is_active: data.is_active
+      })
+
+      // Import and call server action
+      const { createDepartment: serverCreateDepartment } = await import('@/lib/actions/admin')
+      const result = await serverCreateDepartment({}, formData)
+      
+      console.log('Server action result:', result)
+      
+      if (result.type === 'error') {
+        throw new Error(result.message)
+      }
+      
+      await fetchDepartments() // Refresh data
+    } catch (error) {
+      console.error('Error creating department:', error)
+      dispatch({ type: 'SET_ERROR', payload: 'Failed to create department' })
+      throw error
+    }
+  }, [fetchDepartments])
+
+  const updateDepartment = useCallback(async (id: string, data: any) => {
+    try {
+      const { error } = await supabase
+        .from('departments')
+        .update(data)
+        .eq('id', id)
+
+      if (error) throw error
+      await fetchDepartments() // Refresh data
+    } catch (error) {
+      console.error('Error updating department:', error)
+      dispatch({ type: 'SET_ERROR', payload: 'Failed to update department' })
+      throw error
+    }
+  }, [fetchDepartments])
+
+  const deleteDepartment = useCallback(async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from('departments')
+        .delete()
+        .eq('id', id)
+
+      if (error) throw error
+      await fetchDepartments() // Refresh data
+    } catch (error) {
+      console.error('Error deleting department:', error)
+      dispatch({ type: 'SET_ERROR', payload: 'Failed to delete department' })
+      throw error
+    }
+  }, [fetchDepartments])
+
+  const createProgram = useCallback(async (data: any) => {
+    try {
+      const { error } = await supabase
+        .from('programs')
+        .insert([data])
+
+      if (error) throw error
+      await fetchPrograms() // Refresh data
+    } catch (error) {
+      console.error('Error creating program:', error)
+      dispatch({ type: 'SET_ERROR', payload: 'Failed to create program' })
+      throw error
+    }
+  }, [fetchPrograms])
+
+  const updateProgram = useCallback(async (id: string, data: any) => {
+    try {
+      const { error } = await supabase
+        .from('programs')
+        .update(data)
+        .eq('id', id)
+
+      if (error) throw error
+      await fetchPrograms() // Refresh data
+    } catch (error) {
+      console.error('Error updating program:', error)
+      dispatch({ type: 'SET_ERROR', payload: 'Failed to update program' })
+      throw error
+    }
+  }, [fetchPrograms])
+
+  const deleteProgram = useCallback(async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from('programs')
+        .delete()
+        .eq('id', id)
+
+      if (error) throw error
+      await fetchPrograms() // Refresh data
+    } catch (error) {
+      console.error('Error deleting program:', error)
+      dispatch({ type: 'SET_ERROR', payload: 'Failed to delete program' })
+      throw error
+    }
+  }, [fetchPrograms])
+
+  const createClassroom = useCallback(async (data: any) => {
+    try {
+      const { error } = await supabase
+        .from('classrooms')
+        .insert([data])
+
+      if (error) throw error
+      await fetchClassrooms() // Refresh data
+    } catch (error) {
+      console.error('Error creating classroom:', error)
+      dispatch({ type: 'SET_ERROR', payload: 'Failed to create classroom' })
+      throw error
+    }
+  }, [fetchClassrooms])
+
+  const updateClassroom = useCallback(async (id: string, data: any) => {
+    try {
+      const { error } = await supabase
+        .from('classrooms')
+        .update(data)
+        .eq('id', id)
+
+      if (error) throw error
+      await fetchClassrooms() // Refresh data
+    } catch (error) {
+      console.error('Error updating classroom:', error)
+      dispatch({ type: 'SET_ERROR', payload: 'Failed to update classroom' })
+      throw error
+    }
+  }, [fetchClassrooms])
+
+  const deleteClassroom = useCallback(async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from('classrooms')
+        .delete()
+        .eq('id', id)
+
+      if (error) throw error
+      await fetchClassrooms() // Refresh data
+    } catch (error) {
+      console.error('Error deleting classroom:', error)
+      dispatch({ type: 'SET_ERROR', payload: 'Failed to delete classroom' })
+      throw error
+    }
+  }, [fetchClassrooms])
+
+  const createSection = useCallback(async (data: any) => {
+    try {
+      // Create FormData for server action
+      const formData = new FormData()
+      formData.append('section_code', data.section_code || '')
+      formData.append('program_id', data.program_id || '')
+      formData.append('academic_year_id', data.academic_year_id || '')
+      formData.append('semester_id', data.semester_id || '')
+      formData.append('year', data.year?.toString() || '1')
+      if (data.classroom_id && data.classroom_id !== '') {
+        formData.append('classroom_id', data.classroom_id)
+      }
+      formData.append('max_capacity', (data.max_students || data.max_capacity || 30).toString())
+      formData.append('current_enrollment', data.current_enrollment?.toString() || '0')
+      if (data.description) {
+        formData.append('description', data.description)
+      }
+      formData.append('is_active', data.is_active ? 'true' : 'false')
+
+      console.log('Creating section with data:', data)
+
+      // Import and call server action
+      const { createSection: serverCreateSection } = await import('@/lib/actions/admin')
+      const result = await serverCreateSection({}, formData)
+      
+      console.log('Server action result:', result)
+      
+      if (result.type === 'error') {
+        throw new Error(result.message)
+      }
+      
+      await fetchSections() // Refresh data
+    } catch (error) {
+      console.error('Error creating section:', error)
+      dispatch({ type: 'SET_ERROR', payload: 'Failed to create section' })
+      throw error
+    }
+  }, [fetchSections])
+
+  const updateSection = useCallback(async (id: string, data: any) => {
+    try {
+      // Create FormData for server action
+      const formData = new FormData()
+      formData.append('section_code', data.section_code || '')
+      formData.append('program_id', data.program_id || '')
+      formData.append('academic_year_id', data.academic_year_id || '')
+      formData.append('semester_id', data.semester_id || '')
+      formData.append('year', data.year?.toString() || '1')
+      if (data.classroom_id && data.classroom_id !== '') {
+        formData.append('classroom_id', data.classroom_id)
+      }
+      formData.append('max_capacity', (data.max_students || data.max_capacity || 30).toString())
+      formData.append('current_enrollment', data.current_enrollment?.toString() || '0')
+      if (data.description) {
+        formData.append('description', data.description)
+      }
+      formData.append('is_active', data.is_active ? 'true' : 'false')
+
+      console.log('Updating section with data:', data)
+
+      // Import and call server action
+      const { updateSection: serverUpdateSection } = await import('@/lib/actions/admin')
+      const result = await serverUpdateSection(id, {}, formData)
+      
+      console.log('Server action result:', result)
+      
+      if (result.type === 'error') {
+        throw new Error(result.message)
+      }
+      
+      await fetchSections() // Refresh data
+    } catch (error) {
+      console.error('Error updating section:', error)
+      dispatch({ type: 'SET_ERROR', payload: 'Failed to update section' })
+      throw error
+    }
+  }, [fetchSections])
+
+  const deleteSection = useCallback(async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from('sections')
+        .delete()
+        .eq('id', id)
+
+      if (error) throw error
+      await fetchSections() // Refresh data
+    } catch (error) {
+      console.error('Error deleting section:', error)
+      dispatch({ type: 'SET_ERROR', payload: 'Failed to delete section' })
+      throw error
+    }
+  }, [fetchSections])
+
+  const createUser = useCallback(async (data: any) => {
+    try {
+      // Create FormData for server action
+      const formData = new FormData()
+      formData.append('email', data.email || '')
+      formData.append('password', data.password || '')
+      formData.append('fullName', data.full_name || data.fullName || '')
+      formData.append('role', data.role || 'lecturer')
+
+      console.log('Creating user with data:', data)
+
+      // Import and call server action
+      const { createUser: serverCreateUser } = await import('@/lib/actions/admin')
+      const result = await serverCreateUser({}, formData)
+      
+      console.log('Server action result:', result)
+      
+      if (result.type === 'error') {
+        throw new Error(result.message)
+      }
+      
+      // Refresh users data
+      await fetchUsers()
+    } catch (error) {
+      console.error('Error creating user:', error)
+      dispatch({ type: 'SET_ERROR', payload: 'Failed to create user' })
+      throw error
+    }
+  }, [fetchUsers])
+
+  const updateUser = useCallback(async (id: string, data: any) => {
+    try {
+      const { error } = await supabase
+        .from('users')
+        .update(data)
+        .eq('id', id)
+
+      if (error) throw error
+      await fetchUsers() // Refresh data
+    } catch (error) {
+      console.error('Error updating user:', error)
+      dispatch({ type: 'SET_ERROR', payload: 'Failed to update user' })
+      throw error
+    }
+  }, [fetchUsers])
+
+  const deleteUser = useCallback(async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from('users')
+        .delete()
+        .eq('id', id)
+
+      if (error) throw error
+      await fetchUsers() // Refresh data
+    } catch (error) {
+      console.error('Error deleting user:', error)
+      dispatch({ type: 'SET_ERROR', payload: 'Failed to delete user' })
+      throw error
+    }
+  }, [fetchUsers])
+
   // ============================================================================
   // SUPABASE CRUD OPERATIONS
   // ============================================================================
@@ -789,7 +1833,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           end_time: session.end_time,
           qr_code: session.qr_code,
           is_active: session.is_active,
-          attendance_method: session.attendance_method
+          attendance_method: session.attendance_method,
+          // Newly persisted optional fields per schema
+          location: session.location ?? null,
+          capacity: session.capacity ?? null,
+          enrolled: session.enrolled ?? 0,
+          description: session.description ?? null,
+          status: session.status ?? 'scheduled',
+          type: session.type ?? 'lecture'
         }])
         .select()
         .single()
@@ -804,10 +1855,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         class_id: session.class_id,
         class_name: session.class_name,
         lecturer_name: session.lecturer_name,
-        type: session.type,
-        capacity: session.capacity,
-        enrolled: session.enrolled,
-        description: session.description
+        type: data.type ?? session.type,
+        capacity: data.capacity ?? session.capacity,
+        enrolled: data.enrolled ?? session.enrolled,
+        description: data.description ?? session.description,
+        location: data.location ?? session.location,
+        status: data.status ?? session.status
       }
 
       dispatch({ type: 'ADD_ATTENDANCE_SESSION', payload: newSession })
@@ -831,7 +1884,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           start_time: updates.start_time,
           end_time: updates.end_time,
           is_active: updates.is_active,
-          attendance_method: updates.attendance_method
+          attendance_method: updates.attendance_method,
+          // Persist extended fields when provided
+          location: updates.location,
+          capacity: updates.capacity,
+          enrolled: updates.enrolled,
+          description: updates.description,
+          status: updates.status,
+          type: updates.type
         })
         .eq('id', sessionId)
 
@@ -1122,10 +2182,58 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     // Supabase data fetching
     fetchUsers,
     fetchCourses,
+    createCourse,
+    updateCourse,
+    deleteCourse,
+    createCourseAssignment,
+    updateCourseAssignment,
+    deleteCourseAssignment,
+    fetchCourseAssignments,
     fetchEnrollments,
     fetchAttendanceSessions,
     fetchAttendanceRecords,
     fetchLecturerAssignments,
+    // Gradebook fetching
+    // @ts-ignore - extend context type in follow-up pass if needed
+    fetchGradeCategoriesForCourse,
+    // @ts-ignore
+    saveGradeCategoriesForCourse,
+    // @ts-ignore
+    fetchStudentGradesForCourse,
+    
+    // Academic structure data fetching
+    fetchAcademicYears,
+    fetchSemesters,
+    fetchDepartments,
+    fetchPrograms,
+    fetchClassrooms,
+    fetchSections,
+    fetchStudentProfiles,
+    fetchLecturerProfiles,
+    fetchAdminProfiles,
+    
+    // Academic structure CRUD operations
+    createAcademicYear,
+    updateAcademicYear,
+    deleteAcademicYear,
+    createSemester,
+    updateSemester,
+    deleteSemester,
+    createDepartment,
+    updateDepartment,
+    deleteDepartment,
+    createProgram,
+    updateProgram,
+    deleteProgram,
+    createClassroom,
+    updateClassroom,
+    deleteClassroom,
+    createSection,
+    updateSection,
+    deleteSection,
+    createUser,
+    updateUser,
+    deleteUser,
     
     // Supabase CRUD operations
     createAttendanceSessionSupabase,

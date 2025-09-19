@@ -175,7 +175,7 @@ export default function CourseAssignmentForm({
               <option value="">Select Course</option>
               {courses.map((course) => (
                 <option key={course.id} value={course.id}>
-                  {course.course_code} - {course.course_name}
+                  {course.code || course.course_code} - {course.name || course.course_name}
                 </option>
               ))}
             </select>

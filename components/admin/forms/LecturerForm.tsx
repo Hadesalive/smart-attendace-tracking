@@ -122,7 +122,12 @@ export default function LecturerForm({
 
     setLoading(true)
     try {
-      await onSave(formData)
+      // Add role for lecturer creation
+      const lecturerData = {
+        ...formData,
+        role: 'lecturer'
+      }
+      await onSave(lecturerData)
       onOpenChange(false)
     } catch (error) {
       console.error('Error saving lecturer:', error)
