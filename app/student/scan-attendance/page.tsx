@@ -39,21 +39,32 @@ export default function StudentScanAttendancePage() {
     setLoading(true)
     
     try {
-      // Parse the QR code data (expecting JSON with session info)
+      let sessionId: string
       let sessionData: any = null
       
-      if (data.startsWith('{')) {
+      // Handle URL format QR codes (like /attend/session123)
+      if (data.includes('/attend/')) {
+        const url = new URL(data, window.location.origin)
+        const pathParts = url.pathname.split('/')
+        const sessionIdIndex = pathParts.indexOf('attend') + 1
+        sessionId = pathParts[sessionIdIndex]
+        
+        if (!sessionId) {
+          throw new Error('Invalid QR code - session ID not found in URL')
+        }
+      } 
+      // Handle JSON format QR codes (legacy support)
+      else if (data.startsWith('{')) {
         sessionData = JSON.parse(data)
+        
+        if (!sessionData.session_id || sessionData.type !== 'attendance') {
+          throw new Error('Invalid attendance QR code')
+        }
+        
+        sessionId = sessionData.session_id
       } else {
-        throw new Error('Invalid QR code format - expected JSON data')
+        throw new Error('Invalid QR code format - expected URL or JSON data')
       }
-      
-      // Validate QR code data
-      if (!sessionData.session_id || sessionData.type !== 'attendance') {
-        throw new Error('Invalid attendance QR code')
-      }
-      
-      const sessionId = sessionData.session_id
       
       // Check if session exists and is active
       const session = state.attendanceSessions.find(s => s.id === sessionId)
@@ -82,7 +93,7 @@ export default function StudentScanAttendancePage() {
         success: true,
         message: 'Attendance marked successfully!',
         sessionId: sessionId,
-        courseName: sessionData.course_name || session.course_name
+        courseName: session.course_name
       })
       
       toast.success('Attendance marked successfully!')
