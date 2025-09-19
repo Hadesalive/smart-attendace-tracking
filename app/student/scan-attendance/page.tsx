@@ -8,6 +8,7 @@ import { toast } from "sonner"
 import MobileQrScanner from "@/components/attendance/mobile-qr-scanner-new"
 import { useData } from "@/lib/contexts/DataContext"
 import { useSearchParams } from "next/navigation"
+import { supabase } from "@/lib/supabase"
 
 export default function StudentScanAttendancePage() {
   const { markAttendanceSupabase, state } = useData()
@@ -66,29 +67,51 @@ export default function StudentScanAttendancePage() {
         throw new Error('Invalid QR code format - expected URL or JSON data')
       }
       
-      // Check if session exists and is active
-      const session = state.attendanceSessions.find(s => s.id === sessionId)
-      if (!session) {
-        console.error('Session not found in state:', { sessionId, availableSessions: state.attendanceSessions.map(s => s.id) })
+      // Fetch session directly from database instead of relying on local state
+      console.log('Fetching session from database:', sessionId)
+      
+      const { data: dbSessionData, error: sessionError } = await supabase
+        .from('attendance_sessions')
+        .select(`
+          id,
+          course_id,
+          session_name,
+          session_date,
+          start_time,
+          end_time,
+          status,
+          is_active,
+          courses (
+            course_code,
+            course_name
+          )
+        `)
+        .eq('id', sessionId)
+        .single()
+
+      if (sessionError || !dbSessionData) {
+        console.error('Session not found in database:', { sessionId, error: sessionError })
         throw new Error('Session not found or no longer active')
       }
       
-      console.log('Found session:', session)
+      console.log('Found session in database:', dbSessionData)
       
       // Check if user is enrolled in this course
-      const isEnrolled = state.enrollments.some(e => 
-        e.course_id === session.course_id && 
-        e.student_id === state.currentUser?.id
-      )
-      
+      const { data: enrollment, error: enrollmentError } = await supabase
+        .from('enrollments')
+        .select('id')
+        .eq('student_id', state.currentUser?.id)
+        .eq('course_id', dbSessionData.course_id)
+        .single()
+
       console.log('Enrollment check:', { 
-        courseId: session.course_id, 
+        courseId: dbSessionData.course_id, 
         userId: state.currentUser?.id, 
-        isEnrolled,
-        enrollments: state.enrollments.filter(e => e.course_id === session.course_id)
+        enrollment,
+        enrollmentError
       })
       
-      if (!isEnrolled) {
+      if (enrollmentError || !enrollment) {
         throw new Error('You are not enrolled in this course')
       }
       
@@ -109,7 +132,7 @@ export default function StudentScanAttendancePage() {
         success: true,
         message: 'Attendance marked successfully!',
         sessionId: sessionId,
-        courseName: session.course_name
+        courseName: (dbSessionData.courses as any)?.course_name || 'Unknown Course'
       })
       
       toast.success('Attendance marked successfully!')
