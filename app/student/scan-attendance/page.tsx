@@ -6,12 +6,15 @@ import { QrCodeIcon, CheckCircleIcon, XCircleIcon } from "@heroicons/react/24/ou
 import { motion } from "framer-motion"
 import { toast } from "sonner"
 import MobileQrScanner from "@/components/attendance/mobile-qr-scanner-new"
-import { useData } from "@/lib/contexts/DataContext"
+import { useAttendance, useAuth } from "@/lib/domains"
 import { useSearchParams } from "next/navigation"
 import { supabase } from "@/lib/supabase"
 
 export default function StudentScanAttendancePage() {
-  const { markAttendanceSupabase, state } = useData()
+  const attendance = useAttendance()
+  const auth = useAuth()
+  const { markAttendanceSupabase, state } = attendance
+  const { state: authState } = auth
   const searchParams = useSearchParams()
   const sessionIdFromUrl = searchParams.get('sessionId')
   
@@ -105,13 +108,13 @@ export default function StudentScanAttendancePage() {
       const { data: enrollment, error: enrollmentError } = await supabase
         .from('enrollments')
         .select('id')
-        .eq('student_id', state.currentUser?.id)
+        .eq('student_id', authState.currentUser?.id)
         .eq('course_id', dbSessionData.course_id)
         .single()
 
       console.log('Enrollment check:', { 
         courseId: dbSessionData.course_id, 
-        userId: state.currentUser?.id, 
+        userId: authState.currentUser?.id, 
         enrollment,
         enrollmentError
       })
@@ -121,17 +124,17 @@ export default function StudentScanAttendancePage() {
       }
       
       // Mark attendance using Supabase
-      if (!state.currentUser?.id) {
+      if (!authState.currentUser?.id) {
         throw new Error('User not authenticated')
       }
       
       console.log('About to call markAttendanceSupabase with:', {
         sessionId,
-        studentId: state.currentUser.id,
+        studentId: authState.currentUser.id,
         method: 'qr_code'
       })
       
-      await markAttendanceSupabase(sessionId, state.currentUser.id, 'qr_code')
+      await markAttendanceSupabase(sessionId, authState.currentUser.id, 'qr_code')
       
       setScanResult({
         success: true,

@@ -54,7 +54,7 @@ import {
   GlobeAltIcon
 } from "@heroicons/react/24/outline"
 import { formatDate, formatNumber } from "@/lib/utils"
-import { useData } from "@/lib/contexts/DataContext"
+import { useAuth, useCourses, useAcademicStructure, useGrades } from "@/lib/domains"
 import { useMockData } from "@/lib/hooks/useMockData"
 
 // Constants
@@ -190,7 +190,29 @@ export default function StudentProfilePage() {
   const [editingSection, setEditingSection] = useState<string | null>(null)
 
   // Data Context
-  const { state, getStudentGradesByCourse, calculateFinalGrade } = useData()
+  const auth = useAuth()
+  const courses = useCourses()
+  const academic = useAcademicStructure()
+  const grades = useGrades()
+  
+  // Extract state and methods
+  const { state: authState } = auth
+  const { state: coursesState } = courses
+  const { state: academicState } = academic
+  const { 
+    state: gradesState,
+    getStudentGradesByCourse, 
+    calculateFinalGrade 
+  } = grades
+  
+  // Create legacy state object for compatibility
+  const state = {
+    ...authState,
+    ...coursesState,
+    ...academicState,
+    ...gradesState,
+    students: authState.users?.filter(user => user.role === 'student') || []
+  }
   const { isInitialized } = useMockData()
 
   // Get student data from DataContext
@@ -216,12 +238,12 @@ export default function StudentProfilePage() {
     )
     
     // Calculate attendance rate
-    const sessions = courses.flatMap(course =>
-      state.attendanceSessions.filter(session => session.course_id === course.id)
+    const sessions = courses.flatMap((course: any) =>
+      state.attendanceSessions.filter((session: any) => session.course_id === course.id)
     )
     
-    const attendanceRecords = sessions.flatMap(session =>
-      state.attendanceRecords.filter(record => 
+    const attendanceRecords = sessions.flatMap((session: any) =>
+      state.attendanceRecords.filter((record: any) => 
         record.student_id === studentId && record.session_id === session.id
       )
     )

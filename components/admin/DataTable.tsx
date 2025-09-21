@@ -129,17 +129,49 @@ export default function DataTable({
               </Typography>
             )}
           </Box>
-          <TableContainer>
-            <Table>
+          <TableContainer 
+            sx={{ 
+              overflowX: 'auto',
+              '&::-webkit-scrollbar': { 
+                height: 8,
+                width: 8
+              },
+              '&::-webkit-scrollbar-track': { 
+                bgcolor: 'rgba(0,0,0,0.1)', 
+                borderRadius: 4 
+              },
+              '&::-webkit-scrollbar-thumb': { 
+                bgcolor: 'rgba(0,0,0,0.3)', 
+                borderRadius: 4 
+              },
+              '&::-webkit-scrollbar-thumb:hover': { 
+                bgcolor: 'rgba(0,0,0,0.5)' 
+              }
+            }}
+          >
+            <Table sx={{ minWidth: 800 }}>
               <TableHead>
                 <TableRow sx={{ backgroundColor: "#f9fafb" }}>
                   {columns.map((column) => (
-                    <TableCell key={column.key} sx={TYPOGRAPHY_STYLES.tableHeader}>
+                    <TableCell 
+                      key={column.key} 
+                      sx={{
+                        ...TYPOGRAPHY_STYLES.tableHeader,
+                        minWidth: 120,
+                        whiteSpace: 'nowrap',
+                        px: { xs: 1, sm: 2, md: 3 }
+                      }}
+                    >
                       {column.label}
                     </TableCell>
                   ))}
                   {(onEdit || onDelete) && (
-                    <TableCell sx={TYPOGRAPHY_STYLES.tableHeader}>
+                    <TableCell sx={{
+                      ...TYPOGRAPHY_STYLES.tableHeader,
+                      minWidth: { xs: 100, sm: 120 },
+                      px: { xs: 0.5, sm: 1, md: 2 },
+                      textAlign: 'center'
+                    }}>
                       Actions
                     </TableCell>
                   )}
@@ -184,13 +216,30 @@ export default function DataTable({
                       onClick={() => onRowClick?.(row)}
                     >
                       {columns.map((column) => (
-                        <TableCell key={column.key}>
+                        <TableCell 
+                          key={column.key}
+                          sx={{
+                            minWidth: 120,
+                            whiteSpace: 'nowrap',
+                            px: { xs: 1, sm: 2, md: 3 },
+                            py: 2
+                          }}
+                        >
                           {column.render ? column.render(row[column.key], row) : row[column.key]}
                         </TableCell>
                       ))}
                       {(onEdit || onDelete) && (
-                        <TableCell>
-                          <Box sx={{ display: 'flex', gap: 1 }}>
+                        <TableCell sx={{ 
+                          minWidth: { xs: 100, sm: 120 },
+                          px: { xs: 0.5, sm: 1, md: 2 },
+                          py: 1
+                        }}>
+                          <Box sx={{ 
+                            display: 'flex', 
+                            gap: { xs: 0.5, sm: 1 }, 
+                            flexWrap: 'wrap',
+                            justifyContent: { xs: 'center', sm: 'flex-start' }
+                          }}>
                             {onEdit && (
                               <Button
                                 size="small"
@@ -201,9 +250,11 @@ export default function DataTable({
                                 }}
                                 sx={{ 
                                   minWidth: 'auto',
-                                  px: 1,
+                                  px: { xs: 0.5, sm: 1 },
                                   py: 0.5,
-                                  fontSize: '0.75rem'
+                                  fontSize: { xs: '0.7rem', sm: '0.75rem' },
+                                  textTransform: 'none',
+                                  borderWidth: 1
                                 }}
                               >
                                 Edit
@@ -220,9 +271,11 @@ export default function DataTable({
                                 }}
                                 sx={{ 
                                   minWidth: 'auto',
-                                  px: 1,
+                                  px: { xs: 0.5, sm: 1 },
                                   py: 0.5,
-                                  fontSize: '0.75rem'
+                                  fontSize: { xs: '0.7rem', sm: '0.75rem' },
+                                  textTransform: 'none',
+                                  borderWidth: 1
                                 }}
                               >
                                 Delete

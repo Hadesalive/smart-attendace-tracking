@@ -5,7 +5,7 @@ import { motion } from "framer-motion"
 import { useParams } from "next/navigation"
 import { Box, Card as MUICard, CardContent as MUICardContent, Typography, Chip, Table, TableBody, TableCell, TableHead, TableRow, TableContainer, TextField, Checkbox, Button as MUIButton } from "@mui/material"
 import { formatSeconds, exportRowsToCsv } from "@/lib/utils"
-import { useData } from "@/lib/contexts/DataContext"
+import { useAttendance, useCourses } from "@/lib/domains"
 
 // ============================================================================
 // TYPES & CONSTANTS
@@ -376,7 +376,24 @@ interface StudentAttendance {
 export default function LecturerSessionAttendancePage() {
   const params = useParams()
   const sessionId = params?.id as string
-  const { state, fetchAttendanceRecords, fetchAttendanceSessions, updateAttendanceSessionSupabase } = useData()
+  const attendance = useAttendance()
+  const courses = useCourses()
+  
+  // Extract state and methods
+  const { 
+    state: attendanceState,
+    fetchAttendanceRecords, 
+    fetchAttendanceSessions, 
+    updateAttendanceSessionSupabase 
+  } = attendance
+  
+  const { state: coursesState } = courses
+  
+  // Create legacy state object for compatibility
+  const state = {
+    ...attendanceState,
+    ...coursesState
+  }
 
   // Ensure data is available
   useEffect(() => {
@@ -386,7 +403,7 @@ export default function LecturerSessionAttendancePage() {
 
   // Read session details from shared state
   const session = useMemo(() => {
-    const s = state.attendanceSessions.find(ss => ss.id === sessionId)
+    const s = state.attendanceSessions.find((ss: any) => ss.id === sessionId)
     if (!s) return null
     return {
       id: s.id,
@@ -405,9 +422,9 @@ export default function LecturerSessionAttendancePage() {
   // Build students list from attendance records for this session
   const [students, setStudents] = useState<StudentAttendance[]>([])
   useEffect(() => {
-    const records = state.attendanceRecords.filter(r => r.session_id === sessionId)
+      const records = state.attendanceRecords.filter((r: any) => r.session_id === sessionId)
     if (records.length) {
-      const mapped = records.map(r => ({
+      const mapped = records.map((r: any) => ({
         id: r.student_id,
         name: r.student_name || 'Student',
         matric: r.student_id,

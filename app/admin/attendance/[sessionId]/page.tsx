@@ -413,7 +413,7 @@ export default function AttendanceSessionDetailsPage() {
     {
       key: 'student',
       label: 'Student',
-      render: (value: any, row: StudentAttendance) => (
+      render: (value: string, row: StudentAttendance) => (
         <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
           <Avatar sx={{ 
             bgcolor: "#f5f5f5",
@@ -440,7 +440,7 @@ export default function AttendanceSessionDetailsPage() {
     {
       key: 'id_number',
       label: 'ID Number',
-      render: (value: any, row: StudentAttendance) => (
+      render: (value: string, row: StudentAttendance) => (
         <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
           {row.student_id_number}
         </Typography>
@@ -449,7 +449,7 @@ export default function AttendanceSessionDetailsPage() {
     {
       key: 'status',
       label: 'Status',
-      render: (value: any, row: StudentAttendance) => {
+      render: (value: string, row: StudentAttendance) => {
         const StatusIcon = getStatusIcon(row.attendance_status)
         const statusColor = getStatusColor(row.attendance_status)
         return (
@@ -471,7 +471,7 @@ export default function AttendanceSessionDetailsPage() {
     {
       key: 'check_in',
       label: 'Check In',
-      render: (value: any, row: StudentAttendance) => (
+      render: (value: string, row: StudentAttendance) => (
         <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
           {row.check_in_time ? formatTime(row.check_in_time) : "—"}
         </Typography>
@@ -480,7 +480,7 @@ export default function AttendanceSessionDetailsPage() {
     {
       key: 'check_out',
       label: 'Check Out',
-      render: (value: any, row: StudentAttendance) => (
+      render: (value: string, row: StudentAttendance) => (
         <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
           {row.check_out_time ? formatTime(row.check_out_time) : "—"}
         </Typography>
@@ -489,7 +489,7 @@ export default function AttendanceSessionDetailsPage() {
     {
       key: 'notes',
       label: 'Notes',
-      render: (value: any, row: StudentAttendance) => (
+      render: (value: string, row: StudentAttendance) => (
         <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
           {row.notes || "—"}
         </Typography>

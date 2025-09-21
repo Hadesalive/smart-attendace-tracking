@@ -2,10 +2,11 @@
 import React, { useMemo, useState, useEffect } from "react"
 import { Box, Button, Dialog, DialogTitle, DialogContent, Typography } from "@mui/material"
 import { PlusIcon, UserPlusIcon, BuildingOffice2Icon, ArrowPathIcon } from "@heroicons/react/24/outline"
-import { useData } from "@/lib/contexts/DataContext"
+import { useAcademicStructure, useAuth, useCourses } from "@/lib/domains"
 import PageHeader from "@/components/admin/PageHeader"
 import StatsGrid from "@/components/admin/StatsGrid"
 import SearchFilters from "@/components/admin/SearchFilters"
+import FilterBar from "@/components/admin/FilterBar"
 import DataTable from "@/components/admin/DataTable"
 import DetailTabs from "@/components/admin/DetailTabs"
 import ErrorAlert from "@/components/admin/ErrorAlert"
@@ -49,7 +50,74 @@ interface TeacherAssignment {
   year: Year
   semester: Semester
   program: string
-  section: string // uniqueness anchor with the above
+  section: string
+}
+
+// Form data types
+interface FormData {
+  id?: string
+  name?: string
+  code?: string
+  year?: number
+  semester?: number
+  program?: string
+  section?: string
+  building?: string
+  room?: string
+  capacity?: number
+  teacher_id?: string
+  course_id?: string
+  student_id?: string
+  [key: string]: unknown
+}
+
+// Table data types
+interface AcademicYearData {
+  id: string
+  year_name: string
+  start_date: string
+  end_date: string
+  is_current: boolean
+}
+
+interface SemesterData {
+  id: string
+  semester_name: string
+  academic_year_id: string
+  start_date: string
+  end_date: string
+}
+
+interface DepartmentData {
+  id: string
+  department_name: string
+  department_code: string
+  description?: string
+}
+
+interface ProgramData {
+  id: string
+  program_name: string
+  program_code: string
+  department_id: string
+  duration_years: number
+}
+
+interface ClassroomData {
+  id: string
+  classroom_name: string
+  building: string
+  room_number: string
+  capacity: number
+}
+
+interface SectionData {
+  id: string
+  section_code: string
+  program_id: string
+  academic_year_id: string
+  semester_id: string
+  max_students: number
 }
 
 interface Enrollment { id: string; student_id: string; student_name: string; year: Year; semester: Semester; program: string; section: string }
@@ -92,27 +160,86 @@ export default function AcademicHubPage() {
   const [searchTerm, setSearchTerm] = useState("")
   const [error, setError] = useState<string | null>(null)
   
+  // Filter states for each tab
+  const [filters, setFilters] = useState({
+    academicYears: {
+      isCurrent: 'all' // all, current, past
+    },
+    semesters: {
+      isCurrent: 'all', // all, current, past
+      academicYear: 'all'
+    },
+    departments: {
+      isActive: 'all' // all, active, inactive
+    },
+    programs: {
+      isActive: 'all', // all, active, inactive
+      department: 'all',
+      degreeType: 'all'
+    },
+    sections: {
+      isActive: 'all', // all, active, inactive
+      program: 'all',
+      year: 'all',
+      semester: 'all',
+      academicYear: 'all'
+    },
+    classrooms: {
+      isActive: 'all', // all, active, inactive
+      roomType: 'all',
+      building: 'all',
+      capacity: 'all' // all, small, medium, large, xlarge
+    },
+    assignments: {
+      program: 'all',
+      year: 'all',
+      semester: 'all',
+      academicYear: 'all'
+    },
+    courses: {
+      assignmentStatus: 'all', // all, assigned, unassigned
+      lecturerStatus: 'all', // all, assigned, unassigned
+      department: 'all', // all, specific department
+      program: 'all' // all, specific program
+    },
+    enrollments: {
+      status: 'all', // all, active, dropped, completed
+      program: 'all',
+      year: 'all',
+      semester: 'all',
+      academicYear: 'all'
+    }
+  })
+  
   // Form states
-  const [formState, setFormState] = useState({
-    type: null as string | null,
-    mode: null as 'create' | 'edit' | null,
-    data: null as any
+  const [formState, setFormState] = useState<{
+    type: string | null
+    mode: 'create' | 'edit' | 'bulk' | null
+    data: any
+  }>({
+    type: null,
+    mode: null,
+    data: null
   })
 
   // Data Context
+  const academic = useAcademicStructure()
+  const auth = useAuth()
+  const coursesHook = useCourses()
+  
+  // Extract state and methods
   const { 
-    state, 
+    state: academicState,
     fetchAcademicYears,
     fetchSemesters,
     fetchDepartments,
     fetchPrograms,
     fetchClassrooms,
     fetchSections,
+    fetchSectionEnrollments,
     fetchStudentProfiles,
     fetchLecturerProfiles,
     fetchAdminProfiles,
-    fetchCourses,
-    fetchUsers,
     createAcademicYear,
     updateAcademicYear,
     deleteAcademicYear,
@@ -130,16 +257,37 @@ export default function AcademicHubPage() {
     deleteClassroom,
     createSection,
     updateSection,
-    deleteSection,
+    deleteSection
+  } = academic
+  
+  const { 
+    state: authState,
+    fetchUsers,
+    createUser,
+    updateUser
+  } = auth
+  
+  const { 
+    state: coursesState,
+    fetchCourses,
+    fetchCourseAssignments,
     createCourse,
     updateCourse,
     deleteCourse,
     createCourseAssignment,
     updateCourseAssignment,
-    deleteCourseAssignment,
-    createUser,
-    updateUser
-  } = useData()
+    deleteCourseAssignment
+  } = coursesHook
+  
+  // Create legacy state object for compatibility
+  const state = {
+    ...academicState,
+    ...authState,
+    ...coursesState,
+    students: authState.users?.filter(user => user.role === 'student') || [],
+    semesters: academicState.semesters,
+    programs: academicState.programs
+  }
 
   // Academic data from DataContext
   const academicData = {
@@ -158,7 +306,6 @@ export default function AcademicHubPage() {
   useEffect(() => {
     const loadAcademicData = async () => {
       try {
-        console.log('Loading academic data...')
         await Promise.all([
           fetchAcademicYears(),
           fetchSemesters(),
@@ -166,42 +313,69 @@ export default function AcademicHubPage() {
           fetchPrograms(),
           fetchClassrooms(),
           fetchSections(),
+          fetchSectionEnrollments(),
           fetchStudentProfiles(),
           fetchLecturerProfiles(),
           fetchAdminProfiles(),
           fetchCourses(),
           fetchUsers()
         ])
-        console.log('Academic data loaded successfully')
       } catch (error) {
-        console.error('Error loading academic data:', error)
         setError('Failed to load academic data')
       }
     }
     
     loadAcademicData()
-  }, [fetchAcademicYears, fetchSemesters, fetchDepartments, fetchPrograms, fetchClassrooms, fetchSections, fetchStudentProfiles, fetchLecturerProfiles, fetchAdminProfiles, fetchCourses, fetchUsers])
+  }, []) // Empty dependency array - only run once on mount
 
-  // Get data from database (will replace mock data)
-  const classes = useMemo(() => {
-    console.log('Sections data:', academicData.sections)
-    // Use sections from database instead of mock data
-    return academicData.sections.map(section => ({
-      id: section.id,
-      year: section.year as Year,
-      semester: section.semesters?.semester_name || 'N/A',
-      program: section.programs?.program_code || 'N/A',
-      section: section.section_code,
-      size: section.current_enrollment || 0
-    }))
-  }, [academicData.sections])
+  // Get sections data from database with proper joins
+  const sections = useMemo(() => {
+    return academicData.sections.map(section => {
+      const sectionWithJoins = section as any // Type assertion for joined data
+      
+      
+      // Calculate actual enrollment count from section enrollments
+      const actualEnrollmentCount = academicState.sectionEnrollments.filter(
+        enrollment => enrollment.section_id === section.id && enrollment.status === 'active'
+      ).length
+      
+      return {
+        id: section.id,
+        section_code: section.section_code,
+        year: section.year as Year,
+        semester: sectionWithJoins.semesters?.semester_name || 'N/A',
+        semester_number: sectionWithJoins.semesters?.semester_number || 0,
+        program: sectionWithJoins.programs?.program_name || 'N/A',
+        program_code: sectionWithJoins.programs?.program_code || 'N/A',
+        department: sectionWithJoins.programs?.departments?.department_name || 
+                   academicData.departments.find(d => d.id === sectionWithJoins.programs?.department_id)?.department_name || 
+                   'N/A',
+        academic_year: sectionWithJoins.academic_years?.year_name || 'N/A',
+        max_capacity: section.max_capacity || 0,
+        current_enrollment: actualEnrollmentCount, // Use calculated enrollment count
+        classroom: sectionWithJoins.classrooms ? 
+          `${sectionWithJoins.classrooms.building} - ${sectionWithJoins.classrooms.room_number}` : 'Not assigned',
+        is_active: section.is_active ?? true,
+        // Add ID properties for filtering
+        program_id: section.program_id,
+        semester_id: section.semester_id,
+        academic_year_id: section.academic_year_id
+      }
+    })
+  }, [academicData.sections, academicState.sectionEnrollments])
 
   const courses = useMemo(() => {
     return state.courses.map(course => ({
       id: course.id,
       code: course.course_code,
       name: course.course_name,
-      program: course.department || 'BSEM'
+      program: course.department || 'BSEM',
+      // Keep original course data for forms
+      course_code: course.course_code,
+      course_name: course.course_name,
+      credits: course.credits,
+      department: course.department,
+      lecturer_id: course.lecturer_id
     }))
   }, [state.courses])
 
@@ -210,46 +384,66 @@ export default function AcademicHubPage() {
       id: classroom.id,
       building: classroom.building,
       room: classroom.room_number,
-      capacity: classroom.capacity
+      capacity: classroom.capacity,
+      is_active: classroom.is_active ?? true,
+      // Add properties for filtering
+      room_type: (classroom as any).room_type || 'Lecture', // Default to Lecture if not specified
+      description: classroom.description || ''
     }))
   }, [academicData.classrooms])
 
   const assignments = useMemo(() => {
-    // Get lecturer assignments from DataContext
-    return state.lecturerAssignments.map(assignment => {
+    // Get course assignments from DataContext
+    return state.courseAssignments.map(assignment => {
       const course = state.courses.find(c => c.id === assignment.course_id)
-      const lecturer = state.users.find(u => u.id === assignment.lecturer_id)
+      const program = academicData.programs.find(p => p.id === (assignment as any).program_id)
+      const academicYear = academicData.academicYears.find(ay => ay.id === assignment.academic_year_id)
+      const semester = academicData.semesters.find(s => s.id === assignment.semester_id)
       
       return {
         id: assignment.id,
-        teacher_id: assignment.lecturer_id,
-        teacher_name: lecturer?.full_name || 'Unknown',
         course_id: assignment.course_id,
         course_code: course?.course_code || 'N/A',
-        year: 1 as Year,
-        semester: 2 as Semester,
-        program: course?.department || 'BSEM',
-        section: '2101' // Will be updated when sections are properly linked
+        course_name: course?.course_name || 'N/A',
+        program: program?.program_name || 'N/A',
+        program_code: program?.program_code || 'N/A',
+        academic_year: academicYear?.year_name || 'N/A',
+        semester: semester?.semester_name || 'N/A',
+        semester_number: semester?.semester_number || 0,
+        year: (assignment as any).year || 1,
+        is_mandatory: assignment.is_mandatory || false,
+        max_students: assignment.max_students || null,
+        // Add ID properties for filtering
+        program_id: (assignment as any).program_id,
+        semester_id: assignment.semester_id,
+        academic_year_id: assignment.academic_year_id
       }
     })
-  }, [state.lecturerAssignments, state.courses, state.users])
+  }, [state.courseAssignments, state.courses, academicData.programs, academicData.academicYears, academicData.semesters])
 
   const enrollments = useMemo(() => {
-    return state.enrollments.map(enrollment => {
-      const student = state.students.find(s => s.id === enrollment.student_id)
-      const course = state.courses.find(c => c.id === enrollment.course_id)
-      
-      return {
+    return academicState.sectionEnrollments.map(enrollment => ({
         id: enrollment.id,
+      student_name: enrollment.student_name || 'N/A',
+      student_id_number: enrollment.student_id_number || 'N/A',
+      section: enrollment.section_code || 'N/A',
+      program: enrollment.program_name || 'N/A',
+      program_code: enrollment.program_code || 'N/A',
+      year: enrollment.year || 'N/A', // Add year from section
+      semester: enrollment.semester_name || 'N/A',
+      academic_year: enrollment.academic_year || 'N/A',
+      enrollment_date: enrollment.enrollment_date,
+      status: enrollment.status,
+      grade: enrollment.grade || '',
+      notes: enrollment.notes || '',
+      // Add ID properties for filtering
         student_id: enrollment.student_id,
-        student_name: student?.full_name || 'Unknown',
-        year: 1 as Year,
-        semester: 2 as Semester,
-        program: course?.department || 'BSEM',
-        section: '2101' // Will be updated when sections are properly linked
-      }
-    })
-  }, [state.enrollments, state.students, state.courses])
+      section_id: enrollment.section_id,
+      program_id: (enrollment as any).program_id,
+      semester_id: (enrollment as any).semester_id,
+      academic_year_id: (enrollment as any).academic_year_id
+    }))
+  }, [academicState.sectionEnrollments])
 
   // KPI stats from academic data
   const statsCards = useMemo(() => ([
@@ -260,12 +454,17 @@ export default function AcademicHubPage() {
   ]), [academicData.academicYears.length, academicData.semesters.length, academicData.departments.length, academicData.programs.length])
 
   // Columns per tab
-  const classColumns = [
+  const sectionColumns = [
+    { key: "section_code", label: "Section Code" },
+    { key: "department", label: "Faculty" },
     { key: "program", label: "Program" },
     { key: "year", label: "Year" },
     { key: "semester", label: "Semester" },
-    { key: "section", label: "Section" },
-    { key: "size", label: "Students" },
+    { key: "academic_year", label: "Academic Year" },
+    { key: "current_enrollment", label: "Enrolled" },
+    { key: "max_capacity", label: "Capacity" },
+    { key: "classroom", label: "Classroom" },
+    { key: "is_active", label: "Status" },
   ]
 
   const courseColumns = [
@@ -281,76 +480,435 @@ export default function AcademicHubPage() {
   ]
 
   // Filtered data based on search term
-  const filteredCourses = useMemo(() => {
-    if (!searchTerm.trim()) return courses
-    return courses.filter(course => 
-      course.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      course.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      course.program.toLowerCase().includes(searchTerm.toLowerCase())
-    )
-  }, [courses, searchTerm])
+  // Enhanced filtered data with search and filters
+  const filteredAcademicYears = useMemo(() => {
+    let filtered = academicData.academicYears
+    
+    // Apply search filter
+    if (searchTerm.trim()) {
+      filtered = filtered.filter(year => 
+        year.year_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        year.description?.toLowerCase().includes(searchTerm.toLowerCase())
+      )
+    }
+    
+    // Apply status filter
+    if (filters.academicYears.isCurrent !== 'all') {
+      filtered = filtered.filter(year => 
+        filters.academicYears.isCurrent === 'current' ? year.is_current : !year.is_current
+      )
+    }
+    
+    return filtered
+  }, [academicData.academicYears, searchTerm, filters.academicYears])
 
-  const filteredClasses = useMemo(() => {
-    if (!searchTerm.trim()) return classes
-    return classes.filter(cls => 
-      cls.program.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      cls.section.toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredSemesters = useMemo(() => {
+    let filtered = academicData.semesters
+    
+    // Apply search filter
+    if (searchTerm.trim()) {
+      filtered = filtered.filter(semester => 
+        semester.semester_name.toLowerCase().includes(searchTerm.toLowerCase())
+      )
+    }
+    
+    // Apply status filter
+    if (filters.semesters.isCurrent !== 'all') {
+      filtered = filtered.filter(semester => 
+        filters.semesters.isCurrent === 'current' ? semester.is_current : !semester.is_current
+      )
+    }
+    
+    // Apply academic year filter
+    if (filters.semesters.academicYear !== 'all') {
+      filtered = filtered.filter(semester => 
+        semester.academic_year_id === filters.semesters.academicYear
+      )
+    }
+    
+    return filtered
+  }, [academicData.semesters, searchTerm, filters.semesters])
+
+  const filteredDepartments = useMemo(() => {
+    let filtered = academicData.departments
+    
+    // Apply search filter
+    if (searchTerm.trim()) {
+      filtered = filtered.filter(dept => 
+        dept.department_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        dept.department_code.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        dept.description?.toLowerCase().includes(searchTerm.toLowerCase())
+      )
+    }
+    
+    // Apply status filter
+    if (filters.departments.isActive !== 'all') {
+      filtered = filtered.filter(dept => 
+        filters.departments.isActive === 'active' ? dept.is_active : !dept.is_active
+      )
+    }
+    
+    return filtered
+  }, [academicData.departments, searchTerm, filters.departments])
+
+  const filteredPrograms = useMemo(() => {
+    let filtered = academicData.programs
+    
+    // Apply search filter
+    if (searchTerm.trim()) {
+      filtered = filtered.filter(program => 
+        program.program_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        program.program_code.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        program.description?.toLowerCase().includes(searchTerm.toLowerCase())
+      )
+    }
+    
+    // Apply status filter
+    if (filters.programs.isActive !== 'all') {
+      filtered = filtered.filter(program => 
+        filters.programs.isActive === 'active' ? program.is_active : !program.is_active
+      )
+    }
+    
+    // Apply department filter
+    if (filters.programs.department !== 'all') {
+      filtered = filtered.filter(program => 
+        program.department_id === filters.programs.department
+      )
+    }
+    
+    // Apply degree type filter
+    if (filters.programs.degreeType !== 'all') {
+      filtered = filtered.filter(program => 
+        program.degree_type === filters.programs.degreeType
+      )
+    }
+    
+    return filtered
+  }, [academicData.programs, searchTerm, filters.programs])
+
+  const filteredCourses = useMemo(() => {
+    let filtered = courses
+    
+    // Apply search filter
+    if (searchTerm.trim()) {
+      filtered = filtered.filter(course => 
+      course.course_code?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      course.course_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      course.department?.toLowerCase().includes(searchTerm.toLowerCase())
     )
-  }, [classes, searchTerm])
+    }
+    
+    // Apply assignment status filter
+    if (filters.courses.assignmentStatus !== 'all') {
+      if (filters.courses.assignmentStatus === 'assigned') {
+        // Check if course is assigned to any program
+        filtered = filtered.filter(course => 
+          state.courseAssignments.some(assignment => assignment.course_id === course.id)
+        )
+      } else if (filters.courses.assignmentStatus === 'unassigned') {
+        // Check if course is not assigned to any program
+        filtered = filtered.filter(course => 
+          !state.courseAssignments.some(assignment => assignment.course_id === course.id)
+        )
+      }
+    }
+    
+    // Apply lecturer status filter
+    if (filters.courses.lecturerStatus !== 'all') {
+      if (filters.courses.lecturerStatus === 'assigned') {
+        filtered = filtered.filter(course => course.lecturer_id)
+      } else if (filters.courses.lecturerStatus === 'unassigned') {
+        filtered = filtered.filter(course => !course.lecturer_id)
+      }
+    }
+    
+    // Apply department filter
+    if (filters.courses.department !== 'all') {
+      filtered = filtered.filter(course => 
+        course.department === filters.courses.department
+      )
+    }
+    
+    // Apply program filter
+    if (filters.courses.program !== 'all') {
+      // Check if course is assigned to the selected program
+      filtered = filtered.filter(course => 
+        state.courseAssignments.some(assignment => 
+          assignment.course_id === course.id && 
+          (assignment as any).program_id === filters.courses.program
+        )
+      )
+    }
+    
+    return filtered
+  }, [courses, searchTerm, filters.courses, state.courseAssignments])
+
+  const filteredSections = useMemo(() => {
+    let filtered = sections
+    
+    // Apply search filter
+    if (searchTerm.trim()) {
+      filtered = filtered.filter(section => 
+        section.section_code.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        section.program.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        section.department.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        section.academic_year.toLowerCase().includes(searchTerm.toLowerCase())
+      )
+    }
+    
+    // Apply status filter
+    if (filters.sections.isActive !== 'all') {
+      filtered = filtered.filter(section => 
+        filters.sections.isActive === 'active' ? section.is_active : !section.is_active
+      )
+    }
+    
+    // Apply program filter
+    if (filters.sections.program !== 'all') {
+      filtered = filtered.filter(section => 
+        section.program_id === filters.sections.program
+      )
+    }
+    
+    // Apply year filter
+    if (filters.sections.year !== 'all') {
+      filtered = filtered.filter(section => 
+        section.year.toString() === filters.sections.year
+      )
+    }
+    
+    // Apply semester filter
+    if (filters.sections.semester !== 'all') {
+      filtered = filtered.filter(section => 
+        section.semester_id === filters.sections.semester
+      )
+    }
+    
+    // Apply academic year filter
+    if (filters.sections.academicYear !== 'all') {
+      filtered = filtered.filter(section => 
+        section.academic_year_id === filters.sections.academicYear
+      )
+    }
+    
+    return filtered
+  }, [sections, searchTerm, filters.sections])
 
   const filteredClassrooms = useMemo(() => {
-    if (!searchTerm.trim()) return classrooms
-    return classrooms.filter(room => 
+    let filtered = classrooms
+    
+    // Apply search filter
+    if (searchTerm.trim()) {
+      filtered = filtered.filter(room => 
       room.building.toLowerCase().includes(searchTerm.toLowerCase()) ||
       room.room.toLowerCase().includes(searchTerm.toLowerCase())
     )
-  }, [classrooms, searchTerm])
+    }
+    
+    // Apply status filter
+    if (filters.classrooms.isActive !== 'all') {
+      filtered = filtered.filter(room => 
+        filters.classrooms.isActive === 'active' ? room.is_active : !room.is_active
+      )
+    }
+    
+    // Apply room type filter
+    if (filters.classrooms.roomType !== 'all') {
+      filtered = filtered.filter(room => 
+        room.room_type === filters.classrooms.roomType
+      )
+    }
+    
+    // Apply building filter
+    if (filters.classrooms.building !== 'all') {
+      filtered = filtered.filter(room => 
+        room.building === filters.classrooms.building
+      )
+    }
+    
+    return filtered
+  }, [classrooms, searchTerm, filters.classrooms])
 
   const assignmentColumns = [
-    { key: "course_code", label: "Course" },
-    { key: "teacher_name", label: "Teacher" },
+    { key: "course_code", label: "Course Code" },
+    { key: "course_name", label: "Course Name" },
     { key: "program", label: "Program" },
+    { key: "program_code", label: "Program Code" },
     { key: "year", label: "Year" },
     { key: "semester", label: "Semester" },
-    { key: "section", label: "Section" },
+    { key: "academic_year", label: "Academic Year" },
+    { key: "is_mandatory", label: "Mandatory" },
+    { key: "max_students", label: "Max Students" },
   ]
 
   const enrollmentColumns = [
-    { key: "student_name", label: "Student" },
-    { key: "student_id", label: "Student ID" },
+    { key: "student_name", label: "Student Name" },
+    { key: "student_id_number", label: "Student ID" },
+    { key: "section", label: "Section" },
     { key: "program", label: "Program" },
+    { key: "program_code", label: "Program Code" },
     { key: "year", label: "Year" },
     { key: "semester", label: "Semester" },
-    { key: "section", label: "Section" },
+    { key: "academic_year", label: "Academic Year" },
+    { key: "enrollment_date", label: "Enrollment Date" },
+    { key: "status", label: "Status" },
   ]
 
   // Additional filtered data
   const filteredRooms = useMemo(() => {
-    if (!searchTerm.trim()) return classrooms
-    return classrooms.filter(room => 
+    let filtered = classrooms
+    
+    // Apply search filter
+    if (searchTerm.trim()) {
+      filtered = filtered.filter(room => 
       room.building.toLowerCase().includes(searchTerm.toLowerCase()) ||
       room.room.toLowerCase().includes(searchTerm.toLowerCase())
     )
-  }, [classrooms, searchTerm])
+    }
+    
+    // Apply status filter
+    if (filters.classrooms.isActive !== 'all') {
+      filtered = filtered.filter(room => 
+        filters.classrooms.isActive === 'active' ? room.is_active : !room.is_active
+      )
+    }
+    
+    // Apply room type filter
+    if (filters.classrooms.roomType !== 'all') {
+      filtered = filtered.filter(room => 
+        room.room_type === filters.classrooms.roomType
+      )
+    }
+    
+    // Apply building filter
+    if (filters.classrooms.building !== 'all') {
+      filtered = filtered.filter(room => 
+        room.building === filters.classrooms.building
+      )
+    }
+    
+    // Apply capacity filter
+    if (filters.classrooms.capacity !== 'all') {
+      filtered = filtered.filter(room => {
+        const capacity = room.capacity
+        switch (filters.classrooms.capacity) {
+          case 'small':
+            return capacity >= 1 && capacity <= 30
+          case 'medium':
+            return capacity >= 31 && capacity <= 60
+          case 'large':
+            return capacity >= 61 && capacity <= 100
+          case 'xlarge':
+            return capacity > 100
+          default:
+            return true
+        }
+      })
+    }
+    
+    return filtered
+  }, [classrooms, searchTerm, filters.classrooms])
 
   const filteredAssignments = useMemo(() => {
-    if (!searchTerm.trim()) return assignments
-    return assignments.filter(assignment => 
+    let filtered = assignments
+    
+    // Apply search filter
+    if (searchTerm.trim()) {
+      filtered = filtered.filter(assignment => 
       assignment.course_code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      assignment.teacher_name.toLowerCase().includes(searchTerm.toLowerCase())
-    )
-  }, [assignments, searchTerm])
+        assignment.course_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        assignment.program.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        assignment.program_code.toLowerCase().includes(searchTerm.toLowerCase())
+      )
+    }
+    
+    // Apply program filter
+    if (filters.assignments.program !== 'all') {
+      filtered = filtered.filter(assignment => 
+        assignment.program_id === filters.assignments.program
+      )
+    }
+    
+    // Apply year filter
+    if (filters.assignments.year !== 'all') {
+      filtered = filtered.filter(assignment => 
+        assignment.year.toString() === filters.assignments.year
+      )
+    }
+    
+    // Apply semester filter
+    if (filters.assignments.semester !== 'all') {
+      filtered = filtered.filter(assignment => 
+        assignment.semester_id === filters.assignments.semester
+      )
+    }
+    
+    // Apply academic year filter
+    if (filters.assignments.academicYear !== 'all') {
+      filtered = filtered.filter(assignment => 
+        assignment.academic_year_id === filters.assignments.academicYear
+      )
+    }
+    
+    return filtered
+  }, [assignments, searchTerm, filters.assignments])
 
   const filteredEnrollments = useMemo(() => {
-    if (!searchTerm.trim()) return enrollments
-    return enrollments.filter(enrollment => 
-      enrollment.student_name.toLowerCase().includes(searchTerm.toLowerCase())
-    )
-  }, [enrollments, searchTerm])
+    let filtered = enrollments
+    
+    // Apply search filter
+    if (searchTerm.trim()) {
+      filtered = filtered.filter((enrollment: any) => 
+        enrollment.student_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        enrollment.student_id_number?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        enrollment.section?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        enrollment.program?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        enrollment.academic_year?.toLowerCase().includes(searchTerm.toLowerCase())
+      )
+    }
+    
+    // Apply status filter
+    if (filters.enrollments.status !== 'all') {
+      filtered = filtered.filter((enrollment: any) => 
+        enrollment.status === filters.enrollments.status
+      )
+    }
+    
+    // Apply program filter
+    if (filters.enrollments.program !== 'all') {
+      filtered = filtered.filter((enrollment: any) => 
+        enrollment.program_id === filters.enrollments.program
+      )
+    }
+    
+    // Apply year filter
+    if (filters.enrollments.year !== 'all') {
+      filtered = filtered.filter((enrollment: any) => 
+        enrollment.year?.toString() === filters.enrollments.year
+      )
+    }
+    
+    // Apply semester filter
+    if (filters.enrollments.semester !== 'all') {
+      filtered = filtered.filter((enrollment: any) => 
+        enrollment.semester_id === filters.enrollments.semester
+      )
+    }
+    
+    // Apply academic year filter
+    if (filters.enrollments.academicYear !== 'all') {
+      filtered = filtered.filter((enrollment: any) => 
+        enrollment.academic_year_id === filters.enrollments.academicYear
+      )
+    }
+    
+    return filtered
+  }, [enrollments, searchTerm, filters.enrollments])
 
   // Form handlers
-  const openForm = (type: string, mode: 'create' | 'edit', data?: any) => {
-    setFormState({ type, mode, data })
+  const openForm = (type: string, mode: 'create' | 'edit' | 'bulk', data?: any) => {
+    setFormState({ type, mode, data: data || null })
   }
 
   const closeForm = () => {
@@ -360,7 +918,53 @@ export default function AcademicHubPage() {
 
   const handleSave = async (data: any) => {
     try {
-      console.log('Saving data:', data, 'Type:', formState.type, 'Mode:', formState.mode)
+      // Handle bulk operations
+      if (Array.isArray(data)) {
+        // Process bulk operations based on form type
+        switch (formState.type) {
+          case 'section':
+            for (const item of data) {
+              await createSection(item)
+            }
+            break
+          case 'enrollment':
+            for (const item of data) {
+              // For section enrollments, we need to create the section enrollment
+              try {
+                // Import and call the server action
+                const { createSectionEnrollment } = await import('@/lib/domains/courses/actions')
+                const formData = new FormData()
+                formData.append('student_id', item.student_id)
+                formData.append('section_id', item.section_id)
+                formData.append('enrollment_date', item.enrollment_date)
+                formData.append('status', item.status || 'active')
+                formData.append('grade', item.grade || '')
+                formData.append('notes', item.notes || '')
+                
+                const result = await createSectionEnrollment({}, formData)
+                if (result.type === 'error') {
+                  // Handle error silently or throw if needed
+                  throw new Error(result.message)
+                }
+              } catch (error) {
+                // Handle error silently or re-throw if needed
+                throw error
+              }
+            }
+            break
+          default:
+            // Bulk operation not supported for this type
+        }
+        // Refresh data after bulk operations
+        await Promise.all([
+          fetchSections(),
+          fetchSectionEnrollments(),
+          fetchCourseAssignments(),
+          fetchUsers()
+        ])
+        closeForm()
+        return
+      }
       
       // Route to appropriate CRUD operation based on form type
       switch (formState.type) {
@@ -438,13 +1042,49 @@ export default function AcademicHubPage() {
           }
           break
           
+        case 'enrollment':
+          // Handle single enrollment creation or update
+          try {
+            const { createSectionEnrollment, updateSectionEnrollment } = await import('@/lib/domains/courses/actions')
+            const formData = new FormData()
+            
+            // Add ID for updates
+            if (formState.mode === 'edit' && data.id) {
+              formData.append('id', data.id)
+            }
+            
+            formData.append('student_id', data.student_id)
+            formData.append('section_id', data.section_id)
+            formData.append('enrollment_date', data.enrollment_date)
+            formData.append('status', data.status || 'active')
+            formData.append('grade', data.grade || '')
+            formData.append('notes', data.notes || '')
+            
+            const result = formState.mode === 'edit' 
+              ? await updateSectionEnrollment({}, formData)
+              : await createSectionEnrollment({}, formData)
+            
+            if (result.type === 'error') {
+              throw new Error(result.message)
+            }
+            
+            // Refresh data after enrollment operation
+            await Promise.all([
+              fetchSections(),
+              fetchSectionEnrollments(),
+              fetchUsers()
+            ])
+          } catch (error) {
+            throw error
+          }
+          break
+          
         default:
-          console.warn('Unknown form type:', formState.type)
+          // Unknown form type
       }
       
       closeForm()
     } catch (error) {
-      console.error('Error saving data:', error)
       setError('Failed to save data')
     }
   }
@@ -479,11 +1119,23 @@ export default function AcademicHubPage() {
         case 'course-assignment':
           await deleteCourseAssignment(id)
           break
+        case 'enrollment':
+          const { deleteSectionEnrollment } = await import('@/lib/domains/courses/actions')
+          const result = await deleteSectionEnrollment(id)
+          if (result.type === 'error') {
+            throw new Error(result.message)
+          }
+          // Refresh data after deletion
+          await Promise.all([
+            fetchSectionEnrollments(),
+            fetchSections(),
+            fetchUsers()
+          ])
+          break
         default:
-          console.warn('Unknown delete type:', type)
+          // Unknown delete type
       }
     } catch (error) {
-      console.error('Error deleting item:', error)
       setError('Failed to delete item')
     }
   }
@@ -504,6 +1156,22 @@ export default function AcademicHubPage() {
               Create Academic Year
             </Button>
           </Box>
+          <FilterBar
+            fields={[
+              { 
+                type: 'native-select', 
+                label: 'Status', 
+                value: filters.academicYears.isCurrent, 
+                onChange: (v) => setFilters(prev => ({ ...prev, academicYears: { ...prev.academicYears, isCurrent: v } })), 
+                options: [
+                  { value: 'all', label: 'All' },
+                  { value: 'current', label: 'Current' },
+                  { value: 'past', label: 'Past' }
+                ], 
+                span: 3 
+              }
+            ]}
+          />
           <SearchFilters
             searchTerm={searchTerm}
             onSearchChange={setSearchTerm}
@@ -517,8 +1185,8 @@ export default function AcademicHubPage() {
               { key: "start_date", label: "Start Date" },
               { key: "end_date", label: "End Date" },
               { key: "is_current", label: "Current" }
-            ] as any} 
-            data={academicData.academicYears as any}
+            ]} 
+            data={filteredAcademicYears as AcademicYearData[]}
             onEdit={(item: any) => openForm('academic-year', 'edit', item)}
             onDelete={(item: any) => handleDelete('academic-year', item.id)}
           />
@@ -540,6 +1208,33 @@ export default function AcademicHubPage() {
               Create Semester
             </Button>
           </Box>
+          <FilterBar
+            fields={[
+              { 
+                type: 'native-select', 
+                label: 'Status', 
+                value: filters.semesters.isCurrent, 
+                onChange: (v) => setFilters(prev => ({ ...prev, semesters: { ...prev.semesters, isCurrent: v } })), 
+                options: [
+                  { value: 'all', label: 'All' },
+                  { value: 'current', label: 'Current' },
+                  { value: 'past', label: 'Past' }
+                ], 
+                span: 3 
+              },
+              { 
+                type: 'native-select', 
+                label: 'Academic Year', 
+                value: filters.semesters.academicYear, 
+                onChange: (v) => setFilters(prev => ({ ...prev, semesters: { ...prev.semesters, academicYear: v } })), 
+                options: [
+                  { value: 'all', label: 'All Years' },
+                  ...academicData.academicYears.map(year => ({ value: year.id, label: year.year_name }))
+                ], 
+                span: 4 
+              }
+            ]}
+          />
           <SearchFilters
             searchTerm={searchTerm}
             onSearchChange={setSearchTerm}
@@ -554,8 +1249,8 @@ export default function AcademicHubPage() {
               { key: "start_date", label: "Start Date" },
               { key: "end_date", label: "End Date" },
               { key: "is_current", label: "Current" }
-            ] as any} 
-            data={academicData.semesters as any}
+            ]} 
+            data={filteredSemesters as SemesterData[]}
             onEdit={(item: any) => openForm('semester', 'edit', item)}
             onDelete={(item: any) => handleDelete('semester', item.id)}
           />
@@ -577,6 +1272,22 @@ export default function AcademicHubPage() {
               Create Department
             </Button>
           </Box>
+          <FilterBar
+            fields={[
+              { 
+                type: 'native-select', 
+                label: 'Status', 
+                value: filters.departments.isActive, 
+                onChange: (v) => setFilters(prev => ({ ...prev, departments: { ...prev.departments, isActive: v } })), 
+                options: [
+                  { value: 'all', label: 'All' },
+                  { value: 'active', label: 'Active' },
+                  { value: 'inactive', label: 'Inactive' }
+                ], 
+                span: 3 
+              }
+            ]}
+          />
           <SearchFilters
             searchTerm={searchTerm}
             onSearchChange={setSearchTerm}
@@ -589,8 +1300,8 @@ export default function AcademicHubPage() {
               { key: "department_code", label: "Code" },
               { key: "department_name", label: "Name" },
               { key: "description", label: "Description" }
-            ] as any} 
-            data={academicData.departments as any}
+            ]} 
+            data={filteredDepartments as DepartmentData[]}
             onEdit={(item: any) => openForm('department', 'edit', item)}
             onDelete={(item: any) => handleDelete('department', item.id)}
           />
@@ -612,6 +1323,47 @@ export default function AcademicHubPage() {
               Create Program
             </Button>
           </Box>
+          <FilterBar
+            fields={[
+              { 
+                type: 'native-select', 
+                label: 'Status', 
+                value: filters.programs.isActive, 
+                onChange: (v) => setFilters(prev => ({ ...prev, programs: { ...prev.programs, isActive: v } })), 
+                options: [
+                  { value: 'all', label: 'All' },
+                  { value: 'active', label: 'Active' },
+                  { value: 'inactive', label: 'Inactive' }
+                ], 
+                span: 2 
+              },
+              { 
+                type: 'native-select', 
+                label: 'Department', 
+                value: filters.programs.department, 
+                onChange: (v) => setFilters(prev => ({ ...prev, programs: { ...prev.programs, department: v } })), 
+                options: [
+                  { value: 'all', label: 'All Departments' },
+                  ...academicData.departments.map(dept => ({ value: dept.id, label: dept.department_name }))
+                ], 
+                span: 4 
+              },
+              { 
+                type: 'native-select', 
+                label: 'Degree Type', 
+                value: filters.programs.degreeType, 
+                onChange: (v) => setFilters(prev => ({ ...prev, programs: { ...prev.programs, degreeType: v } })), 
+                options: [
+                  { value: 'all', label: 'All Types' },
+                  { value: 'Bachelor', label: 'Bachelor' },
+                  { value: 'Master', label: 'Master' },
+                  { value: 'PhD', label: 'PhD' },
+                  { value: 'Certificate', label: 'Certificate' }
+                ], 
+                span: 3 
+              }
+            ]}
+          />
           <SearchFilters
             searchTerm={searchTerm}
             onSearchChange={setSearchTerm}
@@ -625,8 +1377,8 @@ export default function AcademicHubPage() {
               { key: "program_name", label: "Name" },
               { key: "degree_type", label: "Degree Type" },
               { key: "duration_years", label: "Duration" }
-            ] as any} 
-            data={academicData.programs as any}
+            ]} 
+            data={filteredPrograms as ProgramData[]}
             onEdit={(item: any) => openForm('program', 'edit', item)}
             onDelete={(item: any) => handleDelete('program', item.id)}
           />
@@ -638,7 +1390,7 @@ export default function AcademicHubPage() {
       value: "sections",
       content: (
         <>
-          <Box sx={{ display: "flex", gap: 1.5, mb: 2 }}>
+          <Box sx={{ display: "flex", gap: 1.5, mb: 2, flexWrap: "wrap" }}>
             <Button 
               variant="contained" 
               startIcon={<PlusIcon className="h-4 w-4" />} 
@@ -647,7 +1399,78 @@ export default function AcademicHubPage() {
             >
               Create Section
             </Button>
+            <Button 
+              variant="outlined" 
+              startIcon={<PlusIcon className="h-4 w-4" />} 
+              sx={{ ...BUTTON_STYLES.outlined, ...TYPOGRAPHY_STYLES.buttonText }}
+              onClick={() => openForm('section', 'bulk')}
+            >
+              Bulk Create Sections
+            </Button>
           </Box>
+          <FilterBar
+            fields={[
+              { 
+                type: 'native-select', 
+                label: 'Status', 
+                value: filters.sections.isActive, 
+                onChange: (v) => setFilters(prev => ({ ...prev, sections: { ...prev.sections, isActive: v } })), 
+                options: [
+                  { value: 'all', label: 'All' },
+                  { value: 'active', label: 'Active' },
+                  { value: 'inactive', label: 'Inactive' }
+                ], 
+                span: 2 
+              },
+              { 
+                type: 'native-select', 
+                label: 'Program', 
+                value: filters.sections.program, 
+                onChange: (v) => setFilters(prev => ({ ...prev, sections: { ...prev.sections, program: v } })), 
+                options: [
+                  { value: 'all', label: 'All Programs' },
+                  ...academicData.programs.map(program => ({ value: program.id, label: program.program_name }))
+                ], 
+                span: 3 
+              },
+              { 
+                type: 'native-select', 
+                label: 'Year', 
+                value: filters.sections.year, 
+                onChange: (v) => setFilters(prev => ({ ...prev, sections: { ...prev.sections, year: v } })), 
+                options: [
+                  { value: 'all', label: 'All Years' },
+                  { value: '1', label: 'Year 1' },
+                  { value: '2', label: 'Year 2' },
+                  { value: '3', label: 'Year 3' },
+                  { value: '4', label: 'Year 4' }
+                ], 
+                span: 2 
+              },
+              { 
+                type: 'native-select', 
+                label: 'Semester', 
+                value: filters.sections.semester, 
+                onChange: (v) => setFilters(prev => ({ ...prev, sections: { ...prev.sections, semester: v } })), 
+                options: [
+                  { value: 'all', label: 'All Semesters' },
+                  ...academicData.semesters.map(semester => ({ value: semester.id, label: semester.semester_name }))
+                ], 
+                span: 3 
+              },
+              { 
+                type: 'native-select', 
+                label: 'Academic Year', 
+                value: filters.sections.academicYear, 
+                onChange: (v) => setFilters(prev => ({ ...prev, sections: { ...prev.sections, academicYear: v } })), 
+                options: [
+                  { value: 'all', label: 'All Years' },
+                  ...academicData.academicYears.map(year => ({ value: year.id, label: year.year_name }))
+                ], 
+                span: 2 
+              }
+            ]}
+          />
           <SearchFilters
             searchTerm={searchTerm}
             onSearchChange={setSearchTerm}
@@ -656,8 +1479,8 @@ export default function AcademicHubPage() {
           />
           <DataTable 
             title="Sections" 
-            columns={classColumns as any} 
-            data={filteredClasses as any}
+            columns={sectionColumns} 
+            data={filteredSections as any}
             onEdit={(item: any) => {
               // Find the original section data from academicData.sections
               const originalSection = academicData.sections.find(s => s.id === item.id)
@@ -688,9 +1511,59 @@ export default function AcademicHubPage() {
               sx={{ ...BUTTON_STYLES.outlined, ...TYPOGRAPHY_STYLES.buttonText }}
               onClick={() => openForm('course-assignment', 'create')}
             >
-              Assign Course to Class
+              Assign Course to Program
             </Button>
           </Box>
+          <FilterBar
+            fields={[
+              { 
+                type: 'native-select', 
+                label: 'Assignment Status', 
+                value: filters.courses.assignmentStatus, 
+                onChange: (v) => setFilters(prev => ({ ...prev, courses: { ...prev.courses, assignmentStatus: v } })), 
+                options: [
+                  { value: 'all', label: 'All Courses' },
+                  { value: 'assigned', label: 'Assigned to Programs' },
+                  { value: 'unassigned', label: 'Not Assigned' }
+                ], 
+                span: 2 
+              },
+              { 
+                type: 'native-select', 
+                label: 'Lecturer Status', 
+                value: filters.courses.lecturerStatus, 
+                onChange: (v) => setFilters(prev => ({ ...prev, courses: { ...prev.courses, lecturerStatus: v } })), 
+                options: [
+                  { value: 'all', label: 'All Lecturers' },
+                  { value: 'assigned', label: 'Has Lecturer' },
+                  { value: 'unassigned', label: 'No Lecturer' }
+                ], 
+                span: 2 
+              },
+              { 
+                type: 'native-select', 
+                label: 'Faculty/Department', 
+                value: filters.courses.department, 
+                onChange: (v) => setFilters(prev => ({ ...prev, courses: { ...prev.courses, department: v } })), 
+                options: [
+                  { value: 'all', label: 'All Faculties' },
+                  ...academicData.departments.map(dept => ({ value: dept.department_name, label: dept.department_name }))
+                ], 
+                span: 3 
+              },
+              { 
+                type: 'native-select', 
+                label: 'Program', 
+                value: filters.courses.program, 
+                onChange: (v) => setFilters(prev => ({ ...prev, courses: { ...prev.courses, program: v } })), 
+                options: [
+                  { value: 'all', label: 'All Programs' },
+                  ...academicData.programs.map(program => ({ value: program.id, label: program.program_name }))
+                ], 
+                span: 3 
+              }
+            ]}
+          />
           <SearchFilters
             searchTerm={searchTerm}
             onSearchChange={setSearchTerm}
@@ -699,9 +1572,13 @@ export default function AcademicHubPage() {
           />
           <DataTable 
             title="Courses" 
-            columns={courseColumns as any} 
-            data={filteredCourses as any}
-            onEdit={(course: any) => openForm('course', 'edit', course)}
+            columns={courseColumns} 
+            data={filteredCourses as Course[]}
+            onEdit={(course: any) => {
+              // Find the original course data
+              const originalCourse = state.courses.find(c => c.id === course.id)
+              openForm('course', 'edit', originalCourse)
+            }}
             onDelete={(course: any) => handleDelete('course', course.id)}
           />
         </>
@@ -722,6 +1599,67 @@ export default function AcademicHubPage() {
               Create Classroom
             </Button>
           </Box>
+          <FilterBar
+            fields={[
+              { 
+                type: 'native-select', 
+                label: 'Status', 
+                value: filters.classrooms.isActive, 
+                onChange: (v) => setFilters(prev => ({ ...prev, classrooms: { ...prev.classrooms, isActive: v } })), 
+                options: [
+                  { value: 'all', label: 'All Status' },
+                  { value: 'active', label: 'Active' },
+                  { value: 'inactive', label: 'Inactive' }
+                ], 
+                span: 2 
+              },
+              { 
+                type: 'native-select', 
+                label: 'Room Type', 
+                value: filters.classrooms.roomType, 
+                onChange: (v) => setFilters(prev => ({ ...prev, classrooms: { ...prev.classrooms, roomType: v } })), 
+                options: [
+                  { value: 'all', label: 'All Types' },
+                  { value: 'lecture', label: 'Lecture Hall' },
+                  { value: 'lab', label: 'Laboratory' },
+                  { value: 'computer_lab', label: 'Computer Lab' },
+                  { value: 'seminar', label: 'Seminar Room' },
+                  { value: 'conference', label: 'Conference Room' },
+                  { value: 'workshop', label: 'Workshop' },
+                  { value: 'studio', label: 'Studio' }
+                ], 
+                span: 3 
+              },
+              { 
+                type: 'native-select', 
+                label: 'Building', 
+                value: filters.classrooms.building, 
+                onChange: (v) => setFilters(prev => ({ ...prev, classrooms: { ...prev.classrooms, building: v } })), 
+                options: [
+                  { value: 'all', label: 'All Buildings' },
+                  ...Array.from(new Set(academicData.classrooms.map(room => room.building))).map(building => ({ 
+                    value: building, 
+                    label: building 
+                  }))
+                ], 
+                span: 3 
+              },
+              { 
+                type: 'native-select', 
+                label: 'Capacity', 
+                value: filters.classrooms.capacity, 
+                onChange: (v) => setFilters(prev => ({ ...prev, classrooms: { ...prev.classrooms, capacity: v } })), 
+                options: [
+                  { value: 'all', label: 'All Capacities' },
+                  { value: 'small', label: 'Small (1-30)' },
+                  { value: 'medium', label: 'Medium (31-60)' },
+                  { value: 'large', label: 'Large (61-100)' },
+                  { value: 'xlarge', label: 'Extra Large (100+)' }
+                ], 
+                span: 2 
+              }
+            ]}
+          />
           <SearchFilters
             searchTerm={searchTerm}
             onSearchChange={setSearchTerm}
@@ -730,9 +1668,13 @@ export default function AcademicHubPage() {
           />
           <DataTable 
             title="Classrooms" 
-            columns={classroomColumns as any} 
+            columns={classroomColumns} 
             data={filteredRooms as any}
-            onEdit={(item: any) => openForm('classroom', 'edit', item)}
+            onEdit={(item: any) => {
+              // Find the original classroom data
+              const originalClassroom = academicData.classrooms.find(c => c.id === item.id)
+              openForm('classroom', 'edit', originalClassroom)
+            }}
             onDelete={(item: any) => handleDelete('classroom', item.id)}
           />
         </>
@@ -750,7 +1692,7 @@ export default function AcademicHubPage() {
               sx={{ ...BUTTON_STYLES.outlined, ...TYPOGRAPHY_STYLES.buttonText }}
               onClick={() => openForm('course-assignment', 'create')}
             >
-              Assign Course → Class
+              Assign Course → Program
             </Button>
             <Button 
               variant="contained" 
@@ -767,7 +1709,17 @@ export default function AcademicHubPage() {
             searchPlaceholder="Search assignments..."
             filters={[]}
           />
-          <DataTable title="Teacher Assignments" columns={assignmentColumns as any} data={filteredAssignments as any} />
+          <DataTable 
+            title="Course Assignments" 
+            columns={assignmentColumns} 
+            data={filteredAssignments as any}
+            onEdit={(item: any) => {
+              // Find the original assignment data
+              const originalAssignment = state.courseAssignments.find(a => a.id === item.id)
+              openForm('course-assignment', 'edit', originalAssignment)
+            }}
+            onDelete={(item: any) => handleDelete('course-assignment', item.id)}
+          />
         </>
       )
     },
@@ -776,7 +1728,7 @@ export default function AcademicHubPage() {
       value: "enrollments",
       content: (
         <>
-          <Box sx={{ display: "flex", gap: 1.5, mb: 2 }}>
+          <Box sx={{ display: "flex", gap: 1.5, mb: 2, flexWrap: "wrap" }}>
             <Button 
               variant="contained" 
               startIcon={<UserPlusIcon className="h-4 w-4" />} 
@@ -785,14 +1737,96 @@ export default function AcademicHubPage() {
             >
               Enroll Student
             </Button>
+            <Button 
+              variant="outlined" 
+              startIcon={<UserPlusIcon className="h-4 w-4" />} 
+              sx={{ ...BUTTON_STYLES.outlined, ...TYPOGRAPHY_STYLES.buttonText }}
+              onClick={() => openForm('enrollment', 'bulk')}
+            >
+              Bulk Enroll Students
+            </Button>
           </Box>
+          <FilterBar
+            fields={[
+              { 
+                type: 'native-select', 
+                label: 'Status', 
+                value: filters.enrollments.status, 
+                onChange: (v) => setFilters(prev => ({ ...prev, enrollments: { ...prev.enrollments, status: v } })), 
+                options: [
+                  { value: 'all', label: 'All' },
+                  { value: 'active', label: 'Active' },
+                  { value: 'dropped', label: 'Dropped' },
+                  { value: 'completed', label: 'Completed' }
+                ], 
+                span: 2 
+              },
+              { 
+                type: 'native-select', 
+                label: 'Program', 
+                value: filters.enrollments.program, 
+                onChange: (v) => setFilters(prev => ({ ...prev, enrollments: { ...prev.enrollments, program: v } })), 
+                options: [
+                  { value: 'all', label: 'All Programs' },
+                  ...academicData.programs.map(program => ({ value: program.id, label: program.program_name }))
+                ], 
+                span: 3 
+              },
+              { 
+                type: 'native-select', 
+                label: 'Year', 
+                value: filters.enrollments.year, 
+                onChange: (v) => setFilters(prev => ({ ...prev, enrollments: { ...prev.enrollments, year: v } })), 
+                options: [
+                  { value: 'all', label: 'All Years' },
+                  { value: '1', label: 'Year 1' },
+                  { value: '2', label: 'Year 2' },
+                  { value: '3', label: 'Year 3' },
+                  { value: '4', label: 'Year 4' }
+                ], 
+                span: 2 
+              },
+              { 
+                type: 'native-select', 
+                label: 'Semester', 
+                value: filters.enrollments.semester, 
+                onChange: (v) => setFilters(prev => ({ ...prev, enrollments: { ...prev.enrollments, semester: v } })), 
+                options: [
+                  { value: 'all', label: 'All Semesters' },
+                  ...academicData.semesters.map(semester => ({ value: semester.id, label: semester.semester_name }))
+                ], 
+                span: 3 
+              },
+              { 
+                type: 'native-select', 
+                label: 'Academic Year', 
+                value: filters.enrollments.academicYear, 
+                onChange: (v) => setFilters(prev => ({ ...prev, enrollments: { ...prev.enrollments, academicYear: v } })), 
+                options: [
+                  { value: 'all', label: 'All Years' },
+                  ...academicData.academicYears.map(year => ({ value: year.id, label: year.year_name }))
+                ], 
+                span: 2 
+              }
+            ]}
+          />
           <SearchFilters
             searchTerm={searchTerm}
             onSearchChange={setSearchTerm}
             searchPlaceholder="Search students..."
             filters={[]}
           />
-          <DataTable title="Enrollments" columns={enrollmentColumns as any} data={filteredEnrollments as any} />
+          <DataTable 
+            title="Student Enrollments" 
+            columns={enrollmentColumns} 
+            data={filteredEnrollments as any}
+            onEdit={(item: any) => {
+              // Find the original enrollment data
+              const originalEnrollment = academicState.sectionEnrollments.find(e => e.id === item.id)
+              openForm('enrollment', 'edit', originalEnrollment)
+            }}
+            onDelete={(item: any) => handleDelete('enrollment', item.id)}
+          />
         </>
       )
     }
@@ -861,7 +1895,7 @@ export default function AcademicHubPage() {
         <DetailTabs
           tabs={tabs}
           activeTab={activeTab}
-          onTabChange={setActiveTab as any}
+          onTabChange={setActiveTab}
         />
       </Box>
 
@@ -871,9 +1905,9 @@ export default function AcademicHubPage() {
         <AcademicYearForm
           open={Boolean(formState.type)}
           onOpenChange={closeForm}
-          academicYear={formState.data}
-          onSave={handleSave}
-          mode={formState.mode || 'create'}
+          academicYear={formState.data as any}
+          onSave={handleSave as any}
+          mode={(formState.mode === 'bulk' ? 'create' : formState.mode) || 'create'}
         />
       )}
 
@@ -881,10 +1915,10 @@ export default function AcademicHubPage() {
         <SemesterForm
           open={Boolean(formState.type)}
           onOpenChange={closeForm}
-          semester={formState.data}
+          semester={formState.data as any}
           academicYears={academicData.academicYears}
-          onSave={handleSave}
-          mode={formState.mode || 'create'}
+          onSave={handleSave as any}
+          mode={(formState.mode === 'bulk' ? 'create' : formState.mode) || 'create'}
         />
       )}
 
@@ -892,10 +1926,10 @@ export default function AcademicHubPage() {
         <DepartmentForm
           open={Boolean(formState.type)}
           onOpenChange={closeForm}
-          department={formState.data}
+          department={formState.data as any}
           users={state.users}
-          onSave={handleSave}
-          mode={formState.mode || 'create'}
+          onSave={handleSave as any}
+          mode={(formState.mode === 'bulk' ? 'create' : formState.mode) || 'create'}
         />
       )}
 
@@ -903,10 +1937,10 @@ export default function AcademicHubPage() {
         <ProgramForm
           open={Boolean(formState.type)}
           onOpenChange={closeForm}
-          program={formState.data}
+          program={formState.data as any}
           departments={academicData.departments}
-          onSave={handleSave}
-          mode={formState.mode || 'create'}
+          onSave={handleSave as any}
+          mode={(formState.mode === 'bulk' ? 'create' : formState.mode) || 'create'}
         />
       )}
 
@@ -914,9 +1948,9 @@ export default function AcademicHubPage() {
         <ClassroomForm
           open={Boolean(formState.type)}
           onOpenChange={closeForm}
-          classroom={formState.data}
-          onSave={handleSave}
-          mode={formState.mode || 'create'}
+          classroom={formState.data as any}
+          onSave={handleSave as any}
+          mode={(formState.mode === 'bulk' ? 'create' : formState.mode) || 'create'}
         />
       )}
 
@@ -924,13 +1958,14 @@ export default function AcademicHubPage() {
         <SectionForm
           open={Boolean(formState.type)}
           onOpenChange={closeForm}
-          section={formState.data}
+          section={formState.data as any}
           academicYears={academicData.academicYears}
           semesters={academicData.semesters}
           programs={academicData.programs}
           classrooms={academicData.classrooms}
-          onSave={handleSave}
-          mode={formState.mode || 'create'}
+          onSave={handleSave as any}
+          mode={formState.mode as 'create' | 'edit' | 'bulk'}
+          bulkData={formState.mode === 'bulk' ? [] : undefined}
         />
       )}
 
@@ -939,11 +1974,11 @@ export default function AcademicHubPage() {
         <CourseForm
           open={Boolean(formState.type)}
           onOpenChange={closeForm}
-          course={formState.data}
-          onSave={handleSave}
-          mode={formState.mode || 'create'}
+          course={formState.data as any}
+          onSave={handleSave as any}
+          mode={(formState.mode === 'bulk' ? 'create' : formState.mode) || 'create'}
           departments={academicData.departments}
-          lecturers={academicData.lecturerProfiles}
+          users={state.users}
         />
       )}
 
@@ -951,14 +1986,14 @@ export default function AcademicHubPage() {
         <CourseAssignmentForm
           open={Boolean(formState.type)}
           onOpenChange={closeForm}
-          assignment={formState.data}
-          onSave={handleSave}
-          mode={formState.mode || 'create'}
+          assignment={formState.data as any}
+          onSave={handleSave as any}
+          mode={(formState.mode === 'bulk' ? 'create' : formState.mode) || 'create'}
           courses={courses}
           academicYears={academicData.academicYears}
           semesters={academicData.semesters}
           programs={academicData.programs}
-          sections={academicData.sections}
+          sections={sections}
         />
       )}
 
@@ -966,13 +2001,12 @@ export default function AcademicHubPage() {
         <TeacherAssignmentForm
           open={Boolean(formState.type)}
           onOpenChange={closeForm}
-          assignment={formState.data}
-          onSave={handleSave}
-          mode={formState.mode || 'create'}
+          assignment={formState.data as any}
+          onSave={handleSave as any}
+          mode={(formState.mode === 'bulk' ? 'create' : formState.mode) || 'create'}
           lecturers={(() => {
             // Try using state.users first, then fallback to lecturerProfiles
             const lecturerUsers = state.users.filter(u => u.role === 'lecturer')
-            console.log('Lecturer users from state.users:', lecturerUsers)
             
             if (lecturerUsers.length > 0) {
               return lecturerUsers.map((user: any) => ({
@@ -990,18 +2024,13 @@ export default function AcademicHubPage() {
               email: lp.users?.email || lp.email || 'unknown@email.com',
               role: 'lecturer'
             }))
-            console.log('TeacherAssignmentForm lecturers (from profiles):', lecturerList)
-            console.log('Raw lecturerProfiles data:', state.lecturerProfiles)
             return lecturerList
           })()}
-          courses={(() => {
-            console.log('TeacherAssignmentForm courses:', state.courses)
-            return state.courses
-          })()}
+          courses={state.courses}
           academicYears={academicData.academicYears}
           semesters={academicData.semesters}
           programs={academicData.programs}
-          sections={academicData.sections}
+          sections={sections}
         />
       )}
 
@@ -1009,13 +2038,12 @@ export default function AcademicHubPage() {
         <EnrollmentForm
           open={Boolean(formState.type)}
           onOpenChange={closeForm}
-          enrollment={formState.data}
-          onSave={handleSave}
-          mode={formState.mode || 'create'}
+          enrollment={formState.data as any}
+          onSave={handleSave as any}
+          mode={formState.mode as 'create' | 'edit' | 'bulk'}
           students={state.users.filter(u => u.role === 'student')}
-          sections={academicData.sections}
-          academicYears={academicData.academicYears}
-          semesters={academicData.semesters}
+          sections={sections}
+          bulkData={formState.mode === 'bulk' ? [] : undefined}
         />
       )}
 
@@ -1024,9 +2052,9 @@ export default function AcademicHubPage() {
         <LecturerForm
           open={Boolean(formState.type)}
           onOpenChange={closeForm}
-          lecturer={formState.data}
-          onSave={handleSave}
-          mode={formState.mode || 'create'}
+          lecturer={formState.data as any}
+          onSave={handleSave as any}
+          mode={(formState.mode === 'bulk' ? 'create' : formState.mode) || 'create'}
           departments={academicData.departments}
         />
       )}
@@ -1035,9 +2063,9 @@ export default function AcademicHubPage() {
         <StudentForm
           open={Boolean(formState.type)}
           onOpenChange={closeForm}
-          student={formState.data}
-          onSave={handleSave}
-          mode={formState.mode || 'create'}
+          student={formState.data as any}
+          onSave={handleSave as any}
+          mode={(formState.mode === 'bulk' ? 'create' : formState.mode) || 'create'}
           programs={academicData.programs}
           academicYears={academicData.academicYears}
           semesters={academicData.semesters}
@@ -1048,9 +2076,9 @@ export default function AcademicHubPage() {
         <AdminForm
           open={Boolean(formState.type)}
           onOpenChange={closeForm}
-          admin={formState.data}
-          onSave={handleSave}
-          mode={formState.mode || 'create'}
+          admin={formState.data as any}
+          onSave={handleSave as any}
+          mode={(formState.mode === 'bulk' ? 'create' : formState.mode) || 'create'}
           departments={academicData.departments}
         />
       )}

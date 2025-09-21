@@ -77,7 +77,7 @@ import {
   EyeIcon
 } from "@heroicons/react/24/outline"
 import { formatDate } from "@/lib/utils"
-import { useData } from "@/lib/contexts/DataContext"
+import { useAuth, useAcademicStructure, useCourses } from "@/lib/domains"
 import { useMockData } from "@/lib/hooks/useMockData"
 import { AddUserForm } from "@/components/admin/add-user-form"
 import PageHeader from "@/components/admin/PageHeader"
@@ -197,7 +197,16 @@ export default function AdminUsersPage() {
   const router = useRouter()
   
   // Data Context
-  const { state } = useData()
+  const auth = useAuth()
+  const academic = useAcademicStructure()
+  const courses = useCourses()
+  
+  // Create legacy state object for compatibility
+  const state = {
+    ...auth.state,
+    ...academic.state,
+    ...courses.state
+  }
   const { isInitialized } = useMockData()
   
   const [searchTerm, setSearchTerm] = useState("")

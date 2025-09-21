@@ -1,10 +1,11 @@
 "use client"
 
-import { useData } from "@/lib/contexts/DataContext"
+import { useAuth } from "@/lib/domains"
 import { useState, useEffect } from "react"
 
 export default function AdminPage() {
-  const { state } = useData()
+  const auth = useAuth()
+  const { state } = auth
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {

@@ -36,7 +36,7 @@ import {
   TrophyIcon
 } from "@heroicons/react/24/outline"
 import { formatDate, formatNumber } from "@/lib/utils"
-import { useData } from "@/lib/contexts/DataContext"
+import { useAuth, useCourses, useAttendance, useGrades } from "@/lib/domains"
 import { useMockData } from "@/lib/hooks/useMockData"
 import { Course, Student, Assignment, Submission, AttendanceSession } from "@/lib/types/shared"
 
@@ -108,17 +108,40 @@ interface RecentActivity {
 
 
 export default function StudentDashboardPage() {
+  const auth = useAuth()
+  const coursesHook = useCourses()
+  const attendance = useAttendance()
+  const grades = useGrades()
+  
+  // Extract state and methods
+  const { state: authState } = auth
   const { 
-    state, 
+    state: coursesState,
     getCoursesByLecturer, 
-    getStudentsByCourse,
+    getStudentsByCourse
+  } = coursesHook
+  
+  const { 
+    state: attendanceState,
+    getAttendanceSessionsByCourse,
+    getAttendanceRecordsBySession
+  } = attendance
+  
+  const { 
+    state: gradesState,
     getAssignmentsByCourse,
     getSubmissionsByAssignment,
-    getAttendanceSessionsByCourse,
-    getAttendanceRecordsBySession,
     getStudentGradesByCourse,
     calculateFinalGrade
-  } = useData()
+  } = grades
+  
+  // Create legacy state object for compatibility
+  const state = {
+    ...authState,
+    ...coursesState,
+    ...attendanceState,
+    ...gradesState
+  }
   const { isInitialized } = useMockData()
 
   const router = useRouter()

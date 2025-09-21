@@ -1,7 +1,7 @@
 "use client"
 
 import React from "react"
-import { Box, Tabs, Tab, Card, CardContent } from "@mui/material"
+import { Box, Tabs, Tab, Card, CardContent, Typography } from "@mui/material"
 import { motion } from "framer-motion"
 import { TYPOGRAPHY_STYLES } from "@/lib/design/fonts"
 

@@ -1,7 +1,6 @@
 "use client"
 
 import React, { useState, useMemo } from "react"
-import { motion } from "framer-motion"
 import { useRouter } from "next/navigation"
 import { 
   Box, 
@@ -18,31 +17,22 @@ import {
   Tab,
   Alert,
   IconButton,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions
 } from "@mui/material"
 import StatCard from "@/components/dashboard/stat-card"
-import { Badge } from "@/components/ui/badge"
 import { 
   CalendarDaysIcon, 
   ClockIcon, 
   MapPinIcon,
   UsersIcon, 
   QrCodeIcon,
-  CheckCircleIcon,
-  XCircleIcon,
   EyeIcon,
   MagnifyingGlassIcon,
-  XMarkIcon,
-  ExclamationTriangleIcon,
   BookOpenIcon,
-  ChartBarIcon,
-  PresentationChartLineIcon
+  XMarkIcon,
+  ChartBarIcon
 } from "@heroicons/react/24/outline"
 import { formatDate, formatNumber } from "@/lib/utils"
-import { useData } from "@/lib/contexts/DataContext"
+import { useAttendance, useCourses, useAuth } from "@/lib/domains"
 import { useMockData } from "@/lib/hooks/useMockData"
 import { AttendanceSession, Course } from "@/lib/types/shared"
 import { mapSessionStatus } from "@/lib/utils/statusMapping"
@@ -129,16 +119,34 @@ export default function StudentSessionsPage() {
   // DATA CONTEXT
   // ============================================================================
   
+  const attendance = useAttendance()
+  const coursesHook = useCourses()
+  const auth = useAuth()
+  
+  // Extract state and methods
   const { 
-    state, 
-    getCoursesByLecturer, 
+    state: attendanceState,
     getAttendanceSessionsByCourse,
     getAttendanceRecordsBySession,
-    fetchCourses,
-    fetchEnrollments,
     fetchAttendanceSessions,
     fetchAttendanceRecords
-  } = useData()
+  } = attendance
+  
+  const { 
+    state: coursesState,
+    getCoursesByLecturer, 
+    fetchCourses,
+    fetchEnrollments
+  } = coursesHook
+  
+  const { state: authState } = auth
+  
+  // Create legacy state object for compatibility
+  const state = {
+    ...attendanceState,
+    ...coursesState,
+    currentUser: authState.currentUser
+  }
   const { isInitialized } = useMockData()
   
   // ============================================================================

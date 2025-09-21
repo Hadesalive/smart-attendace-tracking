@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import LecturerDashboardLayout from "@/components/layout/lecturer-dashboard-layout"
-import { useData } from "@/lib/contexts/DataContext"
+import { useAuth } from "@/lib/domains"
 import { signOut } from "@/lib/auth"
 
 export default function LecturerLayout({
@@ -11,7 +11,8 @@ export default function LecturerLayout({
 }: {
   children: React.ReactNode
 }) {
-  const { state, loadCurrentUser } = useData()
+  const auth = useAuth()
+  const { state, loadCurrentUser } = auth
   const router = useRouter()
   const [loading, setLoading] = useState(true)
 

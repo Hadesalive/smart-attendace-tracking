@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { QRCodeCanvas } from 'qrcode.react';
 import { DialogBox } from '@/components/ui/dialog-box';
-import { useData } from '@/lib/contexts/DataContext';
+import { useAttendance } from '@/lib/domains';
 
 interface SessionQrCodeDialogProps {
   isOpen: boolean;
@@ -18,7 +18,8 @@ interface SessionQrCodeDialogProps {
 
 export default function SessionQrCodeDialog({ isOpen, onOpenChange, session }: SessionQrCodeDialogProps) {
   const [qrValue, setQrValue] = useState('');
-  const { getSessionTimeStatus } = useData();
+  const attendance = useAttendance();
+  const { getSessionTimeStatus } = attendance;
 
   useEffect(() => {
     if (session) {

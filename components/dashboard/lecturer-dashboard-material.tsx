@@ -580,7 +580,7 @@ export default function LecturerDashboard({
     }
 
     loadData()
-  }, [userId, fetchLecturerData, updateState])
+  }, [userId]) // Removed function dependencies
 
   // ============================================================================
   // EVENT HANDLERS

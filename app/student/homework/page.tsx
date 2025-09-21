@@ -43,7 +43,7 @@ import {
   XMarkIcon
 } from "@heroicons/react/24/outline"
 import { formatDate, formatNumber } from "@/lib/utils"
-import { useData } from "@/lib/contexts/DataContext"
+import { useGrades, useCourses, useAcademicStructure } from "@/lib/domains"
 import { useMockData } from "@/lib/hooks/useMockData"
 import { Course, Student, Assignment, Submission, AttendanceSession } from "@/lib/types/shared"
 import { mapAssignmentStatus, mapSubmissionStatus } from "@/lib/utils/statusMapping"
@@ -142,14 +142,32 @@ interface StudentAssignment {
 // ============================================================================
 
 export default function StudentHomeworkPage() {
+  const grades = useGrades()
+  const coursesHook = useCourses()
+  const academic = useAcademicStructure()
+  
+  // Extract state and methods
   const { 
-    state, 
-    getCoursesByLecturer, 
-    getStudentsByCourse,
+    state: gradesState,
     getAssignmentsByCourse,
     getSubmissionsByAssignment,
     createSubmission
-  } = useData()
+  } = grades
+  
+  const { 
+    state: coursesState,
+    getCoursesByLecturer, 
+    getStudentsByCourse
+  } = coursesHook
+  
+  const { state: academicState } = academic
+  
+  // Create legacy state object for compatibility
+  const state = {
+    ...gradesState,
+    ...coursesState,
+    ...academicState
+  }
   const { isInitialized } = useMockData()
 
   const router = useRouter()
@@ -185,7 +203,7 @@ export default function StudentHomeworkPage() {
   const assignments = useMemo(() => {
     const allAssignments: StudentAssignment[] = []
     
-    courses.forEach(course => {
+    state.courses.forEach(course => {
       const courseAssignments = getAssignmentsByCourse(course.id)
       courseAssignments.forEach(assignment => {
         const submissions = getSubmissionsByAssignment(assignment.id)
@@ -577,7 +595,7 @@ export default function StudentHomeworkPage() {
                 onChange={(e) => setSelectedCourse((e.target as HTMLSelectElement).value)}
               >
                 <option value="">All Courses ({assignments.length} assignments)</option>
-                {courses.map(course => {
+                {state.courses.map(course => {
                   const courseAssignments = assignments.filter(a => a.course_id === course.id)
                   return (
                     <option key={course.id} value={course.id}>
@@ -605,7 +623,7 @@ export default function StudentHomeworkPage() {
                 </Typography>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
                   <Chip 
-                    label={courses.find(c => c.id === selectedCourse)?.course_code || ''}
+                    label={state.courses.find(c => c.id === selectedCourse)?.course_code || ''}
                     size="small"
                     sx={{ 
                       bgcolor: 'hsl(var(--muted))', 
@@ -643,7 +661,7 @@ export default function StudentHomeworkPage() {
         }}>
           <MUICardContent sx={{ p: { xs: 2, sm: 2.5, md: 3 } }}>
             {(() => {
-              const selectedCourseData = courses.find(c => c.id === selectedCourse)
+              const selectedCourseData = state.courses.find(c => c.id === selectedCourse)
               const courseAssignments = filteredAssignments
               const courseStats = {
                 total: courseAssignments.length,

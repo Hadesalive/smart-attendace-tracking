@@ -12,6 +12,12 @@ interface Course {
   lecturer_id?: string
 }
 
+interface User {
+  id: string
+  full_name: string
+  role: string
+}
+
 interface CourseFormProps {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -19,7 +25,7 @@ interface CourseFormProps {
   mode: 'create' | 'edit'
   onSave: (course: Course) => Promise<void>
   departments?: any[]
-  lecturers?: any[]
+  users: User[]
 }
 
 export default function CourseForm({
@@ -29,7 +35,7 @@ export default function CourseForm({
   mode,
   onSave,
   departments = [],
-  lecturers = []
+  users
 }: CourseFormProps) {
   const [formData, setFormData] = useState<Course>({
     course_code: '',
@@ -41,6 +47,9 @@ export default function CourseForm({
 
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(false)
+
+  // Filter users to show only lecturers for course assignment
+  const eligibleLecturers = users.filter(user => user.role === 'lecturer')
 
   // Initialize form data when course prop changes
   useEffect(() => {
@@ -58,7 +67,7 @@ export default function CourseForm({
       })
     }
     setErrors({})
-  }, [course, mode, open])
+  }, [course, mode]) // Removed open from dependencies
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target
@@ -78,8 +87,8 @@ export default function CourseForm({
 
     if (!formData.course_code.trim()) {
       newErrors.course_code = 'Course code is required'
-    } else if (!/^[A-Z]{2,4}[0-9]{4}$/.test(formData.course_code)) {
-      newErrors.course_code = 'Course code must be in format like CS101, MATH2001'
+    } else if (!/^[A-Z]{2,4}[0-9]{3,4}$/.test(formData.course_code)) {
+      newErrors.course_code = 'Course code must be in format like CS101, MATH2001, ENG101'
     }
 
     if (!formData.course_name.trim()) {
@@ -249,9 +258,9 @@ export default function CourseForm({
                 disabled={loading}
               >
                 <option value="">Select Lecturer (Optional)</option>
-                {lecturers.map((lecturer) => (
+                {eligibleLecturers.map((lecturer) => (
                   <option key={lecturer.id} value={lecturer.id}>
-                    {lecturer.full_name} ({lecturer.email})
+                    {lecturer.full_name} ({lecturer.role})
                   </option>
                 ))}
               </select>

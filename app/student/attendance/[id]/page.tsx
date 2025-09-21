@@ -33,7 +33,7 @@ import {
   PresentationChartLineIcon
 } from "@heroicons/react/24/outline"
 import { formatDate, formatNumber } from "@/lib/utils"
-import { useData } from "@/lib/contexts/DataContext"
+import { useAttendance, useCourses, useAuth } from "@/lib/domains"
 import { AttendanceSession, AttendanceRecord } from "@/lib/types/shared"
 import { mapAttendanceStatus } from "@/lib/utils/statusMapping"
 
@@ -79,14 +79,32 @@ export default function StudentAttendanceDetailsPage() {
   const router = useRouter()
   const sessionId = params?.id as string
 
+  const attendance = useAttendance()
+  const courses = useCourses()
+  const auth = useAuth()
+  
+  // Extract state and methods
   const { 
-    state,
-    fetchCourses,
-    fetchEnrollments,
+    state: attendanceState,
     fetchAttendanceSessions,
     fetchAttendanceRecords,
     getAttendanceRecordsBySession
-  } = useData()
+  } = attendance
+  
+  const { 
+    state: coursesState,
+    fetchCourses,
+    fetchEnrollments
+  } = courses
+  
+  const { state: authState } = auth
+  
+  // Create legacy state object for compatibility
+  const state = {
+    ...attendanceState,
+    ...coursesState,
+    currentUser: authState.currentUser
+  }
 
   const [details, setDetails] = useState<StudentAttendanceDetails>({
     session: null,
@@ -108,7 +126,7 @@ export default function StudentAttendanceDetailsPage() {
           fetchAttendanceRecords()
         ])
 
-        const session = state.attendanceSessions.find(s => s.id === sessionId)
+        const session = state.attendanceSessions.find((s: any) => s.id === sessionId)
         if (!session) {
           setDetails(prev => ({ 
             ...prev, 
@@ -119,7 +137,7 @@ export default function StudentAttendanceDetailsPage() {
         }
 
         const records = getAttendanceRecordsBySession(sessionId)
-        const studentRecord = records.find(r => 
+        const studentRecord = records.find((r: any) => 
           !!state.currentUser?.id && r.student_id === state.currentUser.id
         )
 

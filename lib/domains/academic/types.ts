@@ -110,6 +110,27 @@ export interface AdminProfile {
   updated_at: string
 }
 
+export interface SectionEnrollment {
+  id: string
+  student_id: string
+  section_id: string
+  enrollment_date: string
+  status: 'active' | 'dropped' | 'completed'
+  grade?: string
+  notes?: string
+  created_at: string
+  updated_at: string
+  // Joined data
+  student_name?: string
+  student_id_number?: string
+  section_code?: string
+  year?: number  // From sections table
+  program_name?: string
+  program_code?: string
+  academic_year?: string
+  semester_name?: string
+}
+
 export interface AcademicState {
   academicYears: AcademicYear[]
   semesters: Semester[]
@@ -120,6 +141,7 @@ export interface AcademicState {
   studentProfiles: StudentProfile[]
   lecturerProfiles: LecturerProfile[]
   adminProfiles: AdminProfile[]
+  sectionEnrollments: SectionEnrollment[]
   loading: boolean
   error: string | null
 }
@@ -128,34 +150,36 @@ export interface AcademicContextType {
   state: AcademicState
   // Academic Years
   fetchAcademicYears: () => Promise<void>
-  createAcademicYear: (data: any) => Promise<void>
-  updateAcademicYear: (id: string, data: any) => Promise<void>
+  createAcademicYear: (data: Omit<AcademicYear, 'id' | 'created_at' | 'updated_at'>) => Promise<void>
+  updateAcademicYear: (id: string, data: Partial<AcademicYear>) => Promise<void>
   deleteAcademicYear: (id: string) => Promise<void>
   // Semesters
   fetchSemesters: () => Promise<void>
-  createSemester: (data: any) => Promise<void>
-  updateSemester: (id: string, data: any) => Promise<void>
+  createSemester: (data: Omit<Semester, 'id' | 'created_at' | 'updated_at'>) => Promise<void>
+  updateSemester: (id: string, data: Partial<Semester>) => Promise<void>
   deleteSemester: (id: string) => Promise<void>
   // Departments
   fetchDepartments: () => Promise<void>
-  createDepartment: (data: any) => Promise<void>
-  updateDepartment: (id: string, data: any) => Promise<void>
+  createDepartment: (data: Omit<Department, 'id' | 'created_at' | 'updated_at'>) => Promise<void>
+  updateDepartment: (id: string, data: Partial<Department>) => Promise<void>
   deleteDepartment: (id: string) => Promise<void>
   // Programs
   fetchPrograms: () => Promise<void>
-  createProgram: (data: any) => Promise<void>
-  updateProgram: (id: string, data: any) => Promise<void>
+  createProgram: (data: Omit<Program, 'id' | 'program_id' | 'created_at' | 'updated_at'>) => Promise<void>
+  updateProgram: (id: string, data: Partial<Program>) => Promise<void>
   deleteProgram: (id: string) => Promise<void>
   // Classrooms
   fetchClassrooms: () => Promise<void>
-  createClassroom: (data: any) => Promise<void>
-  updateClassroom: (id: string, data: any) => Promise<void>
+  createClassroom: (data: Omit<Classroom, 'id' | 'created_at' | 'updated_at'>) => Promise<void>
+  updateClassroom: (id: string, data: Partial<Classroom>) => Promise<void>
   deleteClassroom: (id: string) => Promise<void>
   // Sections
   fetchSections: () => Promise<void>
-  createSection: (data: any) => Promise<void>
-  updateSection: (id: string, data: any) => Promise<void>
+  createSection: (data: Omit<Section, 'id' | 'created_at' | 'updated_at'>) => Promise<void>
+  updateSection: (id: string, data: Partial<Section>) => Promise<void>
   deleteSection: (id: string) => Promise<void>
+  // Section Enrollments
+  fetchSectionEnrollments: () => Promise<void>
   // Profiles
   fetchStudentProfiles: () => Promise<void>
   fetchLecturerProfiles: () => Promise<void>

@@ -118,6 +118,7 @@ export const mockCourses: Course[] = [
     lecturer_name: "Dr. Sarah Johnson",
     department: "Computer Science",
     credits: 3,
+    status: "active",
     created_at: "2024-01-01T00:00:00Z"
   },
   {
@@ -128,6 +129,7 @@ export const mockCourses: Course[] = [
     lecturer_name: "Prof. Mike Smith",
     department: "Mathematics",
     credits: 4,
+    status: "active",
     created_at: "2024-01-01T00:00:00Z"
   },
   {
@@ -138,6 +140,7 @@ export const mockCourses: Course[] = [
     lecturer_name: "Dr. Sarah Johnson",
     department: "Computer Science",
     credits: 3,
+    status: "active",
     created_at: "2024-01-01T00:00:00Z"
   }
 ]

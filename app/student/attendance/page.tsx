@@ -37,7 +37,7 @@ import {
   BookOpenIcon
 } from "@heroicons/react/24/outline"
 import { formatDate, formatNumber } from "@/lib/utils"
-import { useData } from "@/lib/contexts/DataContext"
+import { useAttendance, useCourses, useAuth } from "@/lib/domains"
 import { AttendanceRecord, Course } from "@/lib/types/shared"
 import { mapAttendanceStatus } from "@/lib/utils/statusMapping"
 
@@ -87,20 +87,38 @@ const INPUT_STYLES = {
 // Using shared types from DataContext
 
 export default function StudentAttendancePage() {
+  const attendance = useAttendance()
+  const coursesHook = useCourses()
+  const auth = useAuth()
+  
+  // Extract state and methods
   const { 
-    state, 
-    getCoursesByLecturer, 
-    getStudentsByCourse,
+    state: attendanceState, 
     getAttendanceSessionsByCourse,
     getAttendanceRecordsBySession,
     markAttendanceSupabase,
     subscribeToAttendanceRecords,
     unsubscribeAll,
     fetchAttendanceSessions,
-    fetchAttendanceRecords,
+    fetchAttendanceRecords
+  } = attendance
+  
+  const { 
+    state: coursesState,
+    getCoursesByLecturer, 
+    getStudentsByCourse,
     fetchCourses,
     fetchEnrollments
-  } = useData()
+  } = coursesHook
+  
+  const { state: authState } = auth
+  
+  // Create legacy state object for compatibility
+  const state = {
+    ...attendanceState,
+    ...coursesState,
+    currentUser: authState.currentUser
+  }
 
   // Load data on component mount
   useEffect(() => {
@@ -139,7 +157,7 @@ export default function StudentAttendancePage() {
     const allRecords: any[] = []
     
     // Get all sessions for student's courses
-    courses.forEach(course => {
+    state.courses.forEach(course => {
       const sessions = getAttendanceSessionsByCourse(course.id)
       sessions.forEach(session => {
         const records = getAttendanceRecordsBySession(session.id)
@@ -219,7 +237,7 @@ export default function StudentAttendancePage() {
   const courseStats = useMemo(() => {
     const courseStatsMap = new Map()
     
-    courses.forEach(course => {
+    state.courses.forEach(course => {
       const courseRecords = attendanceRecords.filter(r => r.courseCode === course.course_code)
       const present = courseRecords.filter(r => {
         const mappedStatus = mapAttendanceStatus(r.status, 'student')
@@ -413,7 +431,7 @@ export default function StudentAttendancePage() {
                 onChange={(e) => setSelectedCourse((e.target as HTMLSelectElement).value)}
               >
                 <option value="">All Courses</option>
-                {courses.map(course => (
+                {state.courses.map(course => (
                   <option key={course.id} value={course.course_code}>
                     {course.course_code} - {course.course_name}
                   </option>

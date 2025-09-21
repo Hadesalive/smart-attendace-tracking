@@ -12,7 +12,7 @@ import {
   DocumentTextIcon,
   QrCodeIcon
 } from "@heroicons/react/24/outline"
-import { useData } from "@/lib/contexts/DataContext"
+import { useAttendance, useCourses, useAcademicStructure } from "@/lib/domains"
 import { AttendanceSession } from "@/lib/types/shared"
 
 interface CreateSessionModalProps {
@@ -32,15 +32,35 @@ export default function CreateSessionModal({
   editSession,
   onSessionUpdated
 }: CreateSessionModalProps) {
+  const attendance = useAttendance()
+  const courses = useCourses()
+  const academic = useAcademicStructure()
+  
+  // Extract state and methods
   const { 
-    state, 
-    getCoursesByLecturer, 
+    state: attendanceState,
     createAttendanceSessionSupabase,
     updateAttendanceSessionSupabase,
-    fetchAttendanceSessions,
-    fetchCourses,
+    fetchAttendanceSessions
+  } = attendance
+  
+  const { 
+    state: coursesState,
+    getCoursesByLecturer,
+    fetchCourses
+  } = courses
+  
+  const { 
+    state: academicState,
     fetchClassrooms
-  } = useData()
+  } = academic
+  
+  // Create legacy state object for compatibility
+  const state = {
+    ...attendanceState,
+    ...coursesState,
+    ...academicState
+  }
   
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -113,7 +133,7 @@ export default function CreateSessionModal({
       setRoomsLoading(true)
       fetchClassrooms().finally(() => setRoomsLoading(false))
     }
-  }, [open, lecturerId, fetchCourses, fetchClassrooms])
+  }, [open, lecturerId]) // Removed function dependencies
 
 
   const handleInputChange = (field: string, value: string | number) => {

@@ -82,7 +82,7 @@ export default function StudentForm({
       })
     }
     setErrors({})
-  }, [student, mode, open])
+  }, [student, mode]) // Removed open from dependencies
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target

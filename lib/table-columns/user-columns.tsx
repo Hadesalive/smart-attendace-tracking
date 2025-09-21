@@ -5,6 +5,98 @@ import { formatDate } from "@/lib/utils"
 import { TYPOGRAPHY_STYLES } from "@/lib/design/fonts"
 
 // ============================================================================
+// TYPE DEFINITIONS
+// ============================================================================
+
+interface GradeRow {
+  course: string
+  grade: string
+  points: number
+  maxPoints: number
+  date: string
+}
+
+interface AssignmentRow {
+  title: string
+  course: string
+  dueDate: string
+  status: 'submitted' | 'pending' | 'overdue'
+}
+
+interface AttendanceRow {
+  course: string
+  session: string
+  date: string
+  status: 'present' | 'absent' | 'late'
+  time: string
+}
+
+interface MaterialRow {
+  title: string
+  course: string
+  type: 'document' | 'video' | 'image' | 'link'
+  uploadedAt: string
+  size?: string
+}
+
+interface SessionRow {
+  title: string
+  course: string
+  date: string
+  attendance: number
+  totalStudents: number
+}
+
+interface StudentRow {
+  name: string
+  email: string
+  studentId: string
+  program: string
+  year: number
+  status: 'active' | 'inactive' | 'suspended'
+  enrollmentDate: string
+}
+
+interface LecturerRow {
+  name: string
+  email: string
+  department: string
+  courses: string[]
+  status: 'active' | 'inactive'
+  hireDate: string
+}
+
+interface AdminRow {
+  name: string
+  email: string
+  role: string
+  department: string
+  status: 'active' | 'inactive'
+  lastLogin: string
+}
+
+interface CourseRow {
+  name: string
+  code: string
+  students: number
+  status: 'active' | 'inactive'
+}
+
+interface UpcomingSessionRow {
+  title: string
+  course: string
+  date: string
+  type: string
+}
+
+interface ActivityRow {
+  action: string
+  target: string
+  timestamp: string
+  status: 'success' | 'failed' | 'pending'
+}
+
+// ============================================================================
 // UTILITY FUNCTIONS
 // ============================================================================
 
@@ -41,7 +133,7 @@ export const gradeColumns = [
   {
     key: 'course',
     label: 'Course',
-    render: (value: any, row: any) => (
+    render: (value: string, row: GradeRow) => (
       <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
         {row.course}
       </Typography>
@@ -50,7 +142,7 @@ export const gradeColumns = [
   {
     key: 'grade',
     label: 'Grade',
-    render: (value: any, row: any) => (
+    render: (value: string, row: GradeRow) => (
       <Chip 
         label={row.grade} 
         size="small"
@@ -66,7 +158,7 @@ export const gradeColumns = [
   {
     key: 'points',
     label: 'Points',
-    render: (value: any, row: any) => (
+    render: (value: string, row: GradeRow) => (
       <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
         {row.points}/{row.maxPoints}
       </Typography>
@@ -75,7 +167,7 @@ export const gradeColumns = [
   {
     key: 'date',
     label: 'Date',
-    render: (value: any, row: any) => (
+    render: (value: string, row: GradeRow) => (
       <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
         {formatDate(row.date)}
       </Typography>
@@ -87,7 +179,7 @@ export const assignmentColumns = [
   {
     key: 'title',
     label: 'Assignment',
-    render: (value: any, row: any) => (
+    render: (value: string, row: AssignmentRow) => (
       <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
         {row.title}
       </Typography>
@@ -96,7 +188,7 @@ export const assignmentColumns = [
   {
     key: 'course',
     label: 'Course',
-    render: (value: any, row: any) => (
+    render: (value: string, row: AssignmentRow) => (
       <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
         {row.course}
       </Typography>
@@ -105,7 +197,7 @@ export const assignmentColumns = [
   {
     key: 'dueDate',
     label: 'Due Date',
-    render: (value: any, row: any) => (
+    render: (value: string, row: AssignmentRow) => (
       <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
         {formatDate(row.dueDate)}
       </Typography>
@@ -114,7 +206,7 @@ export const assignmentColumns = [
   {
     key: 'status',
     label: 'Status',
-    render: (value: any, row: any) => (
+    render: (value: string, row: AssignmentRow) => (
       <Chip 
         label={row.status} 
         size="small"
@@ -134,7 +226,7 @@ export const attendanceColumns = [
   {
     key: 'course',
     label: 'Course',
-    render: (value: any, row: any) => (
+    render: (value: string, row: AttendanceRow) => (
       <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
         {row.course}
       </Typography>
@@ -143,7 +235,7 @@ export const attendanceColumns = [
   {
     key: 'session',
     label: 'Session',
-    render: (value: any, row: any) => (
+    render: (value: string, row: AttendanceRow) => (
       <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
         {row.session}
       </Typography>
@@ -152,7 +244,7 @@ export const attendanceColumns = [
   {
     key: 'date',
     label: 'Date',
-    render: (value: any, row: any) => (
+    render: (value: string, row: AttendanceRow) => (
       <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
         {formatDate(row.date)}
       </Typography>
@@ -161,7 +253,7 @@ export const attendanceColumns = [
   {
     key: 'status',
     label: 'Status',
-    render: (value: any, row: any) => {
+    render: (value: string, row: AttendanceRow) => {
       const StatusIcon = getAttendanceStatusIcon(row.status)
       const statusColor = getAttendanceStatusColor(row.status)
       return (
@@ -186,7 +278,7 @@ export const courseColumns = [
   {
     key: 'name',
     label: 'Course Name',
-    render: (value: any, row: any) => (
+    render: (value: string, row: CourseRow) => (
       <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
         {row.name}
       </Typography>
@@ -195,7 +287,7 @@ export const courseColumns = [
   {
     key: 'code',
     label: 'Code',
-    render: (value: any, row: any) => (
+    render: (value: string, row: CourseRow) => (
       <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
         {row.code}
       </Typography>
@@ -204,7 +296,7 @@ export const courseColumns = [
   {
     key: 'students',
     label: 'Students',
-    render: (value: any, row: any) => (
+    render: (value: string, row: CourseRow) => (
       <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
         {row.students}
       </Typography>
@@ -213,7 +305,7 @@ export const courseColumns = [
   {
     key: 'status',
     label: 'Status',
-    render: (value: any, row: any) => (
+    render: (value: string, row: CourseRow) => (
       <Chip 
         label={row.status} 
         size="small"
@@ -233,7 +325,7 @@ export const sessionColumns = [
   {
     key: 'title',
     label: 'Session',
-    render: (value: any, row: any) => (
+    render: (value: string, row: SessionRow) => (
       <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
         {row.title}
       </Typography>
@@ -242,7 +334,7 @@ export const sessionColumns = [
   {
     key: 'course',
     label: 'Course',
-    render: (value: any, row: any) => (
+    render: (value: string, row: SessionRow) => (
       <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
         {row.course}
       </Typography>
@@ -251,7 +343,7 @@ export const sessionColumns = [
   {
     key: 'date',
     label: 'Date',
-    render: (value: any, row: any) => (
+    render: (value: string, row: SessionRow) => (
       <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
         {formatDate(row.date)}
       </Typography>
@@ -260,7 +352,7 @@ export const sessionColumns = [
   {
     key: 'attendance',
     label: 'Attendance',
-    render: (value: any, row: any) => (
+    render: (value: string, row: SessionRow) => (
       <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
         {row.attendance}/{row.totalStudents}
       </Typography>
@@ -272,7 +364,7 @@ export const upcomingSessionColumns = [
   {
     key: 'title',
     label: 'Session',
-    render: (value: any, row: any) => (
+    render: (value: string, row: UpcomingSessionRow) => (
       <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
         {row.title}
       </Typography>
@@ -281,7 +373,7 @@ export const upcomingSessionColumns = [
   {
     key: 'course',
     label: 'Course',
-    render: (value: any, row: any) => (
+    render: (value: string, row: UpcomingSessionRow) => (
       <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
         {row.course}
       </Typography>
@@ -290,7 +382,7 @@ export const upcomingSessionColumns = [
   {
     key: 'date',
     label: 'Date',
-    render: (value: any, row: any) => (
+    render: (value: string, row: UpcomingSessionRow) => (
       <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
         {formatDate(row.date)}
       </Typography>
@@ -299,7 +391,7 @@ export const upcomingSessionColumns = [
   {
     key: 'type',
     label: 'Type',
-    render: (value: any, row: any) => (
+    render: (value: string, row: UpcomingSessionRow) => (
       <Chip 
         label={row.type} 
         size="small"
@@ -319,7 +411,7 @@ export const activityColumns = [
   {
     key: 'action',
     label: 'Action',
-    render: (value: any, row: any) => (
+    render: (value: string, row: ActivityRow) => (
       <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
         {row.action}
       </Typography>
@@ -328,7 +420,7 @@ export const activityColumns = [
   {
     key: 'target',
     label: 'Target',
-    render: (value: any, row: any) => (
+    render: (value: string, row: ActivityRow) => (
       <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
         {row.target}
       </Typography>
@@ -337,7 +429,7 @@ export const activityColumns = [
   {
     key: 'timestamp',
     label: 'Time',
-    render: (value: any, row: any) => (
+    render: (value: string, row: ActivityRow) => (
       <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
         {formatDate(row.timestamp)}
       </Typography>
@@ -346,7 +438,7 @@ export const activityColumns = [
   {
     key: 'status',
     label: 'Status',
-    render: (value: any, row: any) => (
+    render: (value: string, row: ActivityRow) => (
       <Chip 
         label={row.status} 
         size="small"

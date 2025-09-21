@@ -45,7 +45,7 @@ import {
   CalendarDaysIcon
 } from "@heroicons/react/24/outline"
 import { formatDate, formatNumber } from "@/lib/utils"
-import { useData } from "@/lib/contexts/DataContext"
+import { useGrades, useCourses, useAcademicStructure } from "@/lib/domains"
 import { useMockData } from "@/lib/hooks/useMockData"
 import { Course, StudentGrade, CourseGradeSummary, GradeCategory } from "@/lib/types/shared"
 import { mapSubmissionStatus } from "@/lib/utils/statusMapping"
@@ -131,12 +131,27 @@ export default function StudentGradesPage() {
   // DATA CONTEXT
   // ============================================================================
   
+  const gradesHook = useGrades()
+  const coursesHook = useCourses()
+  const academic = useAcademicStructure()
+  
+  // Extract state and methods
   const { 
-    state, 
+    state: gradesState,
     getStudentGradesByCourse,
     getCourseGradeSummary,
     calculateFinalGrade
-  } = useData()
+  } = gradesHook
+  
+  const { state: coursesState } = coursesHook
+  const { state: academicState } = academic
+  
+  // Create legacy state object for compatibility
+  const state = {
+    ...gradesState,
+    ...coursesState,
+    ...academicState
+  }
   const { isInitialized } = useMockData()
   
   // ============================================================================

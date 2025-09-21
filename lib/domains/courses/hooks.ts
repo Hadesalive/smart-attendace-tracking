@@ -188,9 +188,10 @@ export function useCourses() {
       // Create FormData for server action
       const formData = new FormData()
       formData.append('course_id', data.course_id || '')
-      formData.append('section_id', data.section_id || '')
+      formData.append('program_id', data.program_id || '')
       formData.append('academic_year_id', data.academic_year_id || '')
       formData.append('semester_id', data.semester_id || '')
+      formData.append('year', (data.year || 1).toString())
       formData.append('is_mandatory', data.is_mandatory ? 'true' : 'false')
       if (data.max_students) {
         formData.append('max_students', data.max_students.toString())
@@ -222,9 +223,10 @@ export function useCourses() {
       // Create FormData for server action
       const formData = new FormData()
       formData.append('course_id', data.course_id || '')
-      formData.append('section_id', data.section_id || '')
+      formData.append('program_id', data.program_id || '')
       formData.append('academic_year_id', data.academic_year_id || '')
       formData.append('semester_id', data.semester_id || '')
+      formData.append('year', (data.year || 1).toString())
       formData.append('is_mandatory', data.is_mandatory ? 'true' : 'false')
       if (data.max_students) {
         formData.append('max_students', data.max_students.toString())

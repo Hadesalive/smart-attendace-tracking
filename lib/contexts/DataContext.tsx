@@ -1,6 +1,6 @@
 "use client"
 
-import React, { createContext, useContext, useEffect } from 'react'
+import React, { createContext, useContext, useEffect, useMemo } from 'react'
 import { 
   useAuth, 
   useCourses, 
@@ -9,6 +9,30 @@ import {
   useGrades, 
   useMaterials
 } from '@/lib/domains'
+import { 
+  User, 
+  Course, 
+  Class, 
+  Student, 
+  Assignment, 
+  Submission, 
+  Material, 
+  AttendanceSession, 
+  AttendanceRecord, 
+  GradeCategory, 
+  CourseGradeSummary
+} from '@/lib/types/shared'
+import {
+  AcademicYear,
+  Semester,
+  Department,
+  Program,
+  Classroom,
+  Section,
+  StudentProfile,
+  LecturerProfile,
+  AdminProfile
+} from '@/lib/domains/academic/types'
 
 // ============================================================================
 // NEW DATA CONTEXT - Uses Domain Hooks
@@ -36,44 +60,44 @@ interface DataContextType {
   // Global state
   global: {
     state: {
-      currentUser: any
+      currentUser: User | null
       loading: boolean
       error: string | null
       lastUpdated: number
     }
-    setState: (state: any) => void
+    setState: (state: { currentUser: User | null; loading: boolean; error: string | null; lastUpdated: number }) => void
     refreshData: () => void
   }
   
   // Legacy compatibility methods (for gradual migration)
   state: {
-    currentUser: any
-    users: any[]
-    courses: any[]
-    courseAssignments: any[]
-    classes: any[]
-    students: any[]
-    enrollments: any[]
-    lecturerAssignments: any[]
-    assignments: any[]
-    submissions: any[]
-    materials: any[]
-    attendanceSessions: any[]
-    attendanceRecords: any[]
-    gradeCategories: any[]
-    studentGrades: any[]
-    courseGradeSummaries: any[]
-    academicYears: any[]
-    semesters: any[]
-    departments: any[]
-    programs: any[]
-    classrooms: any[]
-    sections: any[]
-    studentProfiles: any[]
-    lecturerProfiles: any[]
-    adminProfiles: any[]
-    courseStats: any
-    studentStats: any
+    currentUser: User | null
+    users: User[]
+    courses: Course[]
+    courseAssignments: any[] // Will be typed when CourseAssignment is properly defined
+    classes: Class[]
+    students: Student[]
+    enrollments: any[] // Will be typed when Enrollment is properly defined
+    lecturerAssignments: any[] // Will be typed when LecturerAssignment is properly defined
+    assignments: Assignment[]
+    submissions: Submission[]
+    materials: Material[]
+    attendanceSessions: AttendanceSession[]
+    attendanceRecords: AttendanceRecord[]
+    gradeCategories: GradeCategory[]
+    studentGrades: any[] // Will be typed when StudentGrade is properly defined
+    courseGradeSummaries: CourseGradeSummary[]
+    academicYears: AcademicYear[]
+    semesters: Semester[]
+    departments: Department[]
+    programs: Program[]
+    classrooms: Classroom[]
+    sections: Section[]
+    studentProfiles: StudentProfile[]
+    lecturerProfiles: LecturerProfile[]
+    adminProfiles: AdminProfile[]
+    courseStats: Record<string, any> // Generic stats object
+    studentStats: Record<string, any> // Generic stats object
     loading: boolean
     error: string | null
     lastUpdated: number
@@ -81,32 +105,32 @@ interface DataContextType {
   
   // Legacy methods (for gradual migration)
   loadCurrentUser: () => Promise<void>
-  getCoursesByLecturer: (lecturerId: string) => any[]
-  getStudentsByCourse: (courseId: string) => any[]
-  getAssignmentsByCourse: (courseId: string) => any[]
-  getSubmissionsByAssignment: (assignmentId: string) => any[]
-  getAttendanceSessionsByCourse: (courseId: string) => any[]
-  getAttendanceRecordsBySession: (sessionId: string) => any[]
-  getStudentGradesByCourse: (studentId: string, courseId: string) => any[]
-  getCourseGradeSummary: (studentId: string, courseId: string) => any
-  createAssignment: (assignment: any) => void
-  updateAssignment: (assignment: any) => void
-  createSubmission: (submission: any) => void
+  getCoursesByLecturer: (lecturerId: string) => Course[]
+  getStudentsByCourse: (courseId: string) => Student[]
+  getAssignmentsByCourse: (courseId: string) => Assignment[]
+  getSubmissionsByAssignment: (assignmentId: string) => Submission[]
+  getAttendanceSessionsByCourse: (courseId: string) => AttendanceSession[]
+  getAttendanceRecordsBySession: (sessionId: string) => AttendanceRecord[]
+  getStudentGradesByCourse: (studentId: string, courseId: string) => any[] // Will be typed when StudentGrade is properly defined
+  getCourseGradeSummary: (studentId: string, courseId: string) => CourseGradeSummary | null
+  createAssignment: (assignment: Omit<Assignment, 'id' | 'created_at'>) => void
+  updateAssignment: (assignment: Assignment) => void
+  createSubmission: (submission: Omit<Submission, 'id' | 'created_at'>) => void
   gradeSubmission: (submissionId: string, grade: number, comments?: string) => void
-  createAttendanceSession: (session: any) => void
+  createAttendanceSession: (session: Omit<AttendanceSession, 'id' | 'created_at'>) => void
   markAttendance: (sessionId: string, studentId: string, status: 'present' | 'late' | 'absent', method: 'qr_code' | 'facial_recognition') => void
-  updateGradeCategory: (courseId: string, categories: any[]) => void
+  updateGradeCategory: (courseId: string, categories: GradeCategory[]) => void
   calculateFinalGrade: (studentId: string, courseId: string) => number
   refreshData: () => void
   
   // Supabase data fetching
   fetchUsers: () => Promise<void>
   fetchCourses: () => Promise<void>
-  createCourse: (data: any) => Promise<void>
-  updateCourse: (id: string, data: any) => Promise<void>
+  createCourse: (data: Omit<Course, 'id' | 'created_at'>) => Promise<void>
+  updateCourse: (id: string, data: Partial<Course>) => Promise<void>
   deleteCourse: (id: string) => Promise<void>
-  createCourseAssignment: (data: any) => Promise<void>
-  updateCourseAssignment: (id: string, data: any) => Promise<void>
+  createCourseAssignment: (data: Record<string, any>) => Promise<void> // Will be typed when CourseAssignment is properly defined
+  updateCourseAssignment: (id: string, data: Record<string, any>) => Promise<void>
   deleteCourseAssignment: (id: string) => Promise<void>
   fetchCourseAssignments: () => Promise<void>
   fetchEnrollments: () => Promise<void>
@@ -126,36 +150,36 @@ interface DataContextType {
   fetchAdminProfiles: () => Promise<void>
   
   // Academic structure CRUD operations
-  createAcademicYear: (data: any) => Promise<void>
-  updateAcademicYear: (id: string, data: any) => Promise<void>
+  createAcademicYear: (data: Omit<AcademicYear, 'id' | 'created_at'>) => Promise<void>
+  updateAcademicYear: (id: string, data: Partial<AcademicYear>) => Promise<void>
   deleteAcademicYear: (id: string) => Promise<void>
-  createSemester: (data: any) => Promise<void>
-  updateSemester: (id: string, data: any) => Promise<void>
+  createSemester: (data: Omit<Semester, 'id' | 'created_at'>) => Promise<void>
+  updateSemester: (id: string, data: Partial<Semester>) => Promise<void>
   deleteSemester: (id: string) => Promise<void>
-  createDepartment: (data: any) => Promise<void>
-  updateDepartment: (id: string, data: any) => Promise<void>
+  createDepartment: (data: Omit<Department, 'id' | 'created_at'>) => Promise<void>
+  updateDepartment: (id: string, data: Partial<Department>) => Promise<void>
   deleteDepartment: (id: string) => Promise<void>
-  createProgram: (data: any) => Promise<void>
-  updateProgram: (id: string, data: any) => Promise<void>
+  createProgram: (data: Omit<Program, 'id' | 'created_at'>) => Promise<void>
+  updateProgram: (id: string, data: Partial<Program>) => Promise<void>
   deleteProgram: (id: string) => Promise<void>
-  createClassroom: (data: any) => Promise<void>
-  updateClassroom: (id: string, data: any) => Promise<void>
+  createClassroom: (data: Omit<Classroom, 'id' | 'created_at'>) => Promise<void>
+  updateClassroom: (id: string, data: Partial<Classroom>) => Promise<void>
   deleteClassroom: (id: string) => Promise<void>
-  createSection: (data: any) => Promise<void>
-  updateSection: (id: string, data: any) => Promise<void>
+  createSection: (data: Omit<Section, 'id' | 'created_at'>) => Promise<void>
+  updateSection: (id: string, data: Partial<Section>) => Promise<void>
   deleteSection: (id: string) => Promise<void>
-  createUser: (data: any) => Promise<void>
-  updateUser: (id: string, data: any) => Promise<void>
+  createUser: (data: Omit<User, 'id' | 'created_at'>) => Promise<void>
+  updateUser: (id: string, data: Partial<User>) => Promise<void>
   deleteUser: (id: string) => Promise<void>
   
   // Supabase CRUD operations
-  createAttendanceSessionSupabase: (session: any) => Promise<any>
-  updateAttendanceSessionSupabase: (sessionId: string, updates: any) => Promise<void>
+  createAttendanceSessionSupabase: (session: Omit<AttendanceSession, 'id' | 'created_at'>) => Promise<AttendanceSession>
+  updateAttendanceSessionSupabase: (sessionId: string, updates: Partial<AttendanceSession>) => Promise<void>
   deleteAttendanceSessionSupabase: (sessionId: string) => Promise<void>
   markAttendanceSupabase: (sessionId: string, studentId: string, method: 'qr_code' | 'facial_recognition') => Promise<void>
   
   // Time-based status utilities
-  getSessionTimeStatus: (session: any) => 'upcoming' | 'active' | 'completed'
+  getSessionTimeStatus: (session: AttendanceSession) => 'upcoming' | 'active' | 'completed'
   updateSessionStatusBasedOnTime: (sessionId: string) => Promise<void>
   
   // Real-time subscriptions
@@ -176,7 +200,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const materials = useMaterials()
   
   // Create a simple global state
-  const global = {
+  const global = useMemo(() => ({
     state: {
       currentUser: auth.state.currentUser,
       loading: auth.state.loading || courses.state.loading || attendance.state.loading || academic.state.loading || grades.state.loading || materials.state.loading,
@@ -196,7 +220,27 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       grades.fetchStudentGradesForCourse('')
       materials.fetchMaterials()
     }
-  }
+  }), [
+    auth.state.currentUser,
+    auth.state.loading,
+    courses.state.loading,
+    attendance.state.loading,
+    academic.state.loading,
+    grades.state.loading,
+    materials.state.loading,
+    auth.state.error,
+    courses.state.error,
+    attendance.state.error,
+    academic.state.error,
+    grades.state.error,
+    materials.state.error,
+    auth.fetchUsers,
+    courses.fetchCourses,
+    attendance.fetchAttendanceSessions,
+    academic.fetchAcademicYears,
+    grades.fetchStudentGradesForCourse,
+    materials.fetchMaterials
+  ])
 
   // Load current user on mount
   useEffect(() => {
@@ -204,7 +248,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   }, [auth.loadCurrentUser])
 
   // Create legacy state object for backward compatibility
-  const legacyState = {
+  const legacyState = useMemo(() => ({
     currentUser: auth.state.currentUser,
     users: auth.state.users,
     courses: courses.state.courses,
@@ -235,7 +279,43 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     loading: auth.state.loading || courses.state.loading || attendance.state.loading || academic.state.loading || grades.state.loading || materials.state.loading,
     error: auth.state.error || courses.state.error || attendance.state.error || academic.state.error || grades.state.error || materials.state.error,
     lastUpdated: Date.now()
-  }
+  }), [
+    auth.state.currentUser,
+    auth.state.users,
+    courses.state.courses,
+    courses.state.courseAssignments,
+    courses.state.enrollments,
+    courses.state.lecturerAssignments,
+    grades.state.assignments,
+    grades.state.submissions,
+    materials.state.materials,
+    attendance.state.attendanceSessions,
+    attendance.state.attendanceRecords,
+    grades.state.gradeCategories,
+    grades.state.studentGrades,
+    grades.state.courseGradeSummaries,
+    academic.state.academicYears,
+    academic.state.semesters,
+    academic.state.departments,
+    academic.state.programs,
+    academic.state.classrooms,
+    academic.state.sections,
+    academic.state.studentProfiles,
+    academic.state.lecturerProfiles,
+    academic.state.adminProfiles,
+    auth.state.loading,
+    courses.state.loading,
+    attendance.state.loading,
+    academic.state.loading,
+    grades.state.loading,
+    materials.state.loading,
+    auth.state.error,
+    courses.state.error,
+    attendance.state.error,
+    academic.state.error,
+    grades.state.error,
+    materials.state.error
+  ])
 
   // Create legacy methods for backward compatibility
   const legacyMethods = {

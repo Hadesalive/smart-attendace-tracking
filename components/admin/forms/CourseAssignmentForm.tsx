@@ -9,7 +9,7 @@ interface CourseAssignment {
   academic_year_id: string
   semester_id: string
   program_id: string
-  section_id?: string
+  year: number
   is_mandatory: boolean
   max_students?: number
 }
@@ -44,7 +44,7 @@ export default function CourseAssignmentForm({
     academic_year_id: '',
     semester_id: '',
     program_id: '',
-    section_id: '',
+    year: 1,
     is_mandatory: true,
     max_students: undefined
   })
@@ -62,13 +62,13 @@ export default function CourseAssignmentForm({
         academic_year_id: '',
         semester_id: '',
         program_id: '',
-        section_id: '',
+        year: 1,
         is_mandatory: true,
         max_students: undefined
       })
     }
     setErrors({})
-  }, [assignment, mode, open])
+  }, [assignment, mode]) // Removed open from dependencies
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target
@@ -102,6 +102,10 @@ export default function CourseAssignmentForm({
       newErrors.program_id = 'Program is required'
     }
 
+    if (!formData.year || formData.year < 1 || formData.year > 4) {
+      newErrors.year = 'Year level must be between 1 and 4'
+    }
+
     if (formData.max_students && formData.max_students < 1) {
       newErrors.max_students = 'Max students must be greater than 0'
     }
@@ -131,20 +135,16 @@ export default function CourseAssignmentForm({
     onOpenChange(false)
   }
 
-  // Filter sections based on selected program, academic year, and semester
-  const filteredSections = sections.filter(section => 
-    section.program_id === formData.program_id &&
-    section.academic_year_id === formData.academic_year_id &&
-    section.semester_id === formData.semester_id
-  )
+  // Note: Course assignments now apply to ALL sections of a program/year/semester
+  // No need to filter sections as the assignment applies to all sections automatically
 
   return (
     <DialogBox
       open={open}
       onOpenChange={onOpenChange}
-      title={mode === 'create' ? 'Assign Course to Class' : 'Edit Course Assignment'}
+      title={mode === 'create' ? 'Assign Course to Program' : 'Edit Course Assignment'}
       description={mode === 'create' 
-        ? 'Assign a course to a class or section' 
+        ? 'Assign a course to a program for a specific year and semester. This will apply to ALL sections of that program.' 
         : 'Update the course assignment information'}
       maxWidth="md"
     >
@@ -196,7 +196,7 @@ export default function CourseAssignmentForm({
               onChange={(e) => {
                 handleInputChange(e)
                 // Reset dependent fields
-                setFormData(prev => ({ ...prev, semester_id: '', section_id: '' }))
+                setFormData(prev => ({ ...prev, semester_id: '' }))
               }}
               className={`w-full px-3 py-2 rounded-lg border ${
                 errors.academic_year_id ? 'border-red-300 bg-red-50' : 'border-gray-300 bg-white'
@@ -228,7 +228,7 @@ export default function CourseAssignmentForm({
               onChange={(e) => {
                 handleInputChange(e)
                 // Reset section when semester changes
-                setFormData(prev => ({ ...prev, section_id: '' }))
+                // No need to reset section_id as we're using program-based assignments
               }}
               className={`w-full px-3 py-2 rounded-lg border ${
                 errors.semester_id ? 'border-red-300 bg-red-50' : 'border-gray-300 bg-white'
@@ -262,7 +262,7 @@ export default function CourseAssignmentForm({
               onChange={(e) => {
                 handleInputChange(e)
                 // Reset section when program changes
-                setFormData(prev => ({ ...prev, section_id: '' }))
+                // No need to reset section_id as we're using program-based assignments
               }}
               className={`w-full px-3 py-2 rounded-lg border ${
                 errors.program_id ? 'border-red-300 bg-red-50' : 'border-gray-300 bg-white'
@@ -282,28 +282,31 @@ export default function CourseAssignmentForm({
             )}
           </div>
 
-          {/* Section (Optional) */}
+          {/* Year Level */}
           <div>
-            <label htmlFor="section_id" className="block text-sm font-semibold mb-2 text-gray-900">
-              Section (Optional)
+            <label htmlFor="year" className="block text-sm font-semibold mb-2 text-gray-900">
+              Year Level *
             </label>
             <select
-              id="section_id"
-              name="section_id"
-              value={formData.section_id || ''}
+              id="year"
+              name="year"
+              value={formData.year || ''}
               onChange={handleInputChange}
-              className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white text-gray-900 focus:border-gray-500 focus:ring-2 focus:ring-gray-300 focus:outline-none transition"
-              disabled={loading || !formData.program_id || !formData.academic_year_id || !formData.semester_id}
+              className={`w-full px-3 py-2 rounded-lg border ${
+                errors.year ? 'border-red-300 bg-red-50' : 'border-gray-300 bg-white'
+              } text-gray-900 focus:border-gray-500 focus:ring-2 focus:ring-gray-300 focus:outline-none transition`}
+              required
+              disabled={loading}
             >
-              <option value="">
-                Apply to all sections
-              </option>
-              {filteredSections.map((section) => (
-                <option key={section.id} value={section.id}>
-                  {section.section_code} (Year {section.year})
-                </option>
-              ))}
+              <option value="">Select Year Level</option>
+              <option value="1">Year 1 (First Year)</option>
+              <option value="2">Year 2 (Second Year)</option>
+              <option value="3">Year 3 (Third Year)</option>
+              <option value="4">Year 4 (Fourth Year)</option>
             </select>
+            {errors.year && (
+              <p className="mt-1 text-sm text-red-600">{errors.year}</p>
+            )}
           </div>
 
           {/* Max Students */}

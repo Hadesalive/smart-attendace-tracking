@@ -79,7 +79,7 @@ export default function TeacherAssignmentForm({
       })
     }
     setErrors({})
-  }, [assignment, mode, open])
+  }, [assignment, mode]) // Removed open from dependencies
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target

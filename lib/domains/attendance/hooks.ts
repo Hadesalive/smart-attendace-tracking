@@ -441,13 +441,26 @@ export function useAttendance() {
     return state.attendanceRecords.filter(record => record.session_id === sessionId)
   }, [state.attendanceRecords])
 
+  // Legacy methods for backward compatibility
+  const createAttendanceSession = useCallback((session: Omit<AttendanceSession, 'id' | 'created_at'>) => {
+    // For now, just call the Supabase version
+    createAttendanceSessionSupabase(session)
+  }, [createAttendanceSessionSupabase])
+
+  const markAttendance = useCallback((sessionId: string, studentId: string, status: 'present' | 'late' | 'absent', method: 'qr_code' | 'facial_recognition') => {
+    // For now, just call the Supabase version with default status
+    markAttendanceSupabase(sessionId, studentId, method)
+  }, [markAttendanceSupabase])
+
   return {
     state,
     fetchAttendanceSessions,
     fetchAttendanceRecords,
+    createAttendanceSession,
     createAttendanceSessionSupabase,
     updateAttendanceSessionSupabase,
     deleteAttendanceSessionSupabase,
+    markAttendance,
     markAttendanceSupabase,
     getSessionTimeStatus,
     updateSessionStatusBasedOnTime,

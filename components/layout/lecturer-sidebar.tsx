@@ -36,10 +36,11 @@ interface NavigationItem {
 
 const LECTURER_NAV_ITEMS: NavigationItem[] = [
   { name: "Dashboard", icon: ComputerDesktopIcon, href: "/lecturer" },
-  { name: "Gradebook", icon: BookOpenIcon, href: "/lecturer/gradebook" },
+  { name: "Courses", icon: BookOpenIcon, href: "/lecturer/courses" },
+  { name: "Gradebook", icon: AcademicCapIcon, href: "/lecturer/gradebook" },
   { name: "Attendance", icon: CalendarDaysIcon, href: "/lecturer/attendance" },
   { name: "Sessions", icon: ClipboardDocumentListIcon, href: "/lecturer/sessions" },
-  { name: "Homework", icon: AcademicCapIcon, href: "/lecturer/homework" },
+  { name: "Homework", icon: DocumentTextIcon, href: "/lecturer/homework" },
   { name: "Lesson Materials", icon: DocumentTextIcon, href: "/lecturer/materials" },
   { name: "Profile", icon: UserIcon, href: "/lecturer/profile" },
   { name: "Reports", icon: ChartPieIcon, href: "/lecturer/reports" },

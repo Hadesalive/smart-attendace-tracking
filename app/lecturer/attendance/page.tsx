@@ -8,7 +8,7 @@ import { Box, Card as MUICard, CardContent as MUICardContent, Typography, FormCo
 import SessionQrCodeDialog from "@/components/attendance/session-qr-code-dialog-new"
 import CreateSessionModal from "@/components/attendance/session-creation-modal-new"
 import { exportRowsToCsv } from "@/lib/utils"
-import { useData } from "@/lib/contexts/DataContext"
+import { useAttendance, useCourses, useAcademicStructure, useAuth } from "@/lib/domains"
 import { AttendanceSession, AttendanceRecord, Course, Class } from "@/lib/types/shared"
 import { mapSessionStatus } from "@/lib/utils/statusMapping"
 import { toast } from "sonner"
@@ -63,19 +63,40 @@ const filterAttendance = (
 }
 
 export default function LecturerAttendancePage() {
+  const attendance = useAttendance()
+  const courses = useCourses()
+  const academic = useAcademicStructure()
+  const auth = useAuth()
+  
+  // Extract state and methods
   const { 
-    state, 
-    getCoursesByLecturer, 
+    state: attendanceState,
     getAttendanceSessionsByCourse,
     getAttendanceRecordsBySession,
     createAttendanceSession,
     markAttendance,
     fetchAttendanceSessions,
     fetchAttendanceRecords,
-    fetchCourses,
     deleteAttendanceSessionSupabase,
     updateAttendanceSessionSupabase
-  } = useData()
+  } = attendance
+  
+  const { 
+    state: coursesState,
+    getCoursesByLecturer,
+    fetchCourses
+  } = courses
+  
+  const { state: academicState } = academic
+  const { state: authState } = auth
+  
+  // Create legacy state object for compatibility
+  const state = {
+    ...attendanceState,
+    ...coursesState,
+    ...academicState,
+    currentUser: authState.currentUser
+  }
 
   // Load data on component mount
   useEffect(() => {

@@ -6,7 +6,7 @@ import { Box, Typography, Card, CardContent, Button, Alert, Chip } from "@mui/ma
 import { QrCodeIcon, CheckCircleIcon, XCircleIcon, ClockIcon } from "@heroicons/react/24/outline"
 import { motion } from "framer-motion"
 import { toast } from "sonner"
-import { useData } from "@/lib/contexts/DataContext"
+import { useAttendance } from "@/lib/domains"
 import { supabase } from "@/lib/supabase"
 
 interface AttendanceResult {
@@ -19,7 +19,8 @@ interface AttendanceResult {
 export default function AttendSessionPage() {
   const params = useParams()
   const router = useRouter()
-  const { markAttendanceSupabase, state, getSessionTimeStatus } = useData()
+  const attendance = useAttendance()
+  const { markAttendanceSupabase, state, getSessionTimeStatus } = attendance
   const sessionId = params.sessionId as string
   
   const [loading, setLoading] = useState(false)

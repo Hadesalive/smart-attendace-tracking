@@ -13,7 +13,8 @@ import {
   Section,
   StudentProfile,
   LecturerProfile,
-  AdminProfile
+  AdminProfile,
+  SectionEnrollment
 } from './types'
 
 export function useAcademicStructure() {
@@ -27,6 +28,7 @@ export function useAcademicStructure() {
     studentProfiles: [],
     lecturerProfiles: [],
     adminProfiles: [],
+    sectionEnrollments: [],
     loading: false,
     error: null
   })
@@ -52,7 +54,7 @@ export function useAcademicStructure() {
     }
   }, [])
 
-  const createAcademicYear = useCallback(async (data: any) => {
+  const createAcademicYear = useCallback(async (data: Omit<AcademicYear, 'id' | 'created_at' | 'updated_at'>) => {
     try {
       // Create FormData for server action
       const formData = new FormData()
@@ -64,7 +66,7 @@ export function useAcademicStructure() {
 
       // Import and call server action
       const { createAcademicYear: serverCreateAcademicYear } = await import('./actions')
-      const result = await serverCreateAcademicYear({}, formData)
+      const result = await serverCreateAcademicYear({ message: '' }, formData)
       
       if (result.type === 'error') {
         throw new Error(result.message)
@@ -78,19 +80,19 @@ export function useAcademicStructure() {
     }
   }, [fetchAcademicYears])
 
-  const updateAcademicYear = useCallback(async (id: string, data: any) => {
+  const updateAcademicYear = useCallback(async (id: string, data: Partial<AcademicYear>) => {
     try {
       // Create FormData for server action
       const formData = new FormData()
-      formData.append('year_name', data.year_name)
-      formData.append('start_date', data.start_date)
-      formData.append('end_date', data.end_date)
-      formData.append('is_current', data.is_current ? 'true' : 'false')
+      formData.append('year_name', data.year_name ?? '')
+      formData.append('start_date', data.start_date ?? '')
+      formData.append('end_date', data.end_date ?? '')
+      formData.append('is_current', (data.is_current ?? false).toString())
       if (data.description) formData.append('description', data.description)
 
       // Import and call server action
       const { updateAcademicYear: serverUpdateAcademicYear } = await import('./actions')
-      const result = await serverUpdateAcademicYear(id, {}, formData)
+      const result = await serverUpdateAcademicYear(id, { message: '' }, formData)
       
       if (result.type === 'error') {
         throw new Error(result.message)
@@ -146,7 +148,7 @@ export function useAcademicStructure() {
     }
   }, [])
 
-  const createSemester = useCallback(async (data: any) => {
+  const createSemester = useCallback(async (data: Omit<Semester, 'id' | 'created_at' | 'updated_at'>) => {
     try {
       const { error } = await supabase
         .from('semesters')
@@ -161,7 +163,7 @@ export function useAcademicStructure() {
     }
   }, [fetchSemesters])
 
-  const updateSemester = useCallback(async (id: string, data: any) => {
+  const updateSemester = useCallback(async (id: string, data: Partial<Semester>) => {
     try {
       const { error } = await supabase
         .from('semesters')
@@ -217,7 +219,7 @@ export function useAcademicStructure() {
     }
   }, [])
 
-  const createDepartment = useCallback(async (data: any) => {
+  const createDepartment = useCallback(async (data: Omit<Department, 'id' | 'created_at' | 'updated_at'>) => {
     try {
       // Create FormData for server action
       const formData = new FormData()
@@ -241,7 +243,7 @@ export function useAcademicStructure() {
 
       // Import and call server action
       const { createDepartment: serverCreateDepartment } = await import('./actions')
-      const result = await serverCreateDepartment({}, formData)
+      const result = await serverCreateDepartment({ message: '' }, formData)
       
       console.log('Server action result:', result)
       
@@ -257,7 +259,7 @@ export function useAcademicStructure() {
     }
   }, [fetchDepartments])
 
-  const updateDepartment = useCallback(async (id: string, data: any) => {
+  const updateDepartment = useCallback(async (id: string, data: Partial<Department>) => {
     try {
       const { error } = await supabase
         .from('departments')
@@ -313,7 +315,7 @@ export function useAcademicStructure() {
     }
   }, [])
 
-  const createProgram = useCallback(async (data: any) => {
+  const createProgram = useCallback(async (data: Omit<Program, 'id' | 'program_id' | 'created_at' | 'updated_at'>) => {
     try {
       const { error } = await supabase
         .from('programs')
@@ -328,7 +330,7 @@ export function useAcademicStructure() {
     }
   }, [fetchPrograms])
 
-  const updateProgram = useCallback(async (id: string, data: any) => {
+  const updateProgram = useCallback(async (id: string, data: Partial<Program>) => {
     try {
       const { error } = await supabase
         .from('programs')
@@ -382,7 +384,7 @@ export function useAcademicStructure() {
     }
   }, [])
 
-  const createClassroom = useCallback(async (data: any) => {
+  const createClassroom = useCallback(async (data: Omit<Classroom, 'id' | 'created_at' | 'updated_at'>) => {
     try {
       const { error } = await supabase
         .from('classrooms')
@@ -397,7 +399,7 @@ export function useAcademicStructure() {
     }
   }, [fetchClassrooms])
 
-  const updateClassroom = useCallback(async (id: string, data: any) => {
+  const updateClassroom = useCallback(async (id: string, data: Partial<Classroom>) => {
     try {
       const { error } = await supabase
         .from('classrooms')
@@ -437,7 +439,11 @@ export function useAcademicStructure() {
         .from('sections')
         .select(`
           *,
-          programs!sections_program_id_fkey(program_code, program_name),
+          programs!sections_program_id_fkey(
+            program_code, 
+            program_name,
+            departments!programs_department_id_fkey(department_name, department_code)
+          ),
           academic_years!sections_academic_year_id_fkey(year_name),
           semesters!sections_semester_id_fkey(semester_name),
           classrooms!sections_classroom_id_fkey(building, room_number)
@@ -456,7 +462,7 @@ export function useAcademicStructure() {
     }
   }, [])
 
-  const createSection = useCallback(async (data: any) => {
+  const createSection = useCallback(async (data: Omit<Section, 'id' | 'created_at' | 'updated_at'>) => {
     try {
       // Create FormData for server action
       const formData = new FormData()
@@ -465,21 +471,17 @@ export function useAcademicStructure() {
       formData.append('academic_year_id', data.academic_year_id || '')
       formData.append('semester_id', data.semester_id || '')
       formData.append('year', data.year?.toString() || '1')
-      if (data.classroom_id && data.classroom_id !== '') {
-        formData.append('classroom_id', data.classroom_id)
-      }
-      formData.append('max_capacity', (data.max_students || data.max_capacity || 30).toString())
+      formData.append('classroom_id', data.classroom_id || '')
+      formData.append('max_capacity', (data.max_capacity || 30).toString())
       formData.append('current_enrollment', data.current_enrollment?.toString() || '0')
-      if (data.description) {
-        formData.append('description', data.description)
-      }
+      formData.append('description', data.description || '')
       formData.append('is_active', data.is_active ? 'true' : 'false')
 
       console.log('Creating section with data:', data)
 
       // Import and call server action
       const { createSection: serverCreateSection } = await import('./actions')
-      const result = await serverCreateSection({}, formData)
+      const result = await serverCreateSection({ message: '' }, formData)
       
       console.log('Server action result:', result)
       
@@ -495,7 +497,7 @@ export function useAcademicStructure() {
     }
   }, [fetchSections])
 
-  const updateSection = useCallback(async (id: string, data: any) => {
+  const updateSection = useCallback(async (id: string, data: Partial<Section>) => {
     try {
       // Create FormData for server action
       const formData = new FormData()
@@ -504,21 +506,17 @@ export function useAcademicStructure() {
       formData.append('academic_year_id', data.academic_year_id || '')
       formData.append('semester_id', data.semester_id || '')
       formData.append('year', data.year?.toString() || '1')
-      if (data.classroom_id && data.classroom_id !== '') {
-        formData.append('classroom_id', data.classroom_id)
-      }
-      formData.append('max_capacity', (data.max_students || data.max_capacity || 30).toString())
+      formData.append('classroom_id', data.classroom_id || '')
+      formData.append('max_capacity', (data.max_capacity || 30).toString())
       formData.append('current_enrollment', data.current_enrollment?.toString() || '0')
-      if (data.description) {
-        formData.append('description', data.description)
-      }
+      formData.append('description', data.description || '')
       formData.append('is_active', data.is_active ? 'true' : 'false')
 
       console.log('Updating section with data:', data)
 
       // Import and call server action
       const { updateSection: serverUpdateSection } = await import('./actions')
-      const result = await serverUpdateSection(id, {}, formData)
+      const result = await serverUpdateSection(id, { message: '' }, formData)
       
       console.log('Server action result:', result)
       
@@ -625,6 +623,51 @@ export function useAcademicStructure() {
     }
   }, [])
 
+  // Section Enrollments
+  const fetchSectionEnrollments = useCallback(async () => {
+    try {
+      setState(prev => ({ ...prev, loading: true }))
+      const { data, error } = await supabase
+        .from('section_enrollments')
+        .select(`
+          *,
+          users!section_enrollments_student_id_fkey(full_name, student_id),
+          sections!section_enrollments_section_id_fkey(
+            section_code,
+            year,
+            programs!sections_program_id_fkey(program_name, program_code),
+            academic_years!sections_academic_year_id_fkey(year_name),
+            semesters!sections_semester_id_fkey(semester_name)
+          )
+        `)
+        .order('enrollment_date', { ascending: false })
+
+      if (error) throw error
+      
+      // Transform the data to include joined information
+      const transformedData = (data || []).map((enrollment: any) => ({
+        ...enrollment,
+        student_name: enrollment.users?.full_name,
+        student_id_number: enrollment.users?.student_id,
+        section_code: enrollment.sections?.section_code,
+        year: enrollment.sections?.year,
+        program_name: enrollment.sections?.programs?.program_name,
+        program_code: enrollment.sections?.programs?.program_code,
+        academic_year: enrollment.sections?.academic_years?.year_name,
+        semester_name: enrollment.sections?.semesters?.semester_name
+      }))
+      
+      setState(prev => ({ ...prev, sectionEnrollments: transformedData, loading: false }))
+    } catch (error) {
+      console.error('Error fetching section enrollments:', error)
+      setState(prev => ({ 
+        ...prev, 
+        error: 'Failed to fetch section enrollments', 
+        loading: false 
+      }))
+    }
+  }, [])
+
   return {
     state,
     // Academic Years
@@ -657,6 +700,8 @@ export function useAcademicStructure() {
     createSection,
     updateSection,
     deleteSection,
+    // Section Enrollments
+    fetchSectionEnrollments,
     // Profiles
     fetchStudentProfiles,
     fetchLecturerProfiles,

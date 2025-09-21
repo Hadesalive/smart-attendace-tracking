@@ -5,14 +5,14 @@ import { useData } from '@/lib/contexts/DataContext'
 import { initializeMockData } from '@/lib/data/mockData'
 
 export function useMockData() {
-  const { dispatch, state } = useData()
+  const { state } = useData()
 
   useEffect(() => {
     // Mock data initialization disabled - using real database data only
     // if (state.users.length === 0 && !state.loading) {
     //   initializeMockData(dispatch)
     // }
-  }, [dispatch, state.users.length, state.loading])
+  }, [state.users.length, state.loading])
 
   return {
     isInitialized: state.users.length > 0,

@@ -88,7 +88,7 @@ import { formatDate, formatTime} from "@/lib/utils"
 import { TYPOGRAPHY_STYLES } from "@/lib/design/fonts"
 import { BUTTON_STYLES } from "@/lib/constants/admin-constants"
 import { supabase } from "@/lib/supabase"
-import { useData } from "@/lib/contexts/DataContext"
+import { useAttendance, useCourses } from "@/lib/domains"
 // Mock data removed - using DataContext
 import { AttendanceSession, AttendanceRecord } from "@/lib/types/shared"
 import PageHeader from "@/components/admin/PageHeader"
@@ -157,16 +157,30 @@ interface AttendanceStats {
 // ============================================================================
 
 export default function AttendancePage() {
+  const attendance = useAttendance()
+  const courses = useCourses()
+  
+  // Extract state and methods
   const { 
-    state, 
+    state: attendanceState,
     getAttendanceSessionsByCourse,
     getAttendanceRecordsBySession,
     createAttendanceSession,
     markAttendance,
     fetchAttendanceSessions,
-    fetchAttendanceRecords,
+    fetchAttendanceRecords
+  } = attendance
+  
+  const { 
+    state: coursesState,
     fetchCourses
-  } = useData()
+  } = courses
+  
+  // Create legacy state object for compatibility
+  const state = {
+    ...attendanceState,
+    ...coursesState
+  }
   // Mock data removed - using DataContext
 
   // Load data on component mount
@@ -200,9 +214,9 @@ export default function AttendancePage() {
   // Compute stats from shared data
   const stats = useMemo(() => {
     const totalSessions = sessions.length
-    const activeSessions = sessions.filter(s => s.status === 'active').length
+    const activeSessions = sessions.filter((s: AttendanceSession) => s.status === 'active').length
     const totalAttendance = state.attendanceRecords.length
-    const absentStudents = state.attendanceRecords.filter(r => r.status === 'absent').length
+    const absentStudents = state.attendanceRecords.filter((r: AttendanceRecord) => r.status === 'absent').length
 
     return {
       totalSessions,
@@ -276,7 +290,7 @@ export default function AttendancePage() {
 
     // Filter by search term
     if (searchTerm) {
-      filtered = filtered.filter(session => 
+      filtered = filtered.filter((session: AttendanceSession) => 
         session.session_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         session.course_code.toLowerCase().includes(searchTerm.toLowerCase()) ||
         session.course_name.toLowerCase().includes(searchTerm.toLowerCase())
@@ -285,7 +299,7 @@ export default function AttendancePage() {
 
     // Filter by status (centralized mapping with is_active override)
     if (selectedStatus !== "all") {
-      filtered = filtered.filter(session => {
+      filtered = filtered.filter((session: AttendanceSession) => {
         const displayStatus = session.is_active ? 'active' : mapSessionStatus(session.status, 'admin')
         return displayStatus === selectedStatus
       })
@@ -322,7 +336,7 @@ export default function AttendancePage() {
     {
       key: 'course',
       label: 'Course',
-      render: (value: any, row: AttendanceSession) => (
+      render: (value: string, row: AttendanceSession) => (
         <Box>
           <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
             {row.course_code}
@@ -336,7 +350,7 @@ export default function AttendancePage() {
     {
       key: 'lecturer',
       label: 'Lecturer',
-      render: (value: any, row: AttendanceSession) => (
+      render: (value: string, row: AttendanceSession) => (
         <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
           Lecturer
         </Typography>
@@ -345,7 +359,7 @@ export default function AttendancePage() {
     {
       key: 'datetime',
       label: 'Date & Time',
-      render: (value: any, row: AttendanceSession) => (
+      render: (value: string, row: AttendanceSession) => (
         <Box>
           <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
             {formatDate(row.session_date)}
@@ -359,9 +373,9 @@ export default function AttendancePage() {
     {
       key: 'attendance',
       label: 'Attendance',
-      render: (value: any, row: AttendanceSession) => {
+      render: (value: string, row: AttendanceSession) => {
         const records = getAttendanceRecordsBySession(row.id)
-        const presentCount = records.filter(r => r.status === 'present' || r.status === 'late').length
+        const presentCount = records.filter((r: AttendanceRecord) => r.status === 'present' || r.status === 'late').length
         const totalCount = records.length
         return (
           <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
@@ -376,9 +390,9 @@ export default function AttendancePage() {
     {
       key: 'rate',
       label: 'Rate',
-      render: (value: any, row: AttendanceSession) => {
+      render: (value: string, row: AttendanceSession) => {
         const records = getAttendanceRecordsBySession(row.id)
-        const presentCount = records.filter(r => r.status === 'present' || r.status === 'late').length
+        const presentCount = records.filter((r: AttendanceRecord) => r.status === 'present' || r.status === 'late').length
         const totalCount = records.length
         const rate = totalCount > 0 ? Math.round((presentCount / totalCount) * 100) : 0
         return (
@@ -391,7 +405,7 @@ export default function AttendancePage() {
     {
       key: 'status',
       label: 'Status',
-      render: (value: any, row: AttendanceSession) => {
+      render: (value: string, row: AttendanceSession) => {
         const displayStatus = row.is_active ? 'active' : mapSessionStatus(row.status, 'admin')
         const statusColor = getStatusColor(displayStatus)
         const label = displayStatus.charAt(0).toUpperCase() + displayStatus.slice(1)
@@ -413,7 +427,7 @@ export default function AttendancePage() {
     {
       key: 'actions',
       label: 'Actions',
-      render: (value: any, row: AttendanceSession) => (
+      render: (value: string, row: AttendanceSession) => (
         <IconButton
           size="small"
           onClick={(e) => handleMenuOpen(e, row)}

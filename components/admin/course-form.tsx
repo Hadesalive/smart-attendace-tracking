@@ -11,15 +11,16 @@ import { toast } from "sonner"
 import { supabase } from "@/lib/supabase"
 
 type FormState = {
-  message: string | null;
-  errors: {
-    courseName?: string[];
-    courseCode?: string[];
-    lecturerId?: string[];
-  } | null;
+  type: string;
+  message: string;
+  errors?: {
+    course_name?: string[];
+    course_code?: string[];
+    lecturer_id?: string[];
+  };
 };
 
-const initialState: FormState = { message: null, errors: null };
+const initialState: FormState = { type: 'idle', message: '', errors: undefined };
 
 function SubmitButton({ isEditing }: { isEditing: boolean }) {
   const { pending } = useFormStatus()
@@ -69,12 +70,12 @@ export function CourseForm({ course, onFormSubmit }: { course?: any; onFormSubmi
       <div>
         <Label htmlFor="courseName">Course Name</Label>
         <Input id="courseName" name="courseName" defaultValue={course?.course_name} required />
-        {state.errors?.courseName && <p className="text-sm text-red-500 mt-1">{state.errors.courseName[0]}</p>}
+        {state.errors?.course_name && <p className="text-sm text-red-500 mt-1">{state.errors.course_name[0]}</p>}
       </div>
       <div>
         <Label htmlFor="courseCode">Course Code</Label>
         <Input id="courseCode" name="courseCode" defaultValue={course?.course_code} required />
-        {state.errors?.courseCode && <p className="text-sm text-red-500 mt-1">{state.errors.courseCode[0]}</p>}
+        {state.errors?.course_code && <p className="text-sm text-red-500 mt-1">{state.errors.course_code[0]}</p>}
       </div>
       <div>
         <Label htmlFor="lecturerId">Lecturer</Label>
@@ -90,7 +91,7 @@ export function CourseForm({ course, onFormSubmit }: { course?: any; onFormSubmi
             ))}
           </SelectContent>
         </Select>
-        {state.errors?.lecturerId && <p className="text-sm text-red-500 mt-1">{state.errors.lecturerId[0]}</p>}
+        {state.errors?.lecturer_id && <p className="text-sm text-red-500 mt-1">{state.errors.lecturer_id[0]}</p>}
       </div>
       <SubmitButton isEditing={isEditing} />
     </form>

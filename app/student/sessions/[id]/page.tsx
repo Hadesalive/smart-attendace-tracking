@@ -36,7 +36,7 @@ import {
   AcademicCapIcon
 } from "@heroicons/react/24/outline"
 import { formatDate, formatFileSize } from "@/lib/utils"
-import { useData } from "@/lib/contexts/DataContext"
+import { useAttendance, useCourses, useAuth } from "@/lib/domains"
 import { AttendanceSession } from "@/lib/types/shared"
 import { mapSessionStatus } from "@/lib/utils/statusMapping"
 
@@ -106,14 +106,32 @@ export default function StudentSessionDetailsPage() {
   const router = useRouter()
   const sessionId = params?.id as string
 
+  const attendance = useAttendance()
+  const courses = useCourses()
+  const auth = useAuth()
+  
+  // Extract state and methods
   const { 
-    state,
-    fetchCourses,
-    fetchEnrollments,
+    state: attendanceState,
     fetchAttendanceSessions,
     fetchAttendanceRecords,
     getAttendanceRecordsBySession
-  } = useData()
+  } = attendance
+  
+  const { 
+    state: coursesState,
+    fetchCourses,
+    fetchEnrollments
+  } = courses
+  
+  const { state: authState } = auth
+  
+  // Create legacy state object for compatibility
+  const state = {
+    ...attendanceState,
+    ...coursesState,
+    currentUser: authState.currentUser
+  }
 
   const [session, setSession] = useState<StudentSession | null>(null)
   const [loading, setLoading] = useState(true)
@@ -134,7 +152,7 @@ export default function StudentSessionDetailsPage() {
 
   // Build session view model from store
   useEffect(() => {
-    const source: AttendanceSession | undefined = state.attendanceSessions.find(s => s.id === sessionId)
+    const source: AttendanceSession | undefined = state.attendanceSessions.find((s: any) => s.id === sessionId)
     if (!source) {
       return
     }
@@ -154,7 +172,7 @@ export default function StudentSessionDetailsPage() {
 
     // Attendance record for current user
     const records = getAttendanceRecordsBySession(source.id)
-    const studentRecord = records.find(r => !!state.currentUser?.id && r.student_id === state.currentUser.id)
+    const studentRecord = records.find((r: any) => !!state.currentUser?.id && r.student_id === state.currentUser.id)
 
     const view: StudentSession = {
       id: source.id,

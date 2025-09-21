@@ -83,7 +83,7 @@ import {
 import { formatDate, formatTime} from "@/lib/utils"
 import { TYPOGRAPHY_STYLES } from "@/lib/design/fonts"
 import { BUTTON_STYLES, STATUS_COLORS } from "@/lib/constants/admin-constants"
-import { useData } from "@/lib/contexts/DataContext"
+import { useAttendance, useCourses, useAuth } from "@/lib/domains"
 import { useMockData } from "@/lib/hooks/useMockData"
 import PageHeader from "@/components/admin/PageHeader"
 import StatsGrid from "@/components/admin/StatsGrid"
@@ -178,7 +178,16 @@ export default function SessionsPage() {
   const router = useRouter()
   
   // Data Context
-  const { state } = useData()
+  const attendance = useAttendance()
+  const courses = useCourses()
+  const auth = useAuth()
+  
+  // Create legacy state object for compatibility
+  const state = {
+    ...attendance.state,
+    ...courses.state,
+    users: auth.state.users
+  }
   const { isInitialized } = useMockData()
   
   const [searchTerm, setSearchTerm] = useState("")

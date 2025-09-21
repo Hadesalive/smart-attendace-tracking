@@ -26,7 +26,7 @@ import {
 } from "@heroicons/react/24/outline"
 import StatCard from "@/components/dashboard/stat-card"
 import MonochromeButton from "@/components/admin/MonochromeButton"
-import { useData } from "@/lib/contexts/DataContext"
+import { useGrades, useCourses, useAcademicStructure, useAuth } from "@/lib/domains"
 import { GradeCategory } from "@/lib/types/shared"
 
 // ============================================================================
@@ -55,22 +55,41 @@ interface Course {
 
 export default function GradebookPage() {
   const router = useRouter()
+  const grades = useGrades()
+  const courses = useCourses()
+  const academic = useAcademicStructure()
+  const auth = useAuth()
+  
+  // Extract state and methods
   const { 
-    state, 
-    getCoursesByLecturer, 
-    getStudentsByCourse, 
+    state: gradesState,
     getStudentGradesByCourse,
     getCourseGradeSummary,
     calculateFinalGrade,
     updateGradeCategory,
-    // @ts-ignore: exposed in context
     fetchGradeCategoriesForCourse,
-    // @ts-ignore
     saveGradeCategoriesForCourse,
-    // @ts-ignore
-    fetchStudentGradesForCourse,
+    fetchStudentGradesForCourse
+  } = grades
+  
+  const { 
+    state: coursesState,
+    getCoursesByLecturer, 
+    getStudentsByCourse,
     fetchCourses
-  } = useData()
+  } = courses
+  
+  const { state: academicState } = academic
+  const { state: authState } = auth
+  
+  // Create legacy state object for compatibility
+  const state = {
+    ...gradesState,
+    ...coursesState,
+    ...academicState,
+    currentUser: authState.currentUser,
+    classes: coursesState.courses || []
+  }
   
   // ============================================================================
   // STATE
@@ -105,7 +124,7 @@ export default function GradebookPage() {
     if (!selectedCourse) return
     fetchGradeCategoriesForCourse(selectedCourse)
     fetchStudentGradesForCourse(selectedCourse)
-  }, [selectedCourse, fetchGradeCategoriesForCourse, fetchStudentGradesForCourse])
+  }, [selectedCourse]) // Removed function dependencies
 
   // Ensure courses are loaded for the lecturer when opening gradebook
   React.useEffect(() => {
@@ -114,10 +133,10 @@ export default function GradebookPage() {
     if (!state.courses || state.courses.length === 0) {
       fetchCourses()
     }
-  }, [lecturerId, state.courses?.length, fetchCourses])
+  }, [lecturerId, state.courses?.length]) // Removed fetchCourses dependency
   
   // Get classes from the data context
-  const classes = useMemo(() => state.classes, [state.classes])
+  const classes = useMemo(() => (state.classes as any[]) || [], [state.classes])
   
   // Get courses available for selected class
   const availableCourses = useMemo(() => {
@@ -140,8 +159,8 @@ export default function GradebookPage() {
   }, [selectedClass, selectedCourse, getStudentsByCourse])
 
   // Get current course and class info
-  const currentCourse = lecturerCourses.find(c => c.id === selectedCourse)
-  const currentClass = classes.find(c => c.id === selectedClass)
+  const currentCourse = lecturerCourses.find((c: any) => c.id === selectedCourse)
+  const currentClass = classes.find((c: any) => c.id === selectedClass)
 
   // Grade categories for the selected course
   const gradeCategories = useMemo(() => ({
@@ -187,7 +206,7 @@ export default function GradebookPage() {
     let totalGraded = 0
     
     if (selectedCourse && availableStudents.length > 0) {
-      const studentGrades = availableStudents.map(student => {
+      const studentGrades = availableStudents.map((student: any) => {
         const grades = getStudentGradesByCourse(student.id, selectedCourse)
         const finalGrade = calculateFinalGrade(student.id, selectedCourse)
         return { student, grades, finalGrade }
@@ -429,7 +448,7 @@ export default function GradebookPage() {
                       '& .MuiInputLabel-root.Mui-focused': { color: '#000' }
                     }}
                   >
-                    {classes.map((cls) => (
+                    {classes.map((cls: any) => (
                       <MenuItem key={cls.id} value={cls.id}>
                         <Box>
                           <Typography sx={{ fontFamily: "Poppins", fontWeight: 600 }}>
@@ -734,7 +753,7 @@ export default function GradebookPage() {
               </Typography>
               
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                {availableStudents.map((student) => (
+                {availableStudents.map((student: any) => (
                   <Box 
                     key={student.id}
                     sx={{ 

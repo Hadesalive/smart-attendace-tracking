@@ -11,7 +11,6 @@ import {
   Avatar,
   Chip,
   TextField,
-  Grid,
   Tabs,
   Tab,
   Switch,
@@ -298,8 +297,8 @@ export default function LecturerProfilePage() {
             <EnvelopeIcon className="h-5 w-5" />
             Contact Information
           </Typography>
-          <Grid container spacing={3}>
-            <Grid item xs={12} md={6}>
+          <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, gap: 3 }}>
+            <Box sx={{ flex: 1 }}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
                 <EnvelopeIcon className="h-5 w-5 text-gray-500" />
                 <Box>
@@ -314,8 +313,8 @@ export default function LecturerProfilePage() {
                   <Typography variant="body1">{profile.phone}</Typography>
                 </Box>
               </Box>
-            </Grid>
-            <Grid item xs={12} md={6}>
+            </Box>
+            <Box sx={{ flex: 1 }}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
                 <MapPinIcon className="h-5 w-5 text-gray-500" />
                 <Box>
@@ -330,8 +329,8 @@ export default function LecturerProfilePage() {
                   <Typography variant="body1">{profile.officeHours}</Typography>
                 </Box>
               </Box>
-            </Grid>
-          </Grid>
+            </Box>
+          </Box>
         </MUICardContent>
       </MUICard>
 
@@ -342,36 +341,28 @@ export default function LecturerProfilePage() {
             <ChartBarIcon className="h-5 w-5" />
             Teaching Statistics
           </Typography>
-          <Grid container spacing={3}>
-            <Grid item xs={6} md={3}>
-              <Box sx={{ textAlign: 'center', p: 2, bgcolor: 'rgba(0,0,0,0.02)', borderRadius: 2, border: '1px solid #000' }}>
-                <BookOpenIcon className="h-8 w-8 mx-auto mb-2 text-blue-600" />
-                <Typography variant="h4" sx={{ fontWeight: 700, color: '#000' }}>{teachingStats.totalCourses}</Typography>
-                <Typography variant="body2" sx={{ color: '#666' }}>Total Courses</Typography>
-              </Box>
-            </Grid>
-            <Grid item xs={6} md={3}>
-              <Box sx={{ textAlign: 'center', p: 2, bgcolor: 'rgba(0,0,0,0.02)', borderRadius: 2, border: '1px solid #000' }}>
-                <UserGroupIcon className="h-8 w-8 mx-auto mb-2 text-green-600" />
-                <Typography variant="h4" sx={{ fontWeight: 700, color: '#000' }}>{teachingStats.totalStudents}</Typography>
-                <Typography variant="body2" sx={{ color: '#666' }}>Total Students</Typography>
-              </Box>
-            </Grid>
-            <Grid item xs={6} md={3}>
-              <Box sx={{ textAlign: 'center', p: 2, bgcolor: 'rgba(0,0,0,0.02)', borderRadius: 2, border: '1px solid #000' }}>
-                <TrophyIcon className="h-8 w-8 mx-auto mb-2 text-yellow-600" />
-                <Typography variant="h4" sx={{ fontWeight: 700, color: '#000' }}>{teachingStats.averageRating}</Typography>
-                <Typography variant="body2" sx={{ color: '#666' }}>Avg Rating</Typography>
-              </Box>
-            </Grid>
-            <Grid item xs={6} md={3}>
-              <Box sx={{ textAlign: 'center', p: 2, bgcolor: 'rgba(0,0,0,0.02)', borderRadius: 2, border: '1px solid #000' }}>
-                <CalendarDaysIcon className="h-8 w-8 mx-auto mb-2 text-purple-600" />
-                <Typography variant="h4" sx={{ fontWeight: 700, color: '#000' }}>{teachingStats.totalSessions}</Typography>
-                <Typography variant="body2" sx={{ color: '#666' }}>Sessions Taught</Typography>
-              </Box>
-            </Grid>
-          </Grid>
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(2, 1fr)', md: 'repeat(4, 1fr)' }, gap: 3 }}>
+            <Box sx={{ textAlign: 'center', p: 2, bgcolor: 'rgba(0,0,0,0.02)', borderRadius: 2, border: '1px solid #000' }}>
+              <BookOpenIcon className="h-8 w-8 mx-auto mb-2 text-blue-600" />
+              <Typography variant="h4" sx={{ fontWeight: 700, color: '#000' }}>{teachingStats.totalCourses}</Typography>
+              <Typography variant="body2" sx={{ color: '#666' }}>Total Courses</Typography>
+            </Box>
+            <Box sx={{ textAlign: 'center', p: 2, bgcolor: 'rgba(0,0,0,0.02)', borderRadius: 2, border: '1px solid #000' }}>
+              <UserGroupIcon className="h-8 w-8 mx-auto mb-2 text-green-600" />
+              <Typography variant="h4" sx={{ fontWeight: 700, color: '#000' }}>{teachingStats.totalStudents}</Typography>
+              <Typography variant="body2" sx={{ color: '#666' }}>Total Students</Typography>
+            </Box>
+            <Box sx={{ textAlign: 'center', p: 2, bgcolor: 'rgba(0,0,0,0.02)', borderRadius: 2, border: '1px solid #000' }}>
+              <TrophyIcon className="h-8 w-8 mx-auto mb-2 text-yellow-600" />
+              <Typography variant="h4" sx={{ fontWeight: 700, color: '#000' }}>{teachingStats.averageRating}</Typography>
+              <Typography variant="body2" sx={{ color: '#666' }}>Avg Rating</Typography>
+            </Box>
+            <Box sx={{ textAlign: 'center', p: 2, bgcolor: 'rgba(0,0,0,0.02)', borderRadius: 2, border: '1px solid #000' }}>
+              <CalendarDaysIcon className="h-8 w-8 mx-auto mb-2 text-purple-600" />
+              <Typography variant="h4" sx={{ fontWeight: 700, color: '#000' }}>{teachingStats.totalSessions}</Typography>
+              <Typography variant="body2" sx={{ color: '#666' }}>Sessions Taught</Typography>
+            </Box>
+          </Box>
         </MUICardContent>
       </MUICard>
 
@@ -439,8 +430,8 @@ export default function LecturerProfilePage() {
             </Box>
           </Box>
 
-          <Grid container spacing={3}>
-            <Grid item xs={12} md={6}>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+            <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, gap: 3 }}>
               <TextField
                 fullWidth
                 label="First Name"
@@ -449,8 +440,6 @@ export default function LecturerProfilePage() {
                 disabled={!isEditing}
                 sx={INPUT_STYLES}
               />
-            </Grid>
-            <Grid item xs={12} md={6}>
               <TextField
                 fullWidth
                 label="Last Name"
@@ -459,8 +448,8 @@ export default function LecturerProfilePage() {
                 disabled={!isEditing}
                 sx={INPUT_STYLES}
               />
-            </Grid>
-            <Grid item xs={12} md={6}>
+            </Box>
+            <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, gap: 3 }}>
               <TextField
                 fullWidth
                 label="Department"
@@ -469,8 +458,6 @@ export default function LecturerProfilePage() {
                 disabled={!isEditing}
                 sx={INPUT_STYLES}
               />
-            </Grid>
-            <Grid item xs={12} md={6}>
               <TextField
                 fullWidth
                 label="Position"
@@ -479,20 +466,18 @@ export default function LecturerProfilePage() {
                 disabled={!isEditing}
                 sx={INPUT_STYLES}
               />
-            </Grid>
-            <Grid item xs={12}>
-              <TextField
-                fullWidth
-                multiline
-                rows={4}
-                label="Bio"
-                value={isEditing ? editedProfile.bio : profile.bio}
-                onChange={(e) => handleProfileChange('bio', e.target.value)}
-                disabled={!isEditing}
-                sx={INPUT_STYLES}
-              />
-            </Grid>
-          </Grid>
+            </Box>
+            <TextField
+              fullWidth
+              multiline
+              rows={4}
+              label="Bio"
+              value={isEditing ? editedProfile.bio : profile.bio}
+              onChange={(e) => handleProfileChange('bio', e.target.value)}
+              disabled={!isEditing}
+              sx={INPUT_STYLES}
+            />
+          </Box>
         </MUICardContent>
       </MUICard>
 
@@ -502,8 +487,8 @@ export default function LecturerProfilePage() {
           <Typography variant="h6" sx={{ fontFamily: 'Poppins, sans-serif', fontWeight: 600, mb: 3 }}>
             Contact Information
           </Typography>
-          <Grid container spacing={3}>
-            <Grid item xs={12} md={6}>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+            <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, gap: 3 }}>
               <TextField
                 fullWidth
                 label="Email"
@@ -512,8 +497,6 @@ export default function LecturerProfilePage() {
                 onChange={(e) => handleContactInfoChange('email', e.target.value)}
                 sx={INPUT_STYLES}
               />
-            </Grid>
-            <Grid item xs={12} md={6}>
               <TextField
                 fullWidth
                 label="Phone"
@@ -521,8 +504,8 @@ export default function LecturerProfilePage() {
                 onChange={(e) => handleContactInfoChange('phone', e.target.value)}
                 sx={INPUT_STYLES}
               />
-            </Grid>
-            <Grid item xs={12} md={6}>
+            </Box>
+            <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, gap: 3 }}>
               <TextField
                 fullWidth
                 label="Office Location"
@@ -530,8 +513,6 @@ export default function LecturerProfilePage() {
                 onChange={(e) => handleContactInfoChange('officeLocation', e.target.value)}
                 sx={INPUT_STYLES}
               />
-            </Grid>
-            <Grid item xs={12} md={6}>
               <TextField
                 fullWidth
                 label="Office Hours"
@@ -539,8 +520,8 @@ export default function LecturerProfilePage() {
                 onChange={(e) => handleContactInfoChange('officeHours', e.target.value)}
                 sx={INPUT_STYLES}
               />
-            </Grid>
-          </Grid>
+            </Box>
+          </Box>
         </MUICardContent>
       </MUICard>
     </Box>
@@ -702,35 +683,29 @@ export default function LecturerProfilePage() {
             <Cog6ToothIcon className="h-5 w-5" />
             System Preferences
           </Typography>
-          <Grid container spacing={3}>
-            <Grid item xs={12} md={4}>
-              <TextField
-                fullWidth
-                label="Language"
-                value={systemSettings.language}
-                disabled
-                sx={INPUT_STYLES}
-              />
-            </Grid>
-            <Grid item xs={12} md={4}>
-              <TextField
-                fullWidth
-                label="Timezone"
-                value={systemSettings.timezone}
-                disabled
-                sx={INPUT_STYLES}
-              />
-            </Grid>
-            <Grid item xs={12} md={4}>
-              <TextField
-                fullWidth
-                label="Theme"
-                value={systemSettings.theme}
-                disabled
-                sx={INPUT_STYLES}
-              />
-            </Grid>
-          </Grid>
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(3, 1fr)' }, gap: 3 }}>
+            <TextField
+              fullWidth
+              label="Language"
+              value={systemSettings.language}
+              disabled
+              sx={INPUT_STYLES}
+            />
+            <TextField
+              fullWidth
+              label="Timezone"
+              value={systemSettings.timezone}
+              disabled
+              sx={INPUT_STYLES}
+            />
+            <TextField
+              fullWidth
+              label="Theme"
+              value={systemSettings.theme}
+              disabled
+              sx={INPUT_STYLES}
+            />
+          </Box>
         </MUICardContent>
       </MUICard>
 

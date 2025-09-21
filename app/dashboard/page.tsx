@@ -2,10 +2,11 @@
 
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { useData } from "@/lib/contexts/DataContext"
+import { useAuth } from "@/lib/domains"
 
 export default function Dashboard() {
-  const { state, loadCurrentUser } = useData()
+  const auth = useAuth()
+  const { state, loadCurrentUser } = auth
   const router = useRouter()
   const [loading, setLoading] = useState(true)
 

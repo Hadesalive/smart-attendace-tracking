@@ -55,7 +55,7 @@ import {
 } from "@heroicons/react/24/outline"
 import { formatDate, formatNumber } from "@/lib/utils"
 import { useRouter } from "next/navigation"
-import { useData } from "@/lib/contexts/DataContext"
+import { useGrades, useCourses, useAcademicStructure, useAuth } from "@/lib/domains"
 import { useMockData } from "@/lib/hooks/useMockData"
 import { Assignment, Submission, Class, Course } from "@/lib/types/shared"
 import { mapAssignmentStatus } from "@/lib/utils/statusMapping"
@@ -72,15 +72,37 @@ import { mapAssignmentStatus } from "@/lib/utils/statusMapping"
 
 export default function HomeworkPage() {
   const router = useRouter()
+  const grades = useGrades()
+  const courses = useCourses()
+  const academic = useAcademicStructure()
+  const auth = useAuth()
+  
+  // Extract state and methods
   const { 
-    state, 
-    getCoursesByLecturer, 
-    getStudentsByCourse, 
+    state: gradesState,
     getAssignmentsByCourse,
     getSubmissionsByAssignment,
     createAssignment,
     gradeSubmission
-  } = useData()
+  } = grades
+  
+  const { 
+    state: coursesState,
+    getCoursesByLecturer, 
+    getStudentsByCourse
+  } = courses
+  
+  const { state: academicState } = academic
+  const { state: authState } = auth
+  
+  // Create legacy state object for compatibility
+  const state = {
+    ...gradesState,
+    ...coursesState,
+    ...academicState,
+    currentUser: authState.currentUser,
+    classes: academicState.sections // Map sections to classes for backward compatibility
+  }
   const { isInitialized } = useMockData()
   
   // ============================================================================

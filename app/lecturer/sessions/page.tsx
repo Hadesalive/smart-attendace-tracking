@@ -51,7 +51,7 @@ import {
 import { QRCodeCanvas } from 'qrcode.react'
 import { formatDate, formatTime } from "@/lib/utils"
 import { mapSessionStatus } from "@/lib/utils/statusMapping"
-import { useData } from "@/lib/contexts/DataContext"
+import { useAttendance, useCourses, useAcademicStructure } from "@/lib/domains"
 import { toast } from "sonner"
 
 // ============================================================================
@@ -188,12 +188,21 @@ const toSharedSessionStatus = (status: SessionStatus): 'scheduled' | 'active' | 
 
 export default function LecturerSessionsPage() {
   const router = useRouter()
-  const { 
-    state, 
-    fetchAttendanceSessions, 
-    deleteAttendanceSessionSupabase, 
-    updateAttendanceSessionSupabase 
-  } = useData()
+  const attendance = useAttendance()
+  const courses = useCourses()
+  const academic = useAcademicStructure()
+  
+  // Extract state and methods
+  const { state: attendanceState, fetchAttendanceSessions, deleteAttendanceSessionSupabase, updateAttendanceSessionSupabase } = attendance
+  const { state: coursesState } = courses
+  const { state: academicState } = academic
+  
+  // Create legacy state object for compatibility
+  const state = {
+    ...attendanceState,
+    ...coursesState,
+    ...academicState
+  }
   
   // ============================================================================
   // STATE

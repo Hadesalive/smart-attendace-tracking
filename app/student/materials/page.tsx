@@ -40,9 +40,9 @@ import {
   ClockIcon
 } from "@heroicons/react/24/outline"
 import { formatDate, formatFileSize } from "@/lib/utils"
-import { useData } from "@/lib/contexts/DataContext"
+import { useMaterials, useCourses } from "@/lib/domains"
 import { useMockData } from "@/lib/hooks/useMockData"
-import { Material } from "@/lib/types/shared"
+import { Material as SharedMaterial } from "@/lib/types/shared"
 
 // Constants
 const CARD_SX = {
@@ -128,7 +128,16 @@ export default function StudentMaterialsPage() {
   const courseParam = searchParams?.get('course')
   
   // Data Context
-  const { state } = useData()
+  const materialsHook = useMaterials()
+  const coursesHook = useCourses()
+  const { state: materialsState } = materialsHook
+  const { state: coursesState } = coursesHook
+  
+  // Create legacy state object for compatibility
+  const state = {
+    ...materialsState,
+    ...coursesState
+  }
   const { isInitialized } = useMockData()
   
   // State
@@ -138,7 +147,7 @@ export default function StudentMaterialsPage() {
 
   // Get student's courses from DataContext
   const studentId = "user_1" // Assuming current user is student with ID "user_1"
-  const courses = useMemo(() => {
+  const studentCourses = useMemo(() => {
     return state.courses.filter(course => 
       state.enrollments.some(enrollment => 
         enrollment.student_id === studentId && enrollment.course_id === course.id
@@ -153,21 +162,21 @@ export default function StudentMaterialsPage() {
 
   // Get materials from DataContext
   const materials = useMemo(() => {
-    return state.materials.map(material => {
-      const course = state.courses.find(c => c.id === material.course_id)
+    return state.materials.map((material: any) => {
+      const course = state.courses.find((c: any) => c.id === material.course_id)
       return {
         id: material.id,
         title: material.title,
         course_code: course?.course_code || 'N/A',
         course_name: course?.course_name || 'N/A',
-        type: material.type as "document" | "video" | "image" | "link",
+        type: material.material_type as "document" | "video" | "image" | "link",
         size: material.file_size,
-        url: material.url,
-        uploaded_by: material.uploaded_by || 'Unknown',
-        uploaded_at: material.uploaded_at,
+        url: material.file_url || material.link_url,
+        uploaded_by: material.author_id || 'Unknown',
+        uploaded_at: material.created_at,
         description: material.description,
         downloads: material.download_count || 0,
-        category: material.category as "lecture" | "assignment" | "reading" | "reference" | "lab"
+        category: material.material_type as "lecture" | "assignment" | "reading" | "reference" | "lab"
       }
     })
   }, [state.materials, state.courses])
@@ -285,7 +294,7 @@ export default function StudentMaterialsPage() {
     let filtered = materials
     
     if (selectedCourse) {
-      const course = courses.find(c => c.id === selectedCourse)
+      const course = studentCourses.find((c: any) => c.id === selectedCourse)
       if (course) {
         filtered = filtered.filter(material => material.course_code === course.course_code)
       }
@@ -306,7 +315,7 @@ export default function StudentMaterialsPage() {
     }
     
     return filtered.sort((a, b) => new Date(b.uploaded_at).getTime() - new Date(a.uploaded_at).getTime())
-  }, [selectedCourse, categoryTab, searchQuery, materials, courses])
+  }, [selectedCourse, categoryTab, searchQuery, materials, studentCourses])
 
   const stats = useMemo(() => {
     const totalMaterials = materials.length
@@ -487,7 +496,7 @@ export default function StudentMaterialsPage() {
                 onChange={(e) => setSelectedCourse((e.target as HTMLSelectElement).value)}
               >
                 <option value="">All Courses</option>
-                {courses.map(course => (
+                {studentCourses.map((course: any) => (
                   <option key={course.id} value={course.id}>
                     {course.course_code} - {course.course_name}
                   </option>

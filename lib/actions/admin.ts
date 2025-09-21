@@ -5,6 +5,107 @@ import { createClient } from "@supabase/supabase-js"
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
 
+// ============================================================================
+// TYPE DEFINITIONS
+// ============================================================================
+
+interface FormState {
+  type?: string
+  message: string
+  errors?: Record<string, string[]>
+}
+
+interface UserFormData {
+  email: string
+  password: string
+  fullName: string
+  role: 'admin' | 'lecturer' | 'student'
+}
+
+interface CourseFormData {
+  course_name: string
+  course_code: string
+  credits: number
+  department?: string
+  lecturer_id?: string
+}
+
+interface EnrollmentFormData {
+  studentId: string
+  courseId: string
+}
+
+interface SessionFormData {
+  title: string
+  course_id: string
+  start_time: string
+  end_time: string
+  location?: string
+  description?: string
+}
+
+interface AcademicYearFormData {
+  year_name: string
+  start_date: string
+  end_date: string
+  is_current?: boolean
+  description?: string
+}
+
+interface SemesterFormData {
+  semester_name: string
+  semester_number: number
+  academic_year_id: string
+  start_date: string
+  end_date: string
+  is_current?: boolean
+}
+
+interface DepartmentFormData {
+  department_code: string
+  department_name: string
+  head_id?: string
+  description?: string
+  is_active?: boolean
+}
+
+interface ProgramFormData {
+  program_code: string
+  program_name: string
+  department_id: string
+  degree_type: string
+  duration_years: number
+  description?: string
+  is_active?: boolean
+}
+
+interface ClassroomFormData {
+  room_number: string
+  building: string
+  capacity: number
+  room_type: string
+  description?: string
+  is_active?: boolean
+}
+
+interface SectionFormData {
+  section_name: string
+  program_id: string
+  academic_year_id: string
+  semester_id: string
+  max_students?: number
+  is_active?: boolean
+}
+
+interface CourseAssignmentFormData {
+  course_id: string
+  section_id: string
+  academic_year_id: string
+  semester_id: string
+  is_mandatory?: boolean
+  max_students?: number
+}
+
 // Schemas
 const UserSchema = z.object({
   email: z.string().email({ message: "Invalid email address." }),
@@ -93,7 +194,7 @@ const SectionSchema = z.object({
 })
 
 // --- USER MANAGEMENT ---
-export async function createUser(prevState: any, formData: FormData) {
+export async function createUser(prevState: FormState, formData: FormData): Promise<FormState> {
   const validatedFields = UserSchema.safeParse({
     email: formData.get("email"),
     password: formData.get("password"),
@@ -133,13 +234,14 @@ export async function createUser(prevState: any, formData: FormData) {
 
     revalidatePath("/dashboard")
     return { type: "success", message: `Successfully created user: ${fullName}` }
-  } catch (e: any) {
-    return { type: "error", message: `Error creating user: ${e.message}` }
+  } catch (e: unknown) {
+    const errorMessage = e instanceof Error ? e.message : 'Unknown error occurred'
+    return { message: `Error creating user: ${errorMessage}` }
   }
 }
 
 // --- COURSE MANAGEMENT ---
-export async function createCourse(prevState: any, formData: FormData) {
+export async function createCourse(prevState: FormState, formData: FormData): Promise<FormState> {
   console.log('Server action received course form data:', {
     course_name: formData.get("course_name"),
     course_code: formData.get("course_code"),
@@ -173,7 +275,7 @@ export async function createCourse(prevState: any, formData: FormData) {
   return { type: "success", message: "Course created successfully." }
 }
 
-export async function updateCourse(prevState: any, formData: FormData) {
+export async function updateCourse(prevState: FormState, formData: FormData): Promise<FormState> {
   const courseId = formData.get("courseId") as string
   
   console.log('Server action received course update form data:', {
@@ -226,7 +328,7 @@ export async function deleteCourse(courseId: string) {
 }
 
 // --- ENROLLMENT MANAGEMENT ---
-export async function createEnrollment(prevState: any, formData: FormData) {
+export async function createEnrollment(prevState: FormState, formData: FormData): Promise<FormState> {
   const validatedFields = EnrollmentSchema.safeParse({
     studentId: formData.get("studentId"),
     courseId: formData.get("courseId"),
@@ -284,7 +386,7 @@ const sessionSchema = z.object({
   description: z.string().optional(),
 });
 
-export async function createSession(prevState: any, formData: FormData) {
+export async function createSession(prevState: FormState, formData: FormData): Promise<FormState> {
   const validatedFields = sessionSchema.safeParse({
     course_id: formData.get('course_id'),
     session_name: formData.get('session_name'),
@@ -352,7 +454,7 @@ export async function createSession(prevState: any, formData: FormData) {
 // ============================================================================
 
 // --- ACADEMIC YEAR MANAGEMENT ---
-export async function createAcademicYear(prevState: any, formData: FormData) {
+export async function createAcademicYear(prevState: FormState, formData: FormData): Promise<FormState> {
   const validatedFields = AcademicYearSchema.safeParse({
     year_name: formData.get("year_name"),
     start_date: formData.get("start_date"),
@@ -376,7 +478,7 @@ export async function createAcademicYear(prevState: any, formData: FormData) {
   return { type: "success", message: "Academic year created successfully." }
 }
 
-export async function updateAcademicYear(id: string, prevState: any, formData: FormData) {
+export async function updateAcademicYear(id: string, prevState: FormState, formData: FormData): Promise<FormState> {
   const validatedFields = AcademicYearSchema.safeParse({
     year_name: formData.get("year_name"),
     start_date: formData.get("start_date"),
@@ -416,7 +518,7 @@ export async function deleteAcademicYear(id: string) {
 }
 
 // --- SEMESTER MANAGEMENT ---
-export async function createSemester(prevState: any, formData: FormData) {
+export async function createSemester(prevState: FormState, formData: FormData): Promise<FormState> {
   const validatedFields = SemesterSchema.safeParse({
     semester_name: formData.get("semester_name"),
     semester_number: parseInt(formData.get("semester_number") as string),
@@ -441,7 +543,7 @@ export async function createSemester(prevState: any, formData: FormData) {
   return { type: "success", message: "Semester created successfully." }
 }
 
-export async function updateSemester(id: string, prevState: any, formData: FormData) {
+export async function updateSemester(id: string, prevState: FormState, formData: FormData): Promise<FormState> {
   const validatedFields = SemesterSchema.safeParse({
     semester_name: formData.get("semester_name"),
     semester_number: parseInt(formData.get("semester_number") as string),
@@ -482,7 +584,7 @@ export async function deleteSemester(id: string) {
 }
 
 // --- DEPARTMENT MANAGEMENT ---
-export async function createDepartment(prevState: any, formData: FormData) {
+export async function createDepartment(prevState: FormState, formData: FormData): Promise<FormState> {
   const validatedFields = DepartmentSchema.safeParse({
     department_code: formData.get("department_code"),
     department_name: formData.get("department_name"),
@@ -506,7 +608,7 @@ export async function createDepartment(prevState: any, formData: FormData) {
   return { type: "success", message: "Department created successfully." }
 }
 
-export async function updateDepartment(id: string, prevState: any, formData: FormData) {
+export async function updateDepartment(id: string, prevState: FormState, formData: FormData): Promise<FormState> {
   const validatedFields = DepartmentSchema.safeParse({
     department_code: formData.get("department_code"),
     department_name: formData.get("department_name"),
@@ -546,7 +648,7 @@ export async function deleteDepartment(id: string) {
 }
 
 // --- PROGRAM MANAGEMENT ---
-export async function createProgram(prevState: any, formData: FormData) {
+export async function createProgram(prevState: FormState, formData: FormData): Promise<FormState> {
   const validatedFields = ProgramSchema.safeParse({
     program_code: formData.get("program_code"),
     program_name: formData.get("program_name"),
@@ -572,7 +674,7 @@ export async function createProgram(prevState: any, formData: FormData) {
   return { type: "success", message: "Program created successfully." }
 }
 
-export async function updateProgram(id: string, prevState: any, formData: FormData) {
+export async function updateProgram(id: string, prevState: FormState, formData: FormData): Promise<FormState> {
   const validatedFields = ProgramSchema.safeParse({
     program_code: formData.get("program_code"),
     program_name: formData.get("program_name"),
@@ -614,7 +716,7 @@ export async function deleteProgram(id: string) {
 }
 
 // --- CLASSROOM MANAGEMENT ---
-export async function createClassroom(prevState: any, formData: FormData) {
+export async function createClassroom(prevState: FormState, formData: FormData): Promise<FormState> {
   const validatedFields = ClassroomSchema.safeParse({
     building: formData.get("building"),
     room_number: formData.get("room_number"),
@@ -638,7 +740,7 @@ export async function createClassroom(prevState: any, formData: FormData) {
   return { type: "success", message: "Classroom created successfully." }
 }
 
-export async function updateClassroom(id: string, prevState: any, formData: FormData) {
+export async function updateClassroom(id: string, prevState: FormState, formData: FormData): Promise<FormState> {
   const validatedFields = ClassroomSchema.safeParse({
     building: formData.get("building"),
     room_number: formData.get("room_number"),
@@ -678,7 +780,7 @@ export async function deleteClassroom(id: string) {
 }
 
 // --- SECTION MANAGEMENT ---
-export async function createSection(prevState: any, formData: FormData) {
+export async function createSection(prevState: FormState, formData: FormData): Promise<FormState> {
   console.log('Server action received form data:', {
     section_code: formData.get("section_code"),
     program_id: formData.get("program_id"),
@@ -721,7 +823,7 @@ export async function createSection(prevState: any, formData: FormData) {
   return { type: "success", message: "Section created successfully." }
 }
 
-export async function updateSection(id: string, prevState: any, formData: FormData) {
+export async function updateSection(id: string, prevState: FormState, formData: FormData): Promise<FormState> {
   const validatedFields = SectionSchema.safeParse({
     section_code: formData.get("section_code"),
     program_id: formData.get("program_id"),
@@ -765,7 +867,7 @@ export async function deleteSection(id: string) {
 }
 
 // Course Assignment CRUD operations
-export async function createCourseAssignment(prevState: any, formData: FormData) {
+export async function createCourseAssignment(prevState: FormState, formData: FormData): Promise<FormState> {
   console.log('Server action received course assignment form data:', {
     course_id: formData.get("course_id"),
     section_id: formData.get("section_id"),
@@ -801,7 +903,7 @@ export async function createCourseAssignment(prevState: any, formData: FormData)
   return { type: "success", message: "Course assignment created successfully." }
 }
 
-export async function updateCourseAssignment(id: string, prevState: any, formData: FormData) {
+export async function updateCourseAssignment(id: string, prevState: FormState, formData: FormData): Promise<FormState> {
   const validatedFields = CourseAssignmentSchema.safeParse({
     course_id: formData.get("course_id"),
     section_id: formData.get("section_id"),

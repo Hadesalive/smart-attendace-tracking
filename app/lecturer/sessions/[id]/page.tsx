@@ -46,7 +46,7 @@ import {
 } from "@heroicons/react/24/outline"
 import { formatDate, formatTime, formatNumber } from "@/lib/utils"
 import { QRCodeCanvas } from 'qrcode.react'
-import { useData } from "@/lib/contexts/DataContext"
+import { useAttendance, useCourses } from "@/lib/domains"
 import SessionQrCodeDialog from "@/components/attendance/session-qr-code-dialog-new"
 // Mock data removed - using DataContext
 import { AttendanceSession, AttendanceRecord } from "@/lib/types/shared"
@@ -126,15 +126,27 @@ export default function SessionDetailsPage() {
   // DATA CONTEXT
   // ============================================================================
   
+  const attendanceHook = useAttendance()
+  const courses = useCourses()
+  
+  // Extract state and methods
   const { 
-    state, 
+    state: attendanceState,
     getAttendanceSessionsByCourse,
     getAttendanceRecordsBySession,
     updateAttendanceSessionSupabase,
     subscribeToAttendanceSessions,
     subscribeToAttendanceRecords,
     unsubscribeAll
-  } = useData()
+  } = attendanceHook
+  
+  const { state: coursesState } = courses
+  
+  // Create legacy state object for compatibility
+  const state = {
+    ...attendanceState,
+    ...coursesState
+  }
   // Mock data removed - using DataContext
 
   // ============================================================================
@@ -142,7 +154,7 @@ export default function SessionDetailsPage() {
   // ============================================================================
   
   const [session, setSession] = useState<AttendanceSession | null>(null)
-  const [attendance, setAttendance] = useState<AttendanceRecord[]>([])
+  const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [showQRDialog, setShowQRDialog] = useState(false)
   const [showEditDialog, setShowEditDialog] = useState(false)
@@ -154,17 +166,17 @@ export default function SessionDetailsPage() {
   useEffect(() => {
     if (sessionId) {
       // Find session from shared data
-      const foundSession = state.attendanceSessions.find(s => s.id === sessionId)
+      const foundSession = state.attendanceSessions.find((s: any) => s.id === sessionId)
       if (foundSession) {
         setSession(foundSession)
         
         // Get attendance records for this session
         const records = getAttendanceRecordsBySession(sessionId)
-        setAttendance(records)
+        setAttendanceRecords(records)
       }
       setLoading(false)
     }
-  }, [sessionId, state.attendanceSessions, getAttendanceRecordsBySession])
+  }, [sessionId, state.attendanceSessions]) // Removed function dependency
 
   // Subscribe to real-time updates
   useEffect(() => {
@@ -180,7 +192,7 @@ export default function SessionDetailsPage() {
         unsubscribeAll()
       }
     }
-  }, [sessionId, subscribeToAttendanceSessions, subscribeToAttendanceRecords, unsubscribeAll])
+  }, [sessionId]) // Removed function dependencies
 
   // ============================================================================
   // EVENT HANDLERS
@@ -232,10 +244,10 @@ export default function SessionDetailsPage() {
   }
 
   const getAttendanceStats = () => {
-    const present = attendance.filter(a => mapAttendanceStatus(a.status, 'lecturer') === 'present').length
-    const late = attendance.filter(a => mapAttendanceStatus(a.status, 'lecturer') === 'late').length
-    const absent = attendance.filter(a => mapAttendanceStatus(a.status, 'lecturer') === 'absent').length
-    const total = attendance.length
+    const present = attendanceRecords.filter((a: any) => mapAttendanceStatus(a.status, 'lecturer') === 'present').length
+    const late = attendanceRecords.filter((a: any) => mapAttendanceStatus(a.status, 'lecturer') === 'late').length
+    const absent = attendanceRecords.filter((a: any) => mapAttendanceStatus(a.status, 'lecturer') === 'absent').length
+    const total = attendanceRecords.length
     const attendanceRate = total > 0 ? Math.round(((present + late) / total) * 100) : 0
     
     return { present, late, absent, total, attendanceRate }
@@ -394,7 +406,7 @@ export default function SessionDetailsPage() {
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                   <UsersIcon className="h-5 w-5 text-gray-500" />
                   <Typography variant="body1">
-                    {attendance.length} students enrolled
+                    {attendanceRecords.length} students enrolled
                   </Typography>
                 </Box>
               </Box>
@@ -482,7 +494,7 @@ export default function SessionDetailsPage() {
                 Student Attendance
               </Typography>
             </Box>
-            {attendance.length === 0 ? (
+            {attendanceRecords.length === 0 ? (
               <Box sx={{
                 p: 6,
                 textAlign: 'center',
@@ -510,7 +522,7 @@ export default function SessionDetailsPage() {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {attendance.map((record) => (
+                  {attendanceRecords.map((record: any) => (
                     <TableRow 
                       key={record.id}
                       sx={{ 

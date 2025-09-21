@@ -55,8 +55,9 @@ interface SectionFormProps {
   semesters: Semester[]
   programs: Program[]
   classrooms: Classroom[]
-  onSave: (data: Section) => void
-  mode: 'create' | 'edit'
+  onSave: (data: Section | Section[]) => void
+  mode: 'create' | 'edit' | 'bulk'
+  bulkData?: Section[]
 }
 
 export default function SectionForm({ 
@@ -68,7 +69,8 @@ export default function SectionForm({
   programs,
   classrooms,
   onSave, 
-  mode 
+  mode,
+  bulkData = []
 }: SectionFormProps) {
   const [formData, setFormData] = useState<Section>({
     section_code: '',
@@ -84,10 +86,24 @@ export default function SectionForm({
   })
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(false)
+  const [bulkMode, setBulkMode] = useState(false)
+  const [bulkSections, setBulkSections] = useState<Section[]>([])
+  const [bulkTemplate, setBulkTemplate] = useState<Partial<Section>>({
+    program_id: '',
+    academic_year_id: '',
+    semester_id: '',
+    year: 1,
+    max_capacity: 50,
+    is_active: true
+  })
 
   // Initialize form data when section changes
   useEffect(() => {
-    if (section && mode === 'edit') {
+    if (mode === 'bulk') {
+      setBulkMode(true)
+      setBulkSections(bulkData)
+    } else if (section && mode === 'edit') {
+      setBulkMode(false)
       setFormData({
         id: section.id,
         section_code: section.section_code || '',
@@ -103,6 +119,7 @@ export default function SectionForm({
       })
     } else {
       // Reset form for create mode
+      setBulkMode(false)
       const currentAcademicYear = academicYears.find(ay => ay.is_current)
       const currentSemester = semesters.find(s => s.is_current)
       
@@ -120,7 +137,7 @@ export default function SectionForm({
       })
     }
     setErrors({})
-  }, [section, mode, academicYears, semesters])
+  }, [section, mode, academicYears, semesters]) // Removed bulkData from dependencies
 
   // Filter semesters based on selected academic year
   const filteredSemesters = semesters.filter(semester => 
@@ -204,18 +221,296 @@ export default function SectionForm({
     onOpenChange(false)
   }
 
+  // Bulk operations
+  const generateBulkSections = () => {
+    if (!bulkTemplate.program_id || !bulkTemplate.academic_year_id || !bulkTemplate.semester_id) {
+      setErrors({ bulk: 'Please select program, academic year, and semester first' })
+      return
+    }
+
+    const sections: Section[] = []
+    const sectionCodes = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'] // Default section codes
+    
+    for (let i = 0; i < sectionCodes.length; i++) {
+      sections.push({
+        section_code: sectionCodes[i],
+        program_id: bulkTemplate.program_id!,
+        academic_year_id: bulkTemplate.academic_year_id!,
+        semester_id: bulkTemplate.semester_id!,
+        year: bulkTemplate.year || 1,
+        max_capacity: bulkTemplate.max_capacity || 50,
+        current_enrollment: 0,
+        classroom_id: bulkTemplate.classroom_id || '',
+        description: bulkTemplate.description || '',
+        is_active: bulkTemplate.is_active ?? true
+      })
+    }
+    
+    setBulkSections(sections)
+  }
+
+  const updateBulkSection = (index: number, field: keyof Section, value: any) => {
+    const updated = [...bulkSections]
+    updated[index] = { ...updated[index], [field]: value }
+    setBulkSections(updated)
+  }
+
+  const removeBulkSection = (index: number) => {
+    setBulkSections(bulkSections.filter((_, i) => i !== index))
+  }
+
+  const addBulkSection = () => {
+    setBulkSections([...bulkSections, {
+      section_code: '',
+      program_id: bulkTemplate.program_id || '',
+      academic_year_id: bulkTemplate.academic_year_id || '',
+      semester_id: bulkTemplate.semester_id || '',
+      year: bulkTemplate.year || 1,
+      max_capacity: bulkTemplate.max_capacity || 50,
+      current_enrollment: 0,
+      classroom_id: bulkTemplate.classroom_id || '',
+      description: bulkTemplate.description || '',
+      is_active: bulkTemplate.is_active ?? true
+    }])
+  }
+
+  const handleBulkSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    
+    if (bulkSections.length === 0) {
+      setErrors({ bulk: 'Please add at least one section' })
+      return
+    }
+
+    // Validate all sections
+    const validationErrors: Record<string, string> = {}
+    bulkSections.forEach((section, index) => {
+      if (!section.section_code.trim()) {
+        validationErrors[`section_${index}`] = 'Section code is required'
+      }
+    })
+
+    if (Object.keys(validationErrors).length > 0) {
+      setErrors(validationErrors)
+      return
+    }
+
+    setLoading(true)
+    try {
+      await onSave(bulkSections)
+      onOpenChange(false)
+    } catch (error) {
+      console.error('Error saving bulk sections:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
   return (
     <DialogBox
       open={open}
       onOpenChange={onOpenChange}
-      title={mode === 'create' ? 'Create Section' : 'Edit Section'}
-      description={mode === 'create' 
+      title={mode === 'bulk' ? 'Bulk Create Sections' : mode === 'create' ? 'Create Section' : 'Edit Section'}
+      description={mode === 'bulk' 
+        ? 'Create multiple sections for a program at once' 
+        : mode === 'create' 
         ? 'Add a new class section to a program' 
         : 'Update the section information'}
-      maxWidth="lg"
+      maxWidth="xl"
     >
-      <form onSubmit={handleSubmit} autoComplete="off">
+      <form onSubmit={bulkMode ? handleBulkSubmit : handleSubmit} autoComplete="off">
         <div className="px-6 space-y-6">
+          {bulkMode ? (
+            <>
+              {/* Bulk Template */}
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <h3 className="text-lg font-semibold mb-4">Bulk Template</h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-sm font-semibold mb-2 text-gray-900">
+                      Program *
+                    </label>
+                    <select
+                      value={bulkTemplate.program_id || ''}
+                      onChange={(e) => setBulkTemplate({...bulkTemplate, program_id: e.target.value})}
+                      className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white text-gray-900 focus:border-gray-500 focus:ring-2 focus:ring-gray-300 focus:outline-none transition"
+                    >
+                      <option value="">Select Program</option>
+                      {activePrograms.map(program => (
+                        <option key={program.id} value={program.id}>
+                          {program.program_code} - {program.program_name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold mb-2 text-gray-900">
+                      Academic Year *
+                    </label>
+                    <select
+                      value={bulkTemplate.academic_year_id || ''}
+                      onChange={(e) => setBulkTemplate({...bulkTemplate, academic_year_id: e.target.value})}
+                      className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white text-gray-900 focus:border-gray-500 focus:ring-2 focus:ring-gray-300 focus:outline-none transition"
+                    >
+                      <option value="">Select Academic Year</option>
+                      {academicYears.map(year => (
+                        <option key={year.id} value={year.id}>
+                          {year.year_name} {year.is_current && '(Current)'}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold mb-2 text-gray-900">
+                      Semester *
+                    </label>
+                    <select
+                      value={bulkTemplate.semester_id || ''}
+                      onChange={(e) => setBulkTemplate({...bulkTemplate, semester_id: e.target.value})}
+                      className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white text-gray-900 focus:border-gray-500 focus:ring-2 focus:ring-gray-300 focus:outline-none transition"
+                    >
+                      <option value="">Select Semester</option>
+                      {semesters
+                        .filter(sem => sem.academic_year_id === bulkTemplate.academic_year_id)
+                        .map(semester => (
+                          <option key={semester.id} value={semester.id}>
+                            {semester.semester_name} (Semester {semester.semester_number})
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+                  <div>
+                    <label className="block text-sm font-semibold mb-2 text-gray-900">
+                      Year Level
+                    </label>
+                    <select
+                      value={bulkTemplate.year || 1}
+                      onChange={(e) => setBulkTemplate({...bulkTemplate, year: parseInt(e.target.value)})}
+                      className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white text-gray-900 focus:border-gray-500 focus:ring-2 focus:ring-gray-300 focus:outline-none transition"
+                    >
+                      <option value={1}>Year 1</option>
+                      <option value={2}>Year 2</option>
+                      <option value={3}>Year 3</option>
+                      <option value={4}>Year 4</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold mb-2 text-gray-900">
+                      Max Capacity
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="200"
+                      value={bulkTemplate.max_capacity || 50}
+                      onChange={(e) => setBulkTemplate({...bulkTemplate, max_capacity: parseInt(e.target.value)})}
+                      className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white text-gray-900 focus:border-gray-500 focus:ring-2 focus:ring-gray-300 focus:outline-none transition"
+                    />
+                  </div>
+                  <div className="flex items-center space-x-3">
+                    <input
+                      type="checkbox"
+                      checked={bulkTemplate.is_active ?? true}
+                      onChange={(e) => setBulkTemplate({...bulkTemplate, is_active: e.target.checked})}
+                      className="w-4 h-4 text-gray-600 bg-gray-100 border-gray-300 rounded focus:ring-gray-500 focus:ring-2"
+                    />
+                    <label className="text-sm font-medium text-gray-900">
+                      Active
+                    </label>
+                  </div>
+                </div>
+                <div className="mt-4 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={generateBulkSections}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    Generate Sections (A-H)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={addBulkSection}
+                    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500"
+                  >
+                    Add Custom Section
+                  </button>
+                </div>
+              </div>
+
+              {/* Bulk Sections List */}
+              <div className="space-y-4">
+                <h3 className="text-lg font-semibold">Sections to Create ({bulkSections.length})</h3>
+                {bulkSections.map((section, index) => (
+                  <div key={index} className="border border-gray-200 rounded-lg p-4">
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                      <div>
+                        <label className="block text-sm font-semibold mb-2 text-gray-900">
+                          Section Code *
+                        </label>
+                        <input
+                          type="text"
+                          value={section.section_code}
+                          onChange={(e) => updateBulkSection(index, 'section_code', e.target.value)}
+                          placeholder="e.g., A, B, 01, 02"
+                          className={`w-full px-3 py-2 rounded-lg border ${
+                            errors[`section_${index}`] ? 'border-red-300 bg-red-50' : 'border-gray-300 bg-white'
+                          } text-gray-900 focus:border-gray-500 focus:ring-2 focus:ring-gray-300 focus:outline-none transition`}
+                        />
+                        {errors[`section_${index}`] && (
+                          <p className="mt-1 text-sm text-red-600">{errors[`section_${index}`]}</p>
+                        )}
+                      </div>
+                      <div>
+                        <label className="block text-sm font-semibold mb-2 text-gray-900">
+                          Max Capacity
+                        </label>
+                        <input
+                          type="number"
+                          min="1"
+                          max="200"
+                          value={section.max_capacity}
+                          onChange={(e) => updateBulkSection(index, 'max_capacity', parseInt(e.target.value))}
+                          className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white text-gray-900 focus:border-gray-500 focus:ring-2 focus:ring-gray-300 focus:outline-none transition"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-semibold mb-2 text-gray-900">
+                          Classroom
+                        </label>
+                        <select
+                          value={section.classroom_id || ''}
+                          onChange={(e) => updateBulkSection(index, 'classroom_id', e.target.value)}
+                          className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white text-gray-900 focus:border-gray-500 focus:ring-2 focus:ring-gray-300 focus:outline-none transition"
+                        >
+                          <option value="">No classroom</option>
+                          {activeClassrooms.map(classroom => (
+                            <option key={classroom.id} value={classroom.id}>
+                              {classroom.building} - {classroom.room_number}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="flex items-end">
+                        <button
+                          type="button"
+                          onClick={() => removeBulkSection(index)}
+                          className="w-full px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                {errors.bulk && (
+                  <p className="text-sm text-red-600">{errors.bulk}</p>
+                )}
+              </div>
+            </>
+          ) : (
+            <>
           {/* Section Code */}
           <div>
             <label htmlFor="section_code" className="block text-sm font-semibold mb-2 text-gray-900">
@@ -450,6 +745,9 @@ export default function SectionForm({
             </label>
           </div>
 
+            </>
+          )}
+
           {/* Action Buttons */}
           <div className="flex justify-end gap-3 pt-6 border-t border-gray-200">
             <button
@@ -464,7 +762,9 @@ export default function SectionForm({
               disabled={loading}
               className="px-4 py-2 rounded-lg bg-gray-900 text-white font-semibold shadow hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-gray-400 transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {loading ? 'Saving...' : mode === 'create' ? 'Create Section' : 'Update Section'}
+              {loading ? 'Saving...' : 
+                bulkMode ? `Create ${bulkSections.length} Sections` :
+                mode === 'create' ? 'Create Section' : 'Update Section'}
             </button>
           </div>
         </div>
