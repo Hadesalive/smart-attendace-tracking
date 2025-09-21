@@ -1,7 +1,9 @@
 "use client"
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { DialogBox } from '@/components/ui/dialog-box'
+import SearchableSelect from '@/components/ui/SearchableSelect'
+import { getFilteredOptions } from '@/lib/utils/smart-defaults'
 
 interface AcademicYear {
   id: string
@@ -147,6 +149,47 @@ export default function SectionForm({
   // Filter active programs and classrooms
   const activePrograms = programs.filter(program => program.is_active)
   const activeClassrooms = classrooms.filter(classroom => classroom.is_active)
+
+  // Transform data for SearchableSelect
+  const programOptions = useMemo(() => {
+    const transformed = activePrograms.map(program => ({
+      id: program.id,
+      label: `${program.program_code} - ${program.program_name}`,
+      subtitle: program.department_name,
+      group: 'Programs',
+      department: program.department_name
+    }))
+    
+    // Apply smart filtering based on user context
+    return getFilteredOptions(transformed, 'admin') // Assuming admin context for now
+  }, [activePrograms])
+
+  const academicYearOptions = useMemo(() => {
+    return academicYears.map(year => ({
+      id: year.id,
+      label: year.year_name,
+      subtitle: year.is_current ? 'Current Year' : '',
+      group: 'Academic Years'
+    }))
+  }, [academicYears])
+
+  const semesterOptions = useMemo(() => {
+    return semesters.map(semester => ({
+      id: semester.id,
+      label: semester.semester_name,
+      subtitle: `Semester ${semester.semester_number}`,
+      group: 'Semesters'
+    }))
+  }, [semesters])
+
+  const classroomOptions = useMemo(() => {
+    return activeClassrooms.map(classroom => ({
+      id: classroom.id,
+      label: `${classroom.building} - ${classroom.room_number}`,
+      subtitle: `Capacity: ${classroom.capacity}`,
+      group: 'Classrooms'
+    }))
+  }, [activeClassrooms])
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target
@@ -327,57 +370,40 @@ export default function SectionForm({
                 <h3 className="text-lg font-semibold mb-4">Bulk Template</h3>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div>
-                    <label className="block text-sm font-semibold mb-2 text-gray-900">
-                      Program *
-                    </label>
-                    <select
+                    <SearchableSelect
+                      label="Program"
                       value={bulkTemplate.program_id || ''}
-                      onChange={(e) => setBulkTemplate({...bulkTemplate, program_id: e.target.value})}
-                      className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white text-gray-900 focus:border-gray-500 focus:ring-2 focus:ring-gray-300 focus:outline-none transition"
-                    >
-                      <option value="">Select Program</option>
-                      {activePrograms.map(program => (
-                        <option key={program.id} value={program.id}>
-                          {program.program_code} - {program.program_name}
-                        </option>
-                      ))}
-                    </select>
+                      onChange={(value) => setBulkTemplate({...bulkTemplate, program_id: value})}
+                      options={programOptions}
+                      placeholder="Search programs..."
+                      required
+                      disabled={loading}
+                      className="w-full"
+                    />
                   </div>
                   <div>
-                    <label className="block text-sm font-semibold mb-2 text-gray-900">
-                      Academic Year *
-                    </label>
-                    <select
+                    <SearchableSelect
+                      label="Academic Year"
                       value={bulkTemplate.academic_year_id || ''}
-                      onChange={(e) => setBulkTemplate({...bulkTemplate, academic_year_id: e.target.value})}
-                      className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white text-gray-900 focus:border-gray-500 focus:ring-2 focus:ring-gray-300 focus:outline-none transition"
-                    >
-                      <option value="">Select Academic Year</option>
-                      {academicYears.map(year => (
-                        <option key={year.id} value={year.id}>
-                          {year.year_name} {year.is_current && '(Current)'}
-                        </option>
-                      ))}
-                    </select>
+                      onChange={(value) => setBulkTemplate({...bulkTemplate, academic_year_id: value})}
+                      options={academicYearOptions}
+                      placeholder="Search academic years..."
+                      required
+                      disabled={loading}
+                      className="w-full"
+                    />
                   </div>
                   <div>
-                    <label className="block text-sm font-semibold mb-2 text-gray-900">
-                      Semester *
-                    </label>
-                    <select
+                    <SearchableSelect
+                      label="Semester"
                       value={bulkTemplate.semester_id || ''}
-                      onChange={(e) => setBulkTemplate({...bulkTemplate, semester_id: e.target.value})}
-                      className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white text-gray-900 focus:border-gray-500 focus:ring-2 focus:ring-gray-300 focus:outline-none transition"
-                    >
-                      <option value="">Select Semester</option>
-                      {semesters
-                        .filter(sem => sem.academic_year_id === bulkTemplate.academic_year_id)
-                        .map(semester => (
-                          <option key={semester.id} value={semester.id}>
-                            {semester.semester_name} (Semester {semester.semester_number})
-                          </option>
-                        ))}
-                    </select>
+                      onChange={(value) => setBulkTemplate({...bulkTemplate, semester_id: value})}
+                      options={semesterOptions.filter(sem => semesters.find(s => s.id === sem.id)?.academic_year_id === bulkTemplate.academic_year_id || !bulkTemplate.academic_year_id)}
+                      placeholder="Search semesters..."
+                      required
+                      disabled={loading}
+                      className="w-full"
+                    />
                   </div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
@@ -536,29 +562,17 @@ export default function SectionForm({
           {/* Program and Academic Details */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label htmlFor="program_id" className="block text-sm font-semibold mb-2 text-gray-900">
-                Program *
-              </label>
-              <select
-                id="program_id"
-                name="program_id"
+              <SearchableSelect
+                label="Program"
                 value={formData.program_id}
-                onChange={handleInputChange}
-                className={`w-full px-3 py-2 rounded-lg border ${
-                  errors.program_id ? 'border-red-300 bg-red-50' : 'border-gray-300 bg-white'
-                } text-gray-900 focus:border-gray-500 focus:ring-2 focus:ring-gray-300 focus:outline-none transition`}
+                onChange={(value) => setFormData(prev => ({ ...prev, program_id: value }))}
+                options={programOptions}
+                placeholder="Search programs..."
                 required
-              >
-                <option value="">Select Program</option>
-                {activePrograms.map(program => (
-                  <option key={program.id} value={program.id}>
-                    {program.program_code} - {program.program_name}
-                  </option>
-                ))}
-              </select>
-              {errors.program_id && (
-                <p className="mt-1 text-sm text-red-600">{errors.program_id}</p>
-              )}
+                disabled={loading}
+                error={errors.program_id}
+                className="w-full"
+              />
             </div>
 
             <div>
@@ -589,56 +603,31 @@ export default function SectionForm({
           {/* Academic Year and Semester */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label htmlFor="academic_year_id" className="block text-sm font-semibold mb-2 text-gray-900">
-                Academic Year *
-              </label>
-              <select
-                id="academic_year_id"
-                name="academic_year_id"
+              <SearchableSelect
+                label="Academic Year"
                 value={formData.academic_year_id}
-                onChange={handleInputChange}
-                className={`w-full px-3 py-2 rounded-lg border ${
-                  errors.academic_year_id ? 'border-red-300 bg-red-50' : 'border-gray-300 bg-white'
-                } text-gray-900 focus:border-gray-500 focus:ring-2 focus:ring-gray-300 focus:outline-none transition`}
+                onChange={(value) => setFormData(prev => ({ ...prev, academic_year_id: value, semester_id: '' }))}
+                options={academicYearOptions}
+                placeholder="Search academic years..."
                 required
-              >
-                <option value="">Select Academic Year</option>
-                {academicYears.map(year => (
-                  <option key={year.id} value={year.id}>
-                    {year.year_name} {year.is_current && '(Current)'}
-                  </option>
-                ))}
-              </select>
-              {errors.academic_year_id && (
-                <p className="mt-1 text-sm text-red-600">{errors.academic_year_id}</p>
-              )}
+                disabled={loading}
+                error={errors.academic_year_id}
+                className="w-full"
+              />
             </div>
 
             <div>
-              <label htmlFor="semester_id" className="block text-sm font-semibold mb-2 text-gray-900">
-                Semester *
-              </label>
-              <select
-                id="semester_id"
-                name="semester_id"
+              <SearchableSelect
+                label="Semester"
                 value={formData.semester_id}
-                onChange={handleInputChange}
-                className={`w-full px-3 py-2 rounded-lg border ${
-                  errors.semester_id ? 'border-red-300 bg-red-50' : 'border-gray-300 bg-white'
-                } text-gray-900 focus:border-gray-500 focus:ring-2 focus:ring-gray-300 focus:outline-none transition`}
+                onChange={(value) => setFormData(prev => ({ ...prev, semester_id: value }))}
+                options={semesterOptions.filter(sem => semesters.find(s => s.id === sem.id)?.academic_year_id === formData.academic_year_id || !formData.academic_year_id)}
+                placeholder="Search semesters..."
                 required
-                disabled={!formData.academic_year_id}
-              >
-                <option value="">Select Semester</option>
-                {filteredSemesters.map(semester => (
-                  <option key={semester.id} value={semester.id}>
-                    {semester.semester_name} {semester.is_current && '(Current)'}
-                  </option>
-                ))}
-              </select>
-              {errors.semester_id && (
-                <p className="mt-1 text-sm text-red-600">{errors.semester_id}</p>
-              )}
+                disabled={loading || !formData.academic_year_id}
+                error={errors.semester_id}
+                className="w-full"
+              />
             </div>
           </div>
 
@@ -690,25 +679,16 @@ export default function SectionForm({
 
           {/* Classroom Assignment */}
           <div>
-            <label htmlFor="classroom_id" className="block text-sm font-semibold mb-2 text-gray-900">
-              Assigned Classroom
-            </label>
-            <select
-              id="classroom_id"
-              name="classroom_id"
-              value={formData.classroom_id}
-              onChange={handleInputChange}
-              className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white text-gray-900 focus:border-gray-500 focus:ring-2 focus:ring-gray-300 focus:outline-none transition"
-            >
-              <option value="">Select Classroom (Optional)</option>
-              {activeClassrooms.map(classroom => (
-                <option key={classroom.id} value={classroom.id}>
-                  {classroom.building} - {classroom.room_number} 
-                  {classroom.room_name && ` (${classroom.room_name})`}
-                  {` - Capacity: ${classroom.capacity}`}
-                </option>
-              ))}
-            </select>
+            <SearchableSelect
+              label="Assigned Classroom"
+              value={formData.classroom_id || ''}
+              onChange={(value) => setFormData(prev => ({ ...prev, classroom_id: value }))}
+              options={classroomOptions}
+              placeholder="Search classrooms..."
+              disabled={loading}
+              error={errors.classroom_id}
+              className="w-full"
+            />
             <p className="mt-1 text-xs text-gray-500">
               Optional: Assign a specific classroom to this section
             </p>

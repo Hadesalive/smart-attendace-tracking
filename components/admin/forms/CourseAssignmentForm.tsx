@@ -1,7 +1,9 @@
 "use client"
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { DialogBox } from '@/components/ui/dialog-box'
+import SearchableSelect from '@/components/ui/SearchableSelect'
+import { getFilteredOptions } from '@/lib/utils/smart-defaults'
 
 interface CourseAssignment {
   id?: string
@@ -138,6 +140,47 @@ export default function CourseAssignmentForm({
   // Note: Course assignments now apply to ALL sections of a program/year/semester
   // No need to filter sections as the assignment applies to all sections automatically
 
+  // Transform data for SearchableSelect
+  const courseOptions = useMemo(() => {
+    return courses.map(course => ({
+      id: course.id,
+      label: `${course.course_code || course.code} - ${course.course_name || course.name}`,
+      subtitle: `${course.credits} credits`,
+      group: 'Courses'
+    }))
+  }, [courses])
+
+  const programOptions = useMemo(() => {
+    const transformed = programs.map(program => ({
+      id: program.id,
+      label: `${program.program_code} - ${program.program_name}`,
+      subtitle: program.department_name,
+      group: 'Programs',
+      department: program.department_name
+    }))
+    
+    // Apply smart filtering based on user context
+    return getFilteredOptions(transformed, 'admin') // Assuming admin context for now
+  }, [programs])
+
+  const academicYearOptions = useMemo(() => {
+    return academicYears.map(year => ({
+      id: year.id,
+      label: year.year_name,
+      subtitle: year.is_current ? 'Current Year' : '',
+      group: 'Academic Years'
+    }))
+  }, [academicYears])
+
+  const semesterOptions = useMemo(() => {
+    return semesters.map(semester => ({
+      id: semester.id,
+      label: semester.semester_name,
+      subtitle: `Semester ${semester.semester_number}`,
+      group: 'Semesters'
+    }))
+  }, [semesters])
+
   return (
     <DialogBox
       open={open}
@@ -157,130 +200,56 @@ export default function CourseAssignmentForm({
           )}
 
           {/* Course Selection */}
-          <div>
-            <label htmlFor="course_id" className="block text-sm font-semibold mb-2 text-gray-900">
-              Course *
-            </label>
-            <select
-              id="course_id"
-              name="course_id"
-              value={formData.course_id}
-              onChange={handleInputChange}
-              className={`w-full px-3 py-2 rounded-lg border ${
-                errors.course_id ? 'border-red-300 bg-red-50' : 'border-gray-300 bg-white'
-              } text-gray-900 focus:border-gray-500 focus:ring-2 focus:ring-gray-300 focus:outline-none transition`}
-              required
-              disabled={loading}
-            >
-              <option value="">Select Course</option>
-              {courses.map((course) => (
-                <option key={course.id} value={course.id}>
-                  {course.code || course.course_code} - {course.name || course.course_name}
-                </option>
-              ))}
-            </select>
-            {errors.course_id && (
-              <p className="mt-1 text-sm text-red-600">{errors.course_id}</p>
-            )}
-          </div>
+          <SearchableSelect
+            label="Course"
+            value={formData.course_id}
+            onChange={(value) => setFormData(prev => ({ ...prev, course_id: value }))}
+            options={courseOptions}
+            placeholder="Search courses..."
+            required
+            disabled={loading}
+            error={errors.course_id}
+            className="w-full"
+          />
 
           {/* Academic Year */}
-          <div>
-            <label htmlFor="academic_year_id" className="block text-sm font-semibold mb-2 text-gray-900">
-              Academic Year *
-            </label>
-            <select
-              id="academic_year_id"
-              name="academic_year_id"
-              value={formData.academic_year_id}
-              onChange={(e) => {
-                handleInputChange(e)
-                // Reset dependent fields
-                setFormData(prev => ({ ...prev, semester_id: '' }))
-              }}
-              className={`w-full px-3 py-2 rounded-lg border ${
-                errors.academic_year_id ? 'border-red-300 bg-red-50' : 'border-gray-300 bg-white'
-              } text-gray-900 focus:border-gray-500 focus:ring-2 focus:ring-gray-300 focus:outline-none transition`}
-              required
-              disabled={loading}
-            >
-              <option value="">Select Academic Year</option>
-              {academicYears.map((year) => (
-                <option key={year.id} value={year.id}>
-                  {year.year_name}
-                </option>
-              ))}
-            </select>
-            {errors.academic_year_id && (
-              <p className="mt-1 text-sm text-red-600">{errors.academic_year_id}</p>
-            )}
-          </div>
+          <SearchableSelect
+            label="Academic Year"
+            value={formData.academic_year_id}
+            onChange={(value) => setFormData(prev => ({ ...prev, academic_year_id: value, semester_id: '' }))}
+            options={academicYearOptions}
+            placeholder="Search academic years..."
+            required
+            disabled={loading}
+            error={errors.academic_year_id}
+            className="w-full"
+          />
 
           {/* Semester */}
-          <div>
-            <label htmlFor="semester_id" className="block text-sm font-semibold mb-2 text-gray-900">
-              Semester *
-            </label>
-            <select
-              id="semester_id"
-              name="semester_id"
-              value={formData.semester_id}
-              onChange={(e) => {
-                handleInputChange(e)
-                // Reset section when semester changes
-                // No need to reset section_id as we're using program-based assignments
-              }}
-              className={`w-full px-3 py-2 rounded-lg border ${
-                errors.semester_id ? 'border-red-300 bg-red-50' : 'border-gray-300 bg-white'
-              } text-gray-900 focus:border-gray-500 focus:ring-2 focus:ring-gray-300 focus:outline-none transition`}
-              required
-              disabled={loading || !formData.academic_year_id}
-            >
-              <option value="">Select Semester</option>
-              {semesters
-                .filter(sem => sem.academic_year_id === formData.academic_year_id)
-                .map((semester) => (
-                  <option key={semester.id} value={semester.id}>
-                    {semester.semester_name} (Semester {semester.semester_number})
-                  </option>
-                ))}
-            </select>
-            {errors.semester_id && (
-              <p className="mt-1 text-sm text-red-600">{errors.semester_id}</p>
-            )}
-          </div>
+          <SearchableSelect
+            label="Semester"
+            value={formData.semester_id}
+            onChange={(value) => setFormData(prev => ({ ...prev, semester_id: value }))}
+            options={semesterOptions.filter(sem => semesters.find(s => s.id === sem.id)?.academic_year_id === formData.academic_year_id || !formData.academic_year_id)}
+            placeholder="Search semesters..."
+            required
+            disabled={loading || !formData.academic_year_id}
+            error={errors.semester_id}
+            className="w-full"
+          />
 
           {/* Program */}
-          <div>
-            <label htmlFor="program_id" className="block text-sm font-semibold mb-2 text-gray-900">
-              Program *
-            </label>
-            <select
-              id="program_id"
-              name="program_id"
-              value={formData.program_id}
-              onChange={(e) => {
-                handleInputChange(e)
-                // Reset section when program changes
-                // No need to reset section_id as we're using program-based assignments
-              }}
-              className={`w-full px-3 py-2 rounded-lg border ${
-                errors.program_id ? 'border-red-300 bg-red-50' : 'border-gray-300 bg-white'
-              } text-gray-900 focus:border-gray-500 focus:ring-2 focus:ring-gray-300 focus:outline-none transition`}
-              required
-              disabled={loading}
-            >
-              <option value="">Select Program</option>
-              {programs.map((program) => (
-                <option key={program.id} value={program.id}>
-                  {program.program_code} - {program.program_name}
-                </option>
-              ))}
-            </select>
-            {errors.program_id && (
-              <p className="mt-1 text-sm text-red-600">{errors.program_id}</p>
-            )}
-          </div>
+          <SearchableSelect
+            label="Program"
+            value={formData.program_id}
+            onChange={(value) => setFormData(prev => ({ ...prev, program_id: value }))}
+            options={programOptions}
+            placeholder="Search programs..."
+            required
+            disabled={loading}
+            error={errors.program_id}
+            className="w-full"
+          />
 
           {/* Year Level */}
           <div>
