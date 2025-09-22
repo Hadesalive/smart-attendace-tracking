@@ -92,7 +92,11 @@ export default function InfoCard({
                     {item.label}
                   </Typography>
                 </Box>
-                <Typography variant="body1" sx={TYPOGRAPHY_STYLES.tableBody}>
+                <Typography 
+                  variant="body1" 
+                  component={typeof item.value === 'string' ? 'p' : 'div'}
+                  sx={TYPOGRAPHY_STYLES.tableBody}
+                >
                   {item.value}
                 </Typography>
                 {item.description && (

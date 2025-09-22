@@ -1,11 +1,12 @@
 "use client"
 
 import React from "react"
-import { Box, Paper, TextField } from "@mui/material"
+import { Box, Paper, TextField, Button } from "@mui/material"
 
 export type FilterField =
   | { type: 'native-select'; label: string; value: string; onChange: (v: string) => void; options: { value: string; label: string }[]; span?: number }
   | { type: 'text'; label: string; value: string; onChange: (v: string) => void; placeholder?: string; span?: number }
+  | { type: 'clear-button'; label: string; onClick: () => void; span?: number }
 
 interface FilterBarProps {
   fields: FilterField[]
@@ -33,7 +34,7 @@ export default function FilterBar({ fields }: FilterBarProps) {
                   <option key={opt.value} value={opt.value}>{opt.label}</option>
                 ))}
               </TextField>
-            ) : (
+            ) : f.type === 'text' ? (
               <TextField
                 fullWidth
                 size="small"
@@ -44,7 +45,32 @@ export default function FilterBar({ fields }: FilterBarProps) {
                 placeholder={f.placeholder}
                 sx={{ '& .MuiOutlinedInput-root': { borderRadius: 3 }, minWidth: 0 }}
               />
-            )}
+            ) : f.type === 'clear-button' ? (
+              <Button
+                variant="outlined"
+                onClick={f.onClick}
+                sx={{
+                  fontFamily: 'DM Sans, sans-serif',
+                  fontWeight: 500,
+                  textTransform: 'none',
+                  px: 2,
+                  py: 1.5,
+                  borderRadius: 2,
+                  borderColor: '#000000',
+                  color: '#000000',
+                  height: '40px',
+                  minWidth: '100px',
+                  fontSize: '0.875rem',
+                  '&:hover': {
+                    borderColor: '#000000',
+                    backgroundColor: '#f5f5f5'
+                  },
+                  transition: 'all 0.2s ease-in-out'
+                }}
+              >
+                {f.label}
+              </Button>
+            ) : null}
           </Box>
         ))}
       </Box>

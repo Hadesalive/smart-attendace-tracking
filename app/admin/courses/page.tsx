@@ -94,6 +94,7 @@ import PageHeader from "@/components/admin/PageHeader"
 import StatsGrid from "@/components/admin/StatsGrid"
 import { CourseForm, CourseAssignmentForm } from "@/components/admin/forms"
 import SearchFilters from "@/components/admin/SearchFilters"
+import FilterBar from "@/components/admin/FilterBar"
 import DataTable from "@/components/admin/DataTable"
 import ErrorAlert from "@/components/admin/ErrorAlert"
 import { Course } from "@/lib/types/shared"
@@ -128,12 +129,12 @@ const STATS_CARDS = [
     change: "+12% this semester"
   },
   { 
-    title: "Unassigned Courses", 
+    title: "Lecturer Assignments", 
     value: 0, 
     icon: UserIcon, 
     color: "#000000",
-    subtitle: "Need program assignment",
-    change: "+1 this month"
+    subtitle: "Has lecturer assigned",
+    change: "+8 this month"
   }
 ] as const
 
@@ -182,19 +183,32 @@ export default function CoursesPage() {
     fetchCourses, 
     createCourse,
     updateCourse,
-    deleteCourse
+    deleteCourse,
+    fetchCourseAssignments,
+    fetchLecturerAssignments,
+    getLecturersByCourse
   } = coursesHook
-  const { fetchLecturerProfiles } = academic
+  const { 
+    state: academicState,
+    fetchLecturerProfiles,
+    fetchPrograms,
+    fetchAcademicYears,
+    fetchSemesters,
+    fetchSectionEnrollments,
+    fetchSections,
+    fetchClassrooms
+  } = academic
   
   // Create legacy state object for compatibility
   const state = {
     ...coursesState,
-    lecturerProfiles: academic.state.lecturerProfiles,
+    lecturerProfiles: academicState.lecturerProfiles,
     users: auth.state.users,
-    academicYears: academic.state.academicYears,
-    semesters: academic.state.semesters,
-    programs: academic.state.programs,
-    sections: academic.state.sections
+    academicYears: academicState.academicYears,
+    semesters: academicState.semesters,
+    programs: academicState.programs,
+    sections: academicState.sections,
+    sectionEnrollments: academicState.sectionEnrollments
   } as any
 
   // Academic data for forms (matching academic page structure)
@@ -204,12 +218,46 @@ export default function CoursesPage() {
     programs: state.programs,
     sections: state.sections
   }
+
+  // Get actual programs for filtering
+  const programOptions = useMemo(() => {
+    if (!state.programs || state.programs.length === 0) {
+      return []
+    }
+    return state.programs.map((program: any) => ({
+      value: program.id,
+      label: program.program_name
+    }))
+  }, [state.programs])
+
+  // Get actual departments from courses data
+  const departmentOptions = useMemo(() => {
+    if (!state.courses || state.courses.length === 0) {
+      return []
+    }
+    const departments = [...new Set(state.courses.map((course: any) => course.department).filter(Boolean))]
+    return departments.map((dept: any) => ({
+      value: dept,
+      label: dept
+    }))
+  }, [state.courses])
   
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedDepartment, setSelectedDepartment] = useState<string>("all")
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null)
   const [selectedCourse, setSelectedCourse] = useState<Course | null>(null)
   const [isDeleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+
+  // Advanced filtering state
+  const [filters, setFilters] = useState({
+    assignmentStatus: 'all',
+    lecturerStatus: 'all',
+    department: 'all',
+    program: 'all',
+    academicYear: 'all',
+    semester: 'all',
+    year: 'all'
+  })
 
   // Course form state
   const [isAddCourseOpen, setAddCourseOpen] = useState(false)
@@ -222,12 +270,21 @@ export default function CoursesPage() {
   useEffect(() => {
     const loadData = async () => {
       try {
-        console.log('Loading courses page data...')
+        console.log('🔄 Loading courses page data...')
+        
         await Promise.all([
-          fetchCourses(),
-          fetchLecturerProfiles()
+          coursesHook.fetchCourses(),
+          coursesHook.fetchCourseAssignments(),
+          coursesHook.fetchLecturerAssignments(),
+          fetchLecturerProfiles(),
+          fetchPrograms(),
+          fetchAcademicYears(),
+          fetchSemesters(),
+          fetchSectionEnrollments(),
+          fetchSections(),
+          fetchClassrooms()
         ])
-        console.log('Courses page data loaded successfully')
+        console.log('✅ Courses page data loaded successfully')
       } catch (error) {
         console.error('Error loading courses page data:', error)
       }
@@ -242,39 +299,160 @@ export default function CoursesPage() {
 
   // Get courses from DataContext
   const coursesList = useMemo(() => {
-    console.log('Courses page: Courses from state:', state.courses)
-    
     // If no courses exist, show empty array
     if (!state.courses || state.courses.length === 0) {
-      console.log('Courses page: No courses found, showing empty state')
       return []
     }
     
-    return state.courses.map((course: any) => ({
-      id: course.id,
-      course_code: course.course_code,
-      course_name: course.course_name,
-      credits: course.credits,
-      department: course.department,
-      lecturer_id: course.lecturer_id,
-      lecturer_name: course.lecturer_name,
-      lecturer_email: course.lecturer_email,
-      status: course.status || 'active',
-      created_at: course.created_at,
-      description: course.description
-    }))
-  }, [state.courses])
+    // Debug logging
+    console.log('🔍 Debug coursesList:')
+    console.log('Courses:', state.courses?.length || 0)
+    console.log('Course assignments:', state.courseAssignments?.length || 0)
+    console.log('Section enrollments:', state.sectionEnrollments?.length || 0)
+    
+    if (state.courseAssignments && state.courseAssignments.length > 0) {
+      console.log('🔍 Course assignments data:', state.courseAssignments)
+      console.log('🔍 First course assignment:', state.courseAssignments[0])
+    }
+    
+    if (state.sectionEnrollments && state.sectionEnrollments.length > 0) {
+      console.log('🔍 Section enrollments data:', state.sectionEnrollments)
+      console.log('🔍 First section enrollment:', state.sectionEnrollments[0])
+      console.log('🔍 First enrollment program_id:', state.sectionEnrollments[0]?.program_id)
+      console.log('🔍 First enrollment semester_id:', state.sectionEnrollments[0]?.semester_id)
+      console.log('🔍 First enrollment academic_year_id:', state.sectionEnrollments[0]?.academic_year_id)
+      console.log('🔍 First enrollment year:', state.sectionEnrollments[0]?.year)
+    } else {
+      console.log('❌ No section enrollments found in state')
+    }
+    
+    return state.courses.map((course: any) => {
+      // Get course assignments for this course
+      const courseAssignments = state.courseAssignments?.filter((ca: any) => ca.course_id === course.id) || []
+      
+      // Get unique years from course assignments
+      const years = [...new Set(courseAssignments.map((ca: any) => ca.year).filter(Boolean))]
+      const primaryYear = years.length > 0 ? Math.min(...(years as number[])) : 1 // Use lowest year as primary
+      
+      // Get program names from assignments
+      const programNames = courseAssignments.map((ca: any) => {
+        // First try to get from joined data
+        if (ca.programs?.program_name) {
+          return ca.programs.program_name
+        }
+        // Fallback to manual lookup
+        const program = state.programs?.find((p: any) => p.id === ca.program_id)
+        return program?.program_name || 'Unknown Program'
+      })
+      
+      // Calculate inherited students for this course
+      const inheritedStudents = courseAssignments.reduce((total: number, assignment: any) => {
+        // Find students enrolled in this program/semester/year combination
+        const studentsInProgram = state.sectionEnrollments?.filter((enrollment: any) => 
+          enrollment.program_id === assignment.program_id &&
+          enrollment.semester_id === assignment.semester_id &&
+          enrollment.academic_year_id === assignment.academic_year_id &&
+          enrollment.year === assignment.year &&
+          enrollment.status === 'active'
+        ) || []
+        
+        // Debug logging
+        if (course.course_code === 'CS101' || course.course_code === 'ECON101' || courseAssignments.length > 0) {
+          console.log(`🔍 Debug for course ${course.course_code}:`)
+          console.log('Assignment:', assignment)
+          console.log('Looking for students with:', {
+            program_id: assignment.program_id,
+            semester_id: assignment.semester_id,
+            academic_year_id: assignment.academic_year_id,
+            year: assignment.year
+          })
+          console.log('Available enrollments:', state.sectionEnrollments?.length || 0)
+          console.log('Matching students:', studentsInProgram.length)
+          console.log('Students found:', studentsInProgram)
+          
+          // Compare IDs directly
+          if (state.sectionEnrollments && state.sectionEnrollments.length > 0) {
+            console.log('🔍 ID Comparison:')
+            console.log('Assignment program_id:', assignment.program_id, 'Type:', typeof assignment.program_id)
+            console.log('Assignment semester_id:', assignment.semester_id, 'Type:', typeof assignment.semester_id)
+            console.log('Assignment academic_year_id:', assignment.academic_year_id, 'Type:', typeof assignment.academic_year_id)
+            console.log('Assignment year:', assignment.year, 'Type:', typeof assignment.year)
+            
+            state.sectionEnrollments.forEach((enrollment: any, index: number) => {
+              console.log(`Enrollment ${index}:`, {
+                program_id: enrollment.program_id,
+                semester_id: enrollment.semester_id,
+                academic_year_id: enrollment.academic_year_id,
+                year: enrollment.year
+              })
+            })
+          }
+        }
+        
+        return total + studentsInProgram.length
+      }, 0)
+
+      // Get unique students who inherit this course
+      const uniqueInheritedStudents = new Set()
+      courseAssignments.forEach((assignment: any) => {
+        const studentsInProgram = state.sectionEnrollments?.filter((enrollment: any) => 
+          enrollment.program_id === assignment.program_id &&
+          enrollment.semester_id === assignment.semester_id &&
+          enrollment.academic_year_id === assignment.academic_year_id &&
+          enrollment.year === assignment.year &&
+          enrollment.status === 'active'
+        ) || []
+        
+        studentsInProgram.forEach((enrollment: any) => {
+          uniqueInheritedStudents.add(enrollment.student_id)
+        })
+      })
+
+      return {
+        id: course.id,
+        course_code: course.course_code,
+        course_name: course.course_name,
+        credits: course.credits,
+        department: course.department,
+        lecturer_id: course.lecturer_id,
+        lecturer_name: course.lecturer_name,
+        lecturer_email: course.lecturer_email,
+        status: course.status || 'active',
+        created_at: course.created_at,
+        description: course.description,
+        year: primaryYear,
+        yearLabel: `Year ${primaryYear}`,
+        years: years, // All years this course is offered
+        programAssignments: courseAssignments.length,
+        programNames: programNames,
+        inheritedStudents: uniqueInheritedStudents.size, // Unique students who inherit this course
+        totalInheritedStudents: inheritedStudents, // Total count (may include duplicates across programs)
+        assignments: courseAssignments.map((ca: any) => ({
+          id: ca.id,
+          program_id: ca.program_id,
+          program_name: programNames[courseAssignments.indexOf(ca)],
+          academic_year_id: ca.academic_year_id,
+          semester_id: ca.semester_id,
+          year: ca.year,
+          is_mandatory: ca.is_mandatory,
+          max_students: ca.max_students
+        }))
+      }
+    })
+  }, [state.courses, state.courseAssignments, state.programs, state.sectionEnrollments])
 
   // Calculate stats from DataContext
   const stats = useMemo(() => {
     const totalCourses = coursesList.length
     const activeCourses = coursesList.filter((c: Course) => c.status === 'active').length
     
-    // Count courses assigned to programs (not individual lecturers)
+    // Count courses assigned to programs
     const programAssignedCourses = state.courseAssignments?.length || 0
-    const unassignedCourses = totalCourses - programAssignedCourses
+    
+    // Count courses with lecturer assignments
+    const lecturerAssignedCourses = state.lecturerAssignments?.length || 0
 
-    return { totalCourses, activeCourses, programAssignedCourses, unassignedCourses }
+    return { totalCourses, activeCourses, programAssignedCourses, lecturerAssignedCourses }
   }, [coursesList, state.courseAssignments])
 
   // ============================================================================
@@ -371,11 +549,11 @@ export default function CoursesPage() {
       value: card.title === "Total Courses" ? stats.totalCourses :
              card.title === "Active Courses" ? stats.activeCourses :
              card.title === "Program Assignments" ? stats.programAssignedCourses :
-             stats.unassignedCourses,
+             stats.lecturerAssignedCourses,
       change: card.title === "Total Courses" ? `${stats.totalCourses} total` :
               card.title === "Active Courses" ? `${stats.activeCourses} active` :
               card.title === "Program Assignments" ? `${stats.programAssignedCourses} assigned` :
-              `${stats.unassignedCourses} unassigned`
+              `${stats.lecturerAssignedCourses} with lecturers`
     }))
   }, [stats])
 
@@ -396,8 +574,40 @@ export default function CoursesPage() {
       filtered = filtered.filter((course: Course) => course.department === selectedDepartment)
     }
 
+    // Advanced filters
+    if (filters.assignmentStatus !== 'all') {
+      filtered = filtered.filter((course: Course) => {
+        const assignments = state.courseAssignments?.filter((ca: any) => ca.course_id === course.id) || []
+        return filters.assignmentStatus === 'assigned' ? assignments.length > 0 : assignments.length === 0
+      })
+    }
+
+    if (filters.lecturerStatus !== 'all') {
+      filtered = filtered.filter((course: Course) => {
+        const lecturerAssignments = state.lecturerAssignments?.filter((la: any) => la.course_id === course.id) || []
+        return filters.lecturerStatus === 'assigned' ? lecturerAssignments.length > 0 : lecturerAssignments.length === 0
+      })
+    }
+
+    if (filters.department !== 'all') {
+      filtered = filtered.filter((course: Course) => course.department === filters.department)
+    }
+
+    if (filters.program !== 'all') {
+      filtered = filtered.filter((course: Course) => {
+        const assignments = state.courseAssignments?.filter((ca: any) => ca.course_id === course.id) || []
+        return assignments.some((ca: any) => ca.program_id === parseInt(filters.program))
+      })
+    }
+
+    if (filters.year !== 'all') {
+      filtered = filtered.filter((course: Course) => {
+        return (course as any).year === parseInt(filters.year)
+      })
+    }
+
     return filtered
-  }, [coursesList, searchTerm, selectedDepartment])
+  }, [coursesList, searchTerm, selectedDepartment, filters, state.courseAssignments, state.lecturerAssignments])
 
   const getDepartmentColor = useCallback((department: string) => {
     const colors = [
@@ -447,24 +657,88 @@ export default function CoursesPage() {
       )
     },
     {
+      key: 'year',
+      label: 'Year Level',
+      render: (value: any, row: Course) => {
+        const courseData = row as any
+        return (
+          <Box>
+            <Chip 
+              label={courseData.yearLabel || 'N/A'} 
+              size="small"
+              sx={{ 
+                backgroundColor: "#000000",
+                color: "white",
+                fontFamily: "DM Sans",
+                fontWeight: 500,
+                fontSize: '0.75rem'
+              }}
+            />
+            {courseData.years && courseData.years.length > 1 && (
+              <Typography variant="caption" sx={{ color: '#666', ml: 1 }}>
+                +{courseData.years.length - 1} more
+              </Typography>
+            )}
+          </Box>
+        )
+      }
+    },
+    {
       key: 'programs',
       label: 'Programs',
       render: (value: any, row: Course) => {
-        // Find course assignments for this course
-        const assignments = state.courseAssignments?.filter((ca: any) => ca.course_id === row.id) || []
-        const programNames = assignments.map((ca: any) => {
-          const program = state.programs?.find((p: any) => p.id === ca.program_id)
-          return program?.program_name || 'Unknown'
-        })
+        const courseData = row as any
+        const programNames = courseData.programNames || []
+        const assignmentCount = courseData.programAssignments || 0
+        
+        if (assignmentCount === 0) {
+          return (
+            <Chip 
+              label="Unassigned" 
+              size="small"
+              sx={{ 
+                backgroundColor: "#f3f4f6",
+                color: "#6b7280",
+                fontFamily: "DM Sans",
+                fontWeight: 500,
+                fontSize: '0.75rem'
+              }}
+            />
+          )
+        }
+        
+        // Show first program with count badge if more than one
+        const primaryProgram = programNames[0]
+        const additionalCount = programNames.length - 1
         
         return (
-          <Box>
-            <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
-              {programNames.length > 0 ? programNames.join(', ') : 'No programs'}
-            </Typography>
-            <Typography variant="caption" sx={TYPOGRAPHY_STYLES.tableCaption}>
-              {assignments.length} assignment{assignments.length !== 1 ? 's' : ''}
-            </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Chip 
+              label={primaryProgram} 
+              size="small"
+              sx={{ 
+                backgroundColor: "#000000",
+                color: "white",
+                fontFamily: "DM Sans",
+                fontWeight: 500,
+                fontSize: '0.75rem'
+              }}
+            />
+            {additionalCount > 0 && (
+              <Chip 
+                label={`+${additionalCount}`} 
+                size="small"
+                sx={{ 
+                  backgroundColor: "#f3f4f6",
+                  color: "#6b7280",
+                  fontFamily: "DM Sans",
+                  fontWeight: 500,
+                  fontSize: '0.75rem',
+                  minWidth: '24px',
+                  height: '20px'
+                }}
+              />
+            )}
           </Box>
         )
       }
@@ -487,14 +761,14 @@ export default function CoursesPage() {
     },
     {
       key: 'assignment',
-      label: 'Program Assignment',
+      label: 'Assignment',
       render: (value: any, row: Course) => {
         const assignments = state.courseAssignments?.filter((ca: any) => ca.course_id === row.id) || []
         const isAssigned = assignments.length > 0
         
         return (
           <Chip 
-            label={isAssigned ? "Assigned to Programs" : "Not Assigned"} 
+            label={isAssigned ? "Assigned" : "Unassigned"} 
             size="small"
             sx={{ 
               backgroundColor: isAssigned ? "#00000020" : "#99999920",
@@ -503,6 +777,27 @@ export default function CoursesPage() {
               fontWeight: 500
             }}
           />
+        )
+      }
+    },
+    {
+      key: 'inheritedStudents',
+      label: 'Inherited Students',
+      render: (value: any, row: Course) => {
+        const courseData = row as any
+        const inheritedCount = courseData.inheritedStudents || 0
+        
+        return (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
+              {inheritedCount}
+            </Typography>
+            {inheritedCount > 0 && (
+              <Typography variant="caption" sx={{ color: '#666' }}>
+                students
+              </Typography>
+            )}
+          </Box>
         )
       }
     },
@@ -598,9 +893,74 @@ export default function CoursesPage() {
             value: selectedDepartment,
             options: [
               { value: "all", label: "All Departments" },
-              ...DEPARTMENTS.map(dept => ({ value: dept, label: dept }))
+              ...departmentOptions
             ],
             onChange: setSelectedDepartment
+          }
+        ]}
+      />
+
+      <FilterBar
+        fields={[
+          { 
+            type: 'native-select', 
+            label: 'Assignment Status', 
+            value: filters.assignmentStatus, 
+            onChange: (v) => setFilters(prev => ({ ...prev, assignmentStatus: v })), 
+            options: [
+              { value: 'all', label: 'All Courses' },
+              { value: 'assigned', label: 'Assigned to Programs' },
+              { value: 'unassigned', label: 'Not Assigned' }
+            ], 
+            span: 2 
+          },
+          { 
+            type: 'native-select', 
+            label: 'Lecturer Status', 
+            value: filters.lecturerStatus, 
+            onChange: (v) => setFilters(prev => ({ ...prev, lecturerStatus: v })), 
+            options: [
+              { value: 'all', label: 'All Lecturers' },
+              { value: 'assigned', label: 'Has Lecturer' },
+              { value: 'unassigned', label: 'No Lecturer' }
+            ], 
+            span: 2 
+          },
+          { 
+            type: 'native-select', 
+            label: 'Faculty/Department', 
+            value: filters.department, 
+            onChange: (v) => setFilters(prev => ({ ...prev, department: v })), 
+            options: [
+              { value: 'all', label: 'All Faculties' },
+              ...departmentOptions
+            ], 
+            span: 3 
+          },
+          { 
+            type: 'native-select', 
+            label: 'Program', 
+            value: filters.program, 
+            onChange: (v) => setFilters(prev => ({ ...prev, program: v })), 
+            options: [
+              { value: 'all', label: 'All Programs' },
+              ...programOptions
+            ], 
+            span: 3 
+          },
+          { 
+            type: 'native-select', 
+            label: 'Year Level', 
+            value: filters.year, 
+            onChange: (v) => setFilters(prev => ({ ...prev, year: v })), 
+            options: [
+              { value: 'all', label: 'All Years' },
+              { value: '1', label: 'Year 1' },
+              { value: '2', label: 'Year 2' },
+              { value: '3', label: 'Year 3' },
+              { value: '4', label: 'Year 4' }
+            ], 
+            span: 2 
           }
         ]}
       />

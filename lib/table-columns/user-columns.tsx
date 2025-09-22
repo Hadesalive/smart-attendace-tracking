@@ -1,5 +1,5 @@
 import React from "react"
-import { Typography, Chip } from "@mui/material"
+import { Typography, Chip, Box } from "@mui/material"
 import { CheckCircleIcon, XCircleIcon, ClockIcon, UserIcon } from "@heroicons/react/24/outline"
 import { formatDate } from "@/lib/utils"
 import { TYPOGRAPHY_STYLES } from "@/lib/design/fonts"
@@ -78,8 +78,17 @@ interface AdminRow {
 interface CourseRow {
   name: string
   code: string
+  credits: number
   students: number
   status: 'active' | 'inactive'
+  sections?: Array<{
+    section: string
+    semester: string
+    academicYear: string
+    program: string
+    isPrimary: boolean
+    teachingHours: number
+  }>
 }
 
 interface UpcomingSessionRow {
@@ -294,12 +303,53 @@ export const courseColumns = [
     )
   },
   {
+    key: 'credits',
+    label: 'Credits',
+    render: (value: string, row: CourseRow) => (
+      <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
+        {row.credits}
+      </Typography>
+    )
+  },
+  {
     key: 'students',
     label: 'Students',
     render: (value: string, row: CourseRow) => (
       <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
         {row.students}
       </Typography>
+    )
+  },
+  {
+    key: 'sections',
+    label: 'Sections',
+    render: (value: string, row: CourseRow) => (
+      <Box>
+        {row.sections?.map((section, index) => (
+          <Box key={index} sx={{ mb: 0.5 }}>
+            <Typography variant="body2" sx={{ fontWeight: 500 }}>
+              {section.section} ({section.semester} {section.academicYear})
+            </Typography>
+            <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+              {section.program} • {section.teachingHours}h/week
+              {section.isPrimary && (
+                <Box component="span" sx={{ 
+                  ml: 1, 
+                  px: 0.5, 
+                  py: 0.25, 
+                  bgcolor: '#000000', 
+                  color: 'white', 
+                  borderRadius: 0.5, 
+                  fontSize: '0.625rem',
+                  fontWeight: 500
+                }}>
+                  Primary
+                </Box>
+              )}
+            </Typography>
+          </Box>
+        ))}
+      </Box>
     )
   },
   {

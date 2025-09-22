@@ -34,6 +34,7 @@ export default function SearchableSelect({
   const [isOpen, setIsOpen] = useState(false)
   const [searchTerm, setSearchTerm] = useState("")
   
+  
   // Filter options based on search
   const filteredOptions = useMemo(() => {
     if (!searchTerm.trim()) return options
@@ -124,11 +125,11 @@ export default function SearchableSelect({
                     <button
                       key={option.id}
                       type="button"
-                      onClick={() => {
-                        onChange(option.id)
-                        setIsOpen(false)
-                        setSearchTerm("")
-                      }}
+        onClick={() => {
+          onChange(option.id)
+          setIsOpen(false)
+          setSearchTerm("")
+        }}
                       className={`w-full text-left px-4 py-3 rounded-lg border transition-all duration-200 ${
                         value === option.id 
                           ? 'bg-gray-100 border-gray-300 font-medium shadow-sm' 

@@ -270,35 +270,64 @@ const HeaderSection = ({
  * Value display component
  * Shows the main statistic value
  */
-const ValueDisplay = ({ value }: { value: string | number }) => (
-  <Typography
-    variant="h3"
-    sx={{
-      ...TYPOGRAPHY_CONFIG.value,
-      mb: { xs: 0.5, sm: 1 },
-      fontSize: { xs: '1.5rem', sm: '1.75rem', md: '2rem' }
-    }}
-  >
-    {value}
-  </Typography>
-)
+const ValueDisplay = ({ value }: { value: string | number }) => {
+  // Handle very long text by adjusting font size dynamically
+  const valueStr = String(value)
+  const isLongText = valueStr.length > 20
+  
+  return (
+    <Typography
+      variant="h3"
+      sx={{
+        ...TYPOGRAPHY_CONFIG.value,
+        mb: { xs: 0.5, sm: 1 },
+        fontSize: isLongText 
+          ? { xs: '0.8rem', sm: '0.9rem', md: '1rem' }
+          : { xs: '1.5rem', sm: '1.75rem', md: '2rem' },
+        lineHeight: isLongText ? 1.1 : 1.2,
+        wordBreak: 'break-word',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        display: '-webkit-box',
+        WebkitLineClamp: isLongText ? 3 : 1,
+        WebkitBoxOrient: 'vertical'
+      }}
+    >
+      {value}
+    </Typography>
+  )
+}
 
 /**
  * Title display component
  * Shows the statistic title
  */
-const TitleDisplay = ({ title }: { title: string }) => (
-  <Typography
-    variant="h6"
-    sx={{
-      ...TYPOGRAPHY_CONFIG.title,
-      mb: { xs: 0.5, sm: 1 },
-      fontSize: { xs: '0.875rem', sm: '0.95rem', md: '1rem' }
-    }}
-  >
-    {title}
-  </Typography>
-)
+const TitleDisplay = ({ title }: { title: string }) => {
+  // Handle very long titles by adjusting font size dynamically
+  const isLongTitle = title.length > 25
+  
+  return (
+    <Typography
+      variant="h6"
+      sx={{
+        ...TYPOGRAPHY_CONFIG.title,
+        mb: { xs: 0.5, sm: 1 },
+        fontSize: isLongTitle 
+          ? { xs: '0.7rem', sm: '0.8rem', md: '0.85rem' }
+          : { xs: '0.875rem', sm: '0.95rem', md: '1rem' },
+        lineHeight: 1.2,
+        wordBreak: 'break-word',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        display: '-webkit-box',
+        WebkitLineClamp: isLongTitle ? 2 : 1,
+        WebkitBoxOrient: 'vertical'
+      }}
+    >
+      {title}
+    </Typography>
+  )
+}
 
 /**
  * Subtitle display component

@@ -105,6 +105,12 @@ export default function DataTable({
   onEdit,
   onDelete
 }: DataTableProps) {
+  // Debug data
+  console.log('🔍 DataTable received data:', data)
+  console.log('🔍 DataTable data length:', data?.length)
+  console.log('🔍 DataTable loading:', loading)
+  console.log('🔍 DataTable columns:', columns)
+  
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -196,7 +202,7 @@ export default function DataTable({
                 ) : data.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={columns.length + ((onEdit || onDelete) ? 1 : 0)} sx={{ textAlign: "center", py: 4 }}>
-                      <Typography variant="body2" color="text.secondary">
+                      <Typography variant="body2" sx={TYPOGRAPHY_STYLES.caption}>
                         {emptyMessage}
                       </Typography>
                     </TableCell>
@@ -222,10 +228,16 @@ export default function DataTable({
                             minWidth: 120,
                             whiteSpace: 'nowrap',
                             px: { xs: 1, sm: 2, md: 3 },
-                            py: 2
+                            py: 2,
+                            '& *': {
+                              fontFamily: TYPOGRAPHY_STYLES.tableBody.fontFamily,
+                              fontWeight: TYPOGRAPHY_STYLES.tableBody.fontWeight,
+                              fontSize: TYPOGRAPHY_STYLES.tableBody.fontSize,
+                              lineHeight: TYPOGRAPHY_STYLES.tableBody.lineHeight
+                            }
                           }}
                         >
-                          {column.render ? column.render(row[column.key], row) : row[column.key]}
+                          {column.render ? column.render(row[column.key], row) : (row[column.key] || '')}
                         </TableCell>
                       ))}
                       {(onEdit || onDelete) && (
@@ -249,11 +261,11 @@ export default function DataTable({
                                   onEdit(row)
                                 }}
                                 sx={{ 
+                                  ...TYPOGRAPHY_STYLES.buttonText,
                                   minWidth: 'auto',
                                   px: { xs: 0.5, sm: 1 },
                                   py: 0.5,
                                   fontSize: { xs: '0.7rem', sm: '0.75rem' },
-                                  textTransform: 'none',
                                   borderWidth: 1
                                 }}
                               >
@@ -270,11 +282,11 @@ export default function DataTable({
                                   onDelete(row)
                                 }}
                                 sx={{ 
+                                  ...TYPOGRAPHY_STYLES.buttonText,
                                   minWidth: 'auto',
                                   px: { xs: 0.5, sm: 1 },
                                   py: 0.5,
                                   fontSize: { xs: '0.7rem', sm: '0.75rem' },
-                                  textTransform: 'none',
                                   borderWidth: 1
                                 }}
                               >

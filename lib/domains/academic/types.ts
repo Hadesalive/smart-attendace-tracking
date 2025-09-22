@@ -81,9 +81,37 @@ export interface StudentProfile {
   section_id: string
   academic_year_id: string
   enrollment_date: string
-  status: string
+  expected_graduation?: string
+  academic_status: string
+  gpa?: number
+  credits_completed: number
+  credits_required?: number
+  advisor_id?: string
+  emergency_contact_name?: string
+  emergency_contact_phone?: string
+  emergency_contact_relationship?: string
   created_at: string
   updated_at: string
+  // Joined data
+  users?: {
+    full_name: string
+    email: string
+  }
+  programs?: {
+    program_code: string
+    program_name: string
+    degree_type?: string
+    duration_years?: number
+  }
+  sections?: {
+    section_code: string
+    year: number
+  }
+  academic_years?: {
+    year_name: string
+    start_date: string
+    end_date: string
+  }
 }
 
 export interface LecturerProfile {
@@ -129,6 +157,10 @@ export interface SectionEnrollment {
   program_code?: string
   academic_year?: string
   semester_name?: string
+  // ID properties for filtering
+  program_id?: string
+  semester_id?: string
+  academic_year_id?: string
 }
 
 export interface AcademicState {
@@ -184,4 +216,6 @@ export interface AcademicContextType {
   fetchStudentProfiles: () => Promise<void>
   fetchLecturerProfiles: () => Promise<void>
   fetchAdminProfiles: () => Promise<void>
+  // Utilities
+  calculateStudentTotalCredits: (studentId: string) => Promise<number>
 }

@@ -3,9 +3,10 @@ import { Course, LecturerAssignment, Enrollment } from '@/lib/types/shared'
 export interface CourseAssignment {
   id: string
   course_id: string
-  section_id: string
+  program_id: string
   academic_year_id: string
   semester_id: string
+  year: number
   is_mandatory: boolean
   max_students?: number
   created_at: string

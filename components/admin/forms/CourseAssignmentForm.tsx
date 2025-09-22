@@ -203,7 +203,9 @@ export default function CourseAssignmentForm({
           <SearchableSelect
             label="Course"
             value={formData.course_id}
-            onChange={(value) => setFormData(prev => ({ ...prev, course_id: value }))}
+            onChange={(value) => {
+              setFormData(prev => ({ ...prev, course_id: value }))
+            }}
             options={courseOptions}
             placeholder="Search courses..."
             required

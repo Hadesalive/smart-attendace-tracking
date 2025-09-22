@@ -13,11 +13,13 @@ interface Student {
   program_id?: string
   academic_year_id?: string
   semester_id?: string
+  section_id?: string // Physical class section
   year_level?: number
   gpa?: number
   enrollment_date?: string
   graduation_date?: string
   is_active: boolean
+  role?: string
 }
 
 interface StudentFormProps {
@@ -29,6 +31,7 @@ interface StudentFormProps {
   programs?: any[]
   academicYears?: any[]
   semesters?: any[]
+  sections?: any[]
 }
 
 export default function StudentForm({
@@ -39,7 +42,8 @@ export default function StudentForm({
   onSave,
   programs = [],
   academicYears = [],
-  semesters = []
+  semesters = [],
+  sections = []
 }: StudentFormProps) {
   const [formData, setFormData] = useState<Student>({
     full_name: '',
@@ -50,11 +54,13 @@ export default function StudentForm({
     program_id: '',
     academic_year_id: '',
     semester_id: '',
+    section_id: '', // Physical class section
     year_level: 1,
     gpa: 0,
     enrollment_date: new Date().toISOString().split('T')[0],
     graduation_date: '',
-    is_active: true
+    is_active: true,
+    role: 'student' // Always set role to student
   })
 
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -74,11 +80,13 @@ export default function StudentForm({
         program_id: '',
         academic_year_id: '',
         semester_id: '',
+        section_id: '', // Physical class section
         year_level: 1,
         gpa: 0,
         enrollment_date: new Date().toISOString().split('T')[0],
         graduation_date: '',
-        is_active: true
+        is_active: true,
+        role: 'student' // Always set role to student
       })
     }
     setErrors({})
@@ -353,6 +361,34 @@ export default function StudentForm({
                   ))}
               </select>
             </div>
+          </div>
+
+          {/* Physical Class Section */}
+          <div>
+            <label htmlFor="section_id" className="block text-sm font-semibold mb-2 text-gray-900">
+              Physical Class Section
+            </label>
+            <select
+              id="section_id"
+              name="section_id"
+              value={formData.section_id}
+              onChange={handleInputChange}
+              className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white text-gray-900 focus:border-gray-500 focus:ring-2 focus:ring-gray-300 focus:outline-none transition"
+              disabled={loading}
+            >
+              <option value="">Select Class Section</option>
+              {sections?.map((section) => {
+                // Get the program code for this section
+                const program = programs.find(p => p.id === section.program_id)
+                const programCode = program ? program.program_code : 'Unknown'
+                
+                return (
+                  <option key={section.id} value={section.id}>
+                    {section.section_code} - {programCode}
+                  </option>
+                )
+              })}
+            </select>
           </div>
 
           {/* Year Level and GPA */}

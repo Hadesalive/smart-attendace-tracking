@@ -77,12 +77,11 @@ import {
   EyeIcon
 } from "@heroicons/react/24/outline"
 import { formatDate } from "@/lib/utils"
-import { useAuth, useAcademicStructure, useCourses } from "@/lib/domains"
-import { useMockData } from "@/lib/hooks/useMockData"
+import { useAuth, useAcademicStructure, useCourses, useAttendance } from "@/lib/domains"
 import { AddUserForm } from "@/components/admin/add-user-form"
 import PageHeader from "@/components/admin/PageHeader"
 import StatsGrid from "@/components/admin/StatsGrid"
-import SearchFilters from "@/components/admin/SearchFilters"
+import FilterBar from "@/components/admin/FilterBar"
 import DataTable from "@/components/admin/DataTable"
 import { TYPOGRAPHY_STYLES } from "@/lib/design/fonts"
 import { BUTTON_STYLES } from "@/lib/constants/admin-constants"
@@ -101,6 +100,7 @@ interface User {
   createdAt: string
   avatar?: string
   courses?: string[]
+  department?: string
 }
 
 interface UserStats {
@@ -200,20 +200,47 @@ export default function AdminUsersPage() {
   const auth = useAuth()
   const academic = useAcademicStructure()
   const courses = useCourses()
+  const attendance = useAttendance()
   
-  // Create legacy state object for compatibility
+  // Create unified state object
   const state = {
     ...auth.state,
     ...academic.state,
-    ...courses.state
+    ...courses.state,
+    ...attendance.state
   }
-  const { isInitialized } = useMockData()
+
+  // Data fetching
+  React.useEffect(() => {
+    const fetchData = async () => {
+      try {
+        await Promise.all([
+          auth.fetchUsers(),
+          academic.fetchStudentProfiles(),
+          academic.fetchLecturerProfiles(),
+          courses.fetchCourses(),
+          attendance.fetchAttendanceSessions()
+        ])
+      } catch (error) {
+        console.error('Error fetching users data:', error)
+      }
+    }
+    
+    fetchData()
+  }, [])
   
-  const [searchTerm, setSearchTerm] = useState("")
-  const [roleFilter, setRoleFilter] = useState<string>("all")
-  const [statusFilter, setStatusFilter] = useState<string>("all")
+  // Filtering state
+  const [filters, setFilters] = useState({
+    search: '',
+    role: 'all',
+    status: 'all',
+    department: 'all'
+  })
+  
+  // Sorting state
   const [sortBy, setSortBy] = useState<string>("name")
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc")
+  
   const [selectedUser, setSelectedUser] = useState<User | null>(null)
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null)
   const [addUserOpen, setAddUserOpen] = useState(false)
@@ -231,6 +258,7 @@ export default function AdminUsersPage() {
       lastLogin: new Date().toISOString(), // Default to current time
       createdAt: user.created_at,
       avatar: user.profile_image_url,
+      department: 'Computer Science', // Default department
       courses: state.enrollments
         .filter(e => e.student_id === user.id)
         .map(e => {
@@ -244,14 +272,64 @@ export default function AdminUsersPage() {
   // MEMOIZED VALUES
   // ============================================================================
 
+  // Filter handlers
+  const handleFilterChange = React.useCallback((key: string, value: string) => {
+    setFilters(prev => ({ ...prev, [key]: value }))
+  }, [])
+
+  const handleSearchChange = React.useCallback((value: string) => {
+    setFilters(prev => ({ ...prev, search: value }))
+  }, [])
+
+  const clearFilters = React.useCallback(() => {
+    setFilters({
+      search: '',
+      role: 'all',
+      status: 'all',
+      department: 'all'
+    })
+  }, [])
+
+  // Filter options
+  const filterOptions = useMemo(() => {
+    const roleOptions = [
+      { value: 'all', label: 'All Roles' },
+      { value: 'admin', label: 'Admin' },
+      { value: 'lecturer', label: 'Lecturer' },
+      { value: 'student', label: 'Student' }
+    ]
+
+    const statusOptions = [
+      { value: 'all', label: 'All Status' },
+      { value: 'active', label: 'Active' },
+      { value: 'inactive', label: 'Inactive' },
+      { value: 'pending', label: 'Pending' }
+    ]
+
+    const departmentOptions = [
+      { value: 'all', label: 'All Departments' },
+      ...Array.from(new Set(users.map(u => u.department).filter(Boolean))).map(dept => ({
+        value: dept as string,
+        label: dept as string
+      }))
+    ]
+
+    return {
+      roleOptions,
+      statusOptions,
+      departmentOptions
+    }
+  }, [users])
+
   const filteredAndSortedUsers = useMemo(() => {
     let filtered = users.filter(user => {
-      const matchesSearch = user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                           user.email.toLowerCase().includes(searchTerm.toLowerCase())
-      const matchesRole = roleFilter === "all" || user.role === roleFilter
-      const matchesStatus = statusFilter === "all" || user.status === statusFilter
+      const matchesSearch = user.name.toLowerCase().includes(filters.search.toLowerCase()) ||
+                           user.email.toLowerCase().includes(filters.search.toLowerCase())
+      const matchesRole = filters.role === "all" || user.role === filters.role
+      const matchesStatus = filters.status === "all" || user.status === filters.status
+      const matchesDepartment = filters.department === "all" || user.department === filters.department
       
-      return matchesSearch && matchesRole && matchesStatus
+      return matchesSearch && matchesRole && matchesStatus && matchesDepartment
     })
 
     return filtered.sort((a, b) => {
@@ -290,7 +368,7 @@ export default function AdminUsersPage() {
         return aValue > bValue ? -1 : aValue < bValue ? 1 : 0
       }
     })
-  }, [users, searchTerm, roleFilter, statusFilter, sortBy, sortOrder])
+  }, [users, filters, sortBy, sortOrder])
 
   // ============================================================================
   // EVENT HANDLERS
@@ -502,7 +580,7 @@ export default function AdminUsersPage() {
   ]
 
   // Loading state
-  if (!isInitialized) {
+  if (auth.state.loading || academic.state.loading || courses.state.loading) {
     return (
       <Box sx={{ p: { xs: 2, sm: 3 } }}>
         <PageHeader
@@ -536,44 +614,45 @@ export default function AdminUsersPage() {
 
       <StatsGrid stats={statsCards} />
 
-      <SearchFilters
-        searchTerm={searchTerm}
-        onSearchChange={setSearchTerm}
-        searchPlaceholder="Search users..."
-        filters={[
+      <FilterBar
+        fields={[
           {
-            label: "Role",
-            value: roleFilter,
-            options: [
-              { value: "all", label: "All Roles" },
-              { value: "admin", label: "Admin" },
-              { value: "lecturer", label: "Lecturer" },
-              { value: "student", label: "Student" }
-            ],
-            onChange: setRoleFilter
+            type: 'text',
+            label: 'Search',
+            value: filters.search,
+            onChange: handleSearchChange,
+            placeholder: 'Search users by name or email...',
+            span: 3
           },
           {
-            label: "Status",
-            value: statusFilter,
-            options: [
-              { value: "all", label: "All Status" },
-              { value: "active", label: "Active" },
-              { value: "inactive", label: "Inactive" },
-              { value: "pending", label: "Pending" }
-            ],
-            onChange: setStatusFilter
+            type: 'native-select',
+            label: 'Role',
+            value: filters.role,
+            onChange: (value) => handleFilterChange('role', value),
+            options: filterOptions.roleOptions,
+            span: 2
           },
           {
-            label: "Sort By",
-            value: sortBy,
-            options: [
-              { value: "name", label: "Name" },
-              { value: "email", label: "Email" },
-              { value: "role", label: "Role" },
-              { value: "status", label: "Status" },
-              { value: "lastLogin", label: "Last Login" }
-            ],
-            onChange: setSortBy
+            type: 'native-select',
+            label: 'Status',
+            value: filters.status,
+            onChange: (value) => handleFilterChange('status', value),
+            options: filterOptions.statusOptions,
+            span: 2
+          },
+          {
+            type: 'native-select',
+            label: 'Department',
+            value: filters.department,
+            onChange: (value) => handleFilterChange('department', value),
+            options: filterOptions.departmentOptions,
+            span: 2
+          },
+          {
+            type: 'clear-button',
+            label: 'Clear Filters',
+            onClick: clearFilters,
+            span: 1
           }
         ]}
       />

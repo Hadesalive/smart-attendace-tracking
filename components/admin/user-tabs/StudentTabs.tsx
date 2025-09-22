@@ -1,6 +1,6 @@
 import React from "react"
-import { Box } from "@mui/material"
-import { KeyIcon, CalendarDaysIcon, AcademicCapIcon, BookOpenIcon, ClockIcon, TrophyIcon, CheckCircleIcon, DocumentTextIcon } from "@heroicons/react/24/outline"
+import { Box, Typography } from "@mui/material"
+import { KeyIcon, CalendarDaysIcon, AcademicCapIcon, BookOpenIcon, ClockIcon, TrophyIcon, CheckCircleIcon, DocumentTextIcon, UserIcon, DevicePhoneMobileIcon, BuildingOfficeIcon } from "@heroicons/react/24/outline"
 import InfoCard from "@/components/admin/InfoCard"
 import StatsGrid from "@/components/admin/StatsGrid"
 import DataTable from "@/components/admin/DataTable"
@@ -11,7 +11,17 @@ import { gradeColumns, assignmentColumns, attendanceColumns } from "@/lib/table-
 // ============================================================================
 
 interface StudentDetails {
+  // User Information
+  role: string
+  department: string
+  lastLogin: string
+  joinedDate: string
+  bio: string
+  phone: string
   studentId: string
+  sectionDisplay: string
+  
+  // Academic Information
   year: number
   major: string
   gpa: number
@@ -20,6 +30,15 @@ interface StudentDetails {
   attendanceRate: number
   assignmentsSubmitted: number
   assignmentsPending: number
+  courses: Array<{
+    id: string
+    name: string
+    code: string
+    credits: number
+    semester: string
+    year: number
+    status: 'active' | 'completed' | 'upcoming'
+  }>
   recentGrades: Array<{
     course: string
     grade: string
@@ -50,6 +69,7 @@ interface StudentTabsProps {
 // ============================================================================
 
 export default function StudentTabs({ details }: StudentTabsProps) {
+
   const studentStatsCards = [
     { 
       title: "GPA", 
@@ -90,18 +110,92 @@ export default function StudentTabs({ details }: StudentTabsProps) {
       label: "Overview",
       value: "overview",
       content: (
-        <Box>
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+          {/* Personal Information Section */}
+          <InfoCard
+            title="Personal Information"
+            subtitle="Basic user details and contact information"
+            items={[
+              {
+                label: "Role",
+                value: (
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Box
+                      sx={{
+                        px: 1.5,
+                        py: 0.5,
+                        borderRadius: 2,
+                        bgcolor: '#f3f4f6',
+                        color: '#374151',
+                        fontSize: '0.75rem',
+                        fontWeight: 600,
+                        textTransform: 'uppercase'
+                      }}
+                    >
+                      {details.role || "N/A"}
+                    </Box>
+                  </Box>
+                ),
+                icon: UserIcon
+              },
+              {
+                label: "Department",
+                value: details.department || "N/A",
+                icon: BuildingOfficeIcon
+              },
+              {
+                label: "Bio",
+                value: details.bio || "No bio provided",
+                icon: UserIcon
+              },
+              {
+                label: "Phone",
+                value: details.phone || "Not provided",
+                icon: DevicePhoneMobileIcon
+              }
+            ]}
+            columns={2}
+            showDivider={false}
+          />
+
+          {/* Academic Information Section */}
           <InfoCard
             title="Academic Information"
+            subtitle="Student academic details and enrollment information"
             items={[
               {
                 label: "Student ID",
-                value: details.studentId,
+                value: (
+                  <Box component="span" sx={{ fontFamily: 'monospace', fontWeight: 600, fontSize: '1rem' }}>
+                    {details.studentId || "N/A"}
+                  </Box>
+                ),
                 icon: KeyIcon
               },
               {
+                label: "Section",
+                value: details.sectionDisplay || "N/A",
+                icon: AcademicCapIcon
+              },
+              {
                 label: "Year",
-                value: `Year ${details.year}`,
+                value: (
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Box
+                      sx={{
+                        px: 1.5,
+                        py: 0.5,
+                        borderRadius: 2,
+                        bgcolor: '#dbeafe',
+                        color: '#1e40af',
+                        fontSize: '0.75rem',
+                        fontWeight: 600
+                      }}
+                    >
+                      Year {details.year}
+                    </Box>
+                  </Box>
+                ),
                 icon: CalendarDaysIcon
               },
               {
@@ -111,14 +205,42 @@ export default function StudentTabs({ details }: StudentTabsProps) {
               },
               {
                 label: "Total Credits",
-                value: details.totalCredits.toString(),
+                value: (
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Box component="span" sx={{ fontWeight: 700, color: '#059669', fontSize: '1.25rem' }}>
+                      {details.totalCredits}
+                    </Box>
+                    <Box component="span" sx={{ color: '#6b7280', fontSize: '0.875rem' }}>
+                      credits
+                    </Box>
+                  </Box>
+                ),
                 icon: BookOpenIcon
               }
             ]}
-            columns={3}
+            columns={2}
             showDivider={false}
           />
-          <StatsGrid stats={studentStatsCards} />
+
+          {/* Account Information Section */}
+          <InfoCard
+            title="Account Information"
+            subtitle="Login and account activity details"
+            items={[
+              {
+                label: "Last Login",
+                value: details.lastLogin || "N/A",
+                icon: ClockIcon
+              },
+              {
+                label: "Joined",
+                value: details.joinedDate || "N/A",
+                icon: CalendarDaysIcon
+              }
+            ]}
+            columns={2}
+            showDivider={false}
+          />
         </Box>
       )
     },
@@ -130,7 +252,7 @@ export default function StudentTabs({ details }: StudentTabsProps) {
           title="Recent Grades"
           subtitle="Latest academic performance"
           columns={gradeColumns}
-          data={details.recentGrades}
+          data={details.recentGrades || []}
         />
       )
     },
@@ -142,7 +264,81 @@ export default function StudentTabs({ details }: StudentTabsProps) {
           title="Upcoming Assignments"
           subtitle="Pending and submitted assignments"
           columns={assignmentColumns}
-          data={details.upcomingAssignments}
+          data={details.upcomingAssignments || []}
+        />
+      )
+    },
+    {
+      label: "Courses",
+      value: "courses",
+      content: (
+        <DataTable
+          title="Enrolled Courses"
+          subtitle="Current and completed courses"
+          columns={[
+            {
+              key: "name",
+              label: "Course Name",
+              render: (value: any, course: any) => (
+                <Box>
+                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                    {course.name}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {course.code}
+                  </Typography>
+                </Box>
+              )
+            },
+            {
+              key: "credits",
+              label: "Credits",
+              render: (value: any, course: any) => (
+                <Typography variant="body2">
+                  {course.credits}
+                </Typography>
+              )
+            },
+            {
+              key: "semester",
+              label: "Semester",
+              render: (value: any, course: any) => (
+                <Typography variant="body2">
+                  {course.semester}
+                </Typography>
+              )
+            },
+            {
+              key: "year",
+              label: "Year",
+              render: (value: any, course: any) => (
+                <Typography variant="body2">
+                  Year {course.year}
+                </Typography>
+              )
+            },
+            {
+              key: "status",
+              label: "Status",
+              render: (value: any, course: any) => (
+                <Box
+                  sx={{
+                    px: 1,
+                    py: 0.5,
+                    borderRadius: 1,
+                    bgcolor: course.status === 'active' ? '#e8f5e8' : '#f5f5f5',
+                    color: course.status === 'active' ? '#2e7d32' : '#666',
+                    fontSize: '0.75rem',
+                    fontWeight: 600,
+                    textTransform: 'uppercase'
+                  }}
+                >
+                  {course.status}
+                </Box>
+              )
+            }
+          ]}
+          data={details.courses || []}
         />
       )
     },
@@ -154,7 +350,7 @@ export default function StudentTabs({ details }: StudentTabsProps) {
           title="Attendance History"
           subtitle="Recent attendance records"
           columns={attendanceColumns}
-          data={details.attendanceHistory}
+          data={details.attendanceHistory || []}
         />
       )
     }

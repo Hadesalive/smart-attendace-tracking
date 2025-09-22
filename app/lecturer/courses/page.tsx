@@ -34,9 +34,14 @@ import {
 } from "@heroicons/react/24/outline"
 import { formatDate, formatNumber } from "@/lib/utils"
 import { useCourses, useAttendance, useGrades, useMaterials, useAuth } from "@/lib/domains"
+import { useAcademicStructure } from "@/lib/domains/academic/hooks"
+import { useData } from "@/lib/contexts/DataContext"
 import { useMockData } from "@/lib/hooks/useMockData"
 import { Course, Student, Assignment, Submission, AttendanceSession } from "@/lib/types/shared"
 import { mapSessionStatus, mapAttendanceStatus } from "@/lib/utils/statusMapping"
+import FilterBar from "@/components/admin/FilterBar"
+import DataTable from "@/components/admin/DataTable"
+import { TYPOGRAPHY_STYLES } from "@/lib/design/fonts"
 
 // Constants
 const CARD_SX = {
@@ -108,6 +113,8 @@ export default function LecturerCoursesPage() {
   const grades = useGrades()
   const materials = useMaterials()
   const auth = useAuth()
+  const academic = useAcademicStructure()
+  const { state: dataState } = useData()
   
   // Extract state and methods
   const { state: coursesState, getCoursesByLecturer, getStudentsByCourse } = coursesHook
@@ -116,11 +123,13 @@ export default function LecturerCoursesPage() {
   const { state: materialsState } = materials
   const { state: authState } = auth
   
-  // Create legacy state object for compatibility
+  // Create merged state object with academic data
   const state = {
     ...coursesState,
     ...attendance.state,
     ...grades.state,
+    ...academic.state,
+    ...dataState,
     materials: materialsState.materials,
     currentUser: authState.currentUser
   }
@@ -130,6 +139,14 @@ export default function LecturerCoursesPage() {
   const [searchQuery, setSearchQuery] = useState<string>("")
   const [statusFilter, setStatusFilter] = useState<string>("all")
   const [semesterFilter, setSemesterFilter] = useState<string>("all")
+  
+  // Advanced filtering state
+  const [filters, setFilters] = useState({
+    status: 'all',
+    semester: 'all',
+    year: 'all',
+    department: 'all'
+  })
 
   // Get lecturer's courses from shared data
   const lecturerId = state.currentUser?.id || "user_2" // Use actual current user ID
@@ -169,23 +186,41 @@ export default function LecturerCoursesPage() {
       
       const nextSession = futureSessions[0]
       
+      // Get year information from course assignments
+      const courseAssignments = state.courseAssignments?.filter((ca: any) => ca.course_id === course.id) || []
+      const sections = courseAssignments.map((ca: any) => 
+        state.sections?.find((s: any) => s.id === ca.section_id)
+      ).filter(Boolean)
+      
+      // Get unique years from sections
+      const years = [...new Set(sections.map((s: any) => s.year).filter(Boolean))]
+      const primaryYear = years.length > 0 ? Math.min(...years) : 1
+      
+      // Get semester and academic year information
+      const section = sections[0] // Use first section for semester/year info
+      const semester = state.semesters?.find((s: any) => s.id === section?.semester_id)
+      const academicYear = state.academicYears?.find((ay: any) => ay.id === section?.academic_year_id)
+      
       return {
         id: course.id,
         course_code: course.course_code,
         course_name: course.course_name,
         credits: course.credits || 3,
         department: course.department || 'General',
-        semester: "Fall 2024", // Would need to get from enrollment data
-        academic_year: "2024-2025", // Would need to get from enrollment data
+        semester: semester ? `${(academicYear as any)?.year || 'Current'} - ${semester.semester_name}` : "Current Semester",
+        academic_year: (academicYear as any)?.year || "Current",
+        year: primaryYear,
+        yearLabel: `Year ${primaryYear}`,
+        years: years,
         status: "active" as const,
         enrolled_students: students.length,
-        max_students: course.max_students || 50,
+        max_students: (course as any).max_students || 50,
         attendance_rate: attendanceRate,
         average_grade: averageGrade,
         materials_count: state.materials.filter((m: any) => m.course_id === course.id).length,
         assignments_count: assignments.length,
         sessions_count: courseSessions.length,
-        description: course.description || "Course description not available",
+        description: (course as any).description || "Course description not available",
         schedule: {
           days: ["Monday", "Wednesday", "Friday"], // Would need to get from course data
           time: "10:00 - 11:30", // Would need to get from course data
@@ -215,17 +250,27 @@ export default function LecturerCoursesPage() {
     }
 
     // Filter by status
-    if (statusFilter !== "all") {
-      filtered = filtered.filter(course => course.status === statusFilter)
+    if (filters.status !== "all") {
+      filtered = filtered.filter(course => course.status === filters.status)
     }
 
     // Filter by semester
-    if (semesterFilter !== "all") {
-      filtered = filtered.filter(course => course.semester === semesterFilter)
+    if (filters.semester !== "all") {
+      filtered = filtered.filter(course => course.semester === filters.semester)
+    }
+
+    // Filter by year
+    if (filters.year !== "all") {
+      filtered = filtered.filter(course => course.year === parseInt(filters.year))
+    }
+
+    // Filter by department
+    if (filters.department !== "all") {
+      filtered = filtered.filter(course => course.department === filters.department)
     }
 
     return filtered
-  }, [courses, searchQuery, statusFilter, semesterFilter])
+  }, [courses, searchQuery, filters])
 
   const stats = useMemo(() => {
     const activeCourses = courses.filter(c => c.status === 'active').length
@@ -235,7 +280,15 @@ export default function LecturerCoursesPage() {
     const overallGrade = courses.length > 0
       ? courses.reduce((sum, c) => sum + c.average_grade, 0) / courses.length : 0
 
-    return { activeCourses, totalStudents, overallAttendanceRate, overallGrade }
+    // Year-based statistics
+    const yearStats = {
+      year1: courses.filter(c => c.year === 1).length,
+      year2: courses.filter(c => c.year === 2).length,
+      year3: courses.filter(c => c.year === 3).length,
+      year4: courses.filter(c => c.year === 4).length
+    }
+
+    return { activeCourses, totalStudents, overallAttendanceRate, overallGrade, yearStats }
   }, [courses])
 
   // Handlers
@@ -264,6 +317,180 @@ export default function LecturerCoursesPage() {
     if (grade >= 70) return "#666666"
     return "#999999"
   }
+
+  // Define table columns for courses
+  const columns = [
+    {
+      key: 'course',
+      label: 'Course',
+      render: (value: any, row: any) => (
+        <Box>
+          <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
+            {row.course_code || 'N/A'}
+          </Typography>
+          <Typography variant="caption" sx={TYPOGRAPHY_STYLES.tableCaption}>
+            {row.course_name || 'No course name'}
+          </Typography>
+        </Box>
+      )
+    },
+    {
+      key: 'department',
+      label: 'Department',
+      render: (value: any, row: any) => (
+        <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
+          {row.department || 'General'}
+        </Typography>
+      )
+    },
+    {
+      key: 'year',
+      label: 'Year Level',
+      render: (value: any, row: any) => (
+        <Chip 
+          label={row.yearLabel || 'N/A'} 
+          size="small"
+          sx={{ 
+            backgroundColor: "#000000",
+            color: "white",
+            fontFamily: "DM Sans",
+            fontWeight: 500,
+            fontSize: '0.75rem'
+          }}
+        />
+      )
+    },
+    {
+      key: 'credits',
+      label: 'Credits',
+      render: (value: any, row: any) => (
+        <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
+          {row.credits || 'N/A'}
+        </Typography>
+      )
+    },
+    {
+      key: 'semester',
+      label: 'Semester',
+      render: (value: any, row: any) => (
+        <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
+          {row.semester || 'N/A'}
+        </Typography>
+      )
+    },
+    {
+      key: 'students',
+      label: 'Students',
+      render: (value: any, row: any) => (
+        <Box>
+          <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
+            {row.enrolled_students}/{row.max_students}
+          </Typography>
+          <Typography variant="caption" sx={TYPOGRAPHY_STYLES.tableCaption}>
+            Enrolled
+          </Typography>
+        </Box>
+      )
+    },
+    {
+      key: 'attendance',
+      label: 'Attendance',
+      render: (value: any, row: any) => (
+        <Box>
+          <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
+            {row.attendance_rate}%
+          </Typography>
+          <Typography variant="caption" sx={TYPOGRAPHY_STYLES.tableCaption}>
+            Rate
+          </Typography>
+        </Box>
+      )
+    },
+    {
+      key: 'grade',
+      label: 'Avg Grade',
+      render: (value: any, row: any) => (
+        <Box>
+          <Typography variant="body2" sx={{ 
+            ...TYPOGRAPHY_STYLES.tableBody, 
+            color: getGradeColor(row.average_grade),
+            fontWeight: 600
+          }}>
+            {Math.round(row.average_grade)}%
+          </Typography>
+          <Typography variant="caption" sx={TYPOGRAPHY_STYLES.tableCaption}>
+            Overall
+          </Typography>
+        </Box>
+      )
+    },
+    {
+      key: 'assignments',
+      label: 'Assignments',
+      render: (value: any, row: any) => (
+        <Box>
+          <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
+            {row.assignments_count}
+          </Typography>
+          <Typography variant="caption" sx={TYPOGRAPHY_STYLES.tableCaption}>
+            Total
+          </Typography>
+        </Box>
+      )
+    },
+    {
+      key: 'sessions',
+      label: 'Sessions',
+      render: (value: any, row: any) => (
+        <Box>
+          <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
+            {row.sessions_count}
+          </Typography>
+          <Typography variant="caption" sx={TYPOGRAPHY_STYLES.tableCaption}>
+            Total
+          </Typography>
+        </Box>
+      )
+    },
+    {
+      key: 'status',
+      label: 'Status',
+      render: (value: any, row: any) => (
+        <Chip 
+          label={row.status === 'active' ? "Active" : row.status === 'completed' ? "Completed" : "Upcoming"} 
+          size="small"
+          sx={{ 
+            backgroundColor: row.status === 'active' ? "#00000020" : row.status === 'completed' ? "#66666620" : "#99999920",
+            color: row.status === 'active' ? "#000000" : row.status === 'completed' ? "#666666" : "#999999",
+            fontFamily: "DM Sans",
+            fontWeight: 500
+          }}
+        />
+      )
+    },
+    {
+      key: 'actions',
+      label: 'Actions',
+      render: (value: any, row: any) => (
+        <Box sx={{ display: 'flex', gap: 1 }}>
+          <MUIButton
+            size="small"
+            variant="contained"
+            onClick={() => router.push(`/lecturer/courses/${row.id}`)}
+            sx={{
+              ...BUTTON_STYLES.primary,
+              fontSize: '0.75rem',
+              px: 2,
+              py: 0.5
+            }}
+          >
+            <EyeIcon className="h-3 w-3 mr-1" />
+            View
+          </MUIButton>
+        </Box>
+      )
+    }
+  ]
 
   return (
     <div className="space-y-6">
@@ -386,8 +613,67 @@ export default function LecturerCoursesPage() {
         </MUICardContent>
       </MUICard>
 
+      {/* Advanced Filters */}
+      <FilterBar
+        fields={[
+          { 
+            type: 'native-select', 
+            label: 'Status', 
+            value: filters.status, 
+            onChange: (v) => setFilters(prev => ({ ...prev, status: v })), 
+            options: [
+              { value: 'all', label: 'All Status' },
+              { value: 'active', label: 'Active' },
+              { value: 'completed', label: 'Completed' },
+              { value: 'upcoming', label: 'Upcoming' }
+            ], 
+            span: 2 
+          },
+          { 
+            type: 'native-select', 
+            label: 'Semester', 
+            value: filters.semester, 
+            onChange: (v) => setFilters(prev => ({ ...prev, semester: v })), 
+            options: [
+              { value: 'all', label: 'All Semesters' },
+              { value: 'Fall 2024', label: 'Fall 2024' },
+              { value: 'Spring 2024', label: 'Spring 2024' },
+              { value: 'Summer 2024', label: 'Summer 2024' }
+            ], 
+            span: 2 
+          },
+          { 
+            type: 'native-select', 
+            label: 'Year Level', 
+            value: filters.year, 
+            onChange: (v) => setFilters(prev => ({ ...prev, year: v })), 
+            options: [
+              { value: 'all', label: 'All Years' },
+              { value: '1', label: 'Year 1' },
+              { value: '2', label: 'Year 2' },
+              { value: '3', label: 'Year 3' },
+              { value: '4', label: 'Year 4' }
+            ], 
+            span: 2 
+          },
+          { 
+            type: 'native-select', 
+            label: 'Department', 
+            value: filters.department, 
+            onChange: (v) => setFilters(prev => ({ ...prev, department: v })), 
+            options: [
+              { value: 'all', label: 'All Departments' },
+              { value: 'Computer Science', label: 'Computer Science' },
+              { value: 'Mathematics', label: 'Mathematics' },
+              { value: 'Engineering', label: 'Engineering' },
+              { value: 'Business', label: 'Business' }
+            ], 
+            span: 2 
+          }
+        ]}
+      />
+
       {/* Courses List */}
-      <div className="space-y-4">
         {filteredCourses.length === 0 ? (
           <MUICard sx={{ ...CARD_SX, '&:hover': {} }}>
             <MUICardContent sx={{ p: { xs: 4, sm: 6 }, textAlign: 'center' }}>
@@ -414,215 +700,14 @@ export default function LecturerCoursesPage() {
             </MUICardContent>
           </MUICard>
         ) : (
-          filteredCourses.map((course) => (
-            <MUICard key={course.id} sx={CARD_SX}>
-              <MUICardContent sx={{ p: { xs: 2, sm: 2.5, md: 3 } }}>
-                {/* Header */}
-                <Box sx={{ 
-                  display: 'flex', 
-                  flexDirection: { xs: 'column', sm: 'row' },
-                  justifyContent: 'space-between', 
-                  alignItems: { xs: 'flex-start', sm: 'flex-start' }, 
-                  mb: 2,
-                  gap: { xs: 2, sm: 0 }
-                }}>
-                  <Box sx={{ flex: 1 }}>
-                    <Box sx={{ 
-                      display: 'flex', 
-                      flexDirection: { xs: 'column', sm: 'row' },
-                      alignItems: { xs: 'flex-start', sm: 'center' }, 
-                      gap: { xs: 1, sm: 2 }, 
-                      mb: 1 
-                    }}>
-                      <Typography variant="h5" sx={{ 
-                        fontFamily: 'Poppins, sans-serif', 
-                        fontWeight: 600,
-                        fontSize: { xs: '1.125rem', sm: '1.25rem' }
-                      }}>
-                        {course.course_code} - {course.course_name}
-                      </Typography>
-                      {getStatusBadge(course.status)}
-                    </Box>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1 }}>
-                      <Avatar sx={{ width: 32, height: 32 }} />
-                      <Box>
-                        <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                          {course.department}
-                        </Typography>
-                        <Typography variant="body2" sx={{ color: 'hsl(var(--muted-foreground))', fontSize: '0.75rem' }}>
-                          {course.credits} Credits • {course.semester} • {course.academic_year}
-                        </Typography>
-                      </Box>
-                    </Box>
-                  </Box>
-                  <Box sx={{ textAlign: { xs: 'left', sm: 'right' } }}>
-                    <Typography variant="h6" sx={{ 
-                      fontFamily: 'Poppins, sans-serif', 
-                      fontWeight: 700,
-                      color: getGradeColor(course.average_grade)
-                    }}>
-                      {Math.round(course.average_grade)}%
-                    </Typography>
-                    <Typography variant="body2" sx={{ color: 'hsl(var(--muted-foreground))', fontSize: '0.75rem' }}>
-                      Average Grade
-                    </Typography>
-                  </Box>
-                </Box>
-
-                {/* Description */}
-                <Typography variant="body2" sx={{ 
-                  color: 'hsl(var(--muted-foreground))', 
-                  mb: 3, 
-                  lineHeight: 1.6
-                }}>
-                  {course.description}
-                </Typography>
-
-                {/* Stats */}
-                <Box sx={{ 
-                  display: 'grid', 
-                  gridTemplateColumns: { xs: 'repeat(2, 1fr)', sm: 'repeat(4, 1fr)' }, 
-                  gap: 2,
-                  mb: 3,
-                  p: 2,
-                  bgcolor: 'hsl(var(--muted) / 0.3)',
-                  borderRadius: 2,
-                  border: '1px solid #000'
-                }}>
-                  <Box sx={{ textAlign: 'center' }}>
-                    <Typography variant="h6" sx={{ fontFamily: 'Poppins, sans-serif', fontWeight: 700 }}>
-                      {course.enrolled_students}/{course.max_students}
-                    </Typography>
-                    <Typography variant="body2" sx={{ color: 'hsl(var(--muted-foreground))', fontSize: '0.75rem' }}>
-                      Students
-                    </Typography>
-                  </Box>
-                  <Box sx={{ textAlign: 'center' }}>
-                    <Typography variant="h6" sx={{ fontFamily: 'Poppins, sans-serif', fontWeight: 700 }}>
-                      {course.attendance_rate}%
-                    </Typography>
-                    <Typography variant="body2" sx={{ color: 'hsl(var(--muted-foreground))', fontSize: '0.75rem' }}>
-                      Attendance
-                    </Typography>
-                  </Box>
-                  <Box sx={{ textAlign: 'center' }}>
-                    <Typography variant="h6" sx={{ fontFamily: 'Poppins, sans-serif', fontWeight: 700 }}>
-                      {course.assignments_count}
-                    </Typography>
-                    <Typography variant="body2" sx={{ color: 'hsl(var(--muted-foreground))', fontSize: '0.75rem' }}>
-                      Assignments
-                    </Typography>
-                  </Box>
-                  <Box sx={{ textAlign: 'center' }}>
-                    <Typography variant="h6" sx={{ fontFamily: 'Poppins, sans-serif', fontWeight: 700 }}>
-                      {course.sessions_count}
-                    </Typography>
-                    <Typography variant="body2" sx={{ color: 'hsl(var(--muted-foreground))', fontSize: '0.75rem' }}>
-                      Sessions
-                    </Typography>
-                  </Box>
-                </Box>
-
-                {/* Schedule & Next Session */}
-                <Box sx={{ 
-                  display: 'flex', 
-                  flexDirection: { xs: 'column', sm: 'row' },
-                  justifyContent: 'space-between', 
-                  alignItems: { xs: 'flex-start', sm: 'center' }, 
-                  mb: 3,
-                  gap: { xs: 2, sm: 0 }
-                }}>
-                  <Box>
-                    <Typography variant="body2" sx={{ color: 'hsl(var(--muted-foreground))', fontSize: '0.75rem' }}>
-                      Schedule
-                    </Typography>
-                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                      {course.schedule.days.join(', ')} • {course.schedule.time}
-                    </Typography>
-                    <Typography variant="body2" sx={{ color: 'hsl(var(--muted-foreground))', fontSize: '0.75rem' }}>
-                      {course.schedule.location}
-                    </Typography>
-                  </Box>
-                  {course.next_session && (
-                    <Box sx={{ textAlign: { xs: 'left', sm: 'right' } }}>
-                      <Typography variant="body2" sx={{ color: 'hsl(var(--muted-foreground))', fontSize: '0.75rem' }}>
-                        Next Session
-                      </Typography>
-                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                        {course.next_session.title}
-                      </Typography>
-                      <Typography variant="body2" sx={{ color: 'hsl(var(--muted-foreground))', fontSize: '0.75rem' }}>
-                        {formatDate(course.next_session.date)} • {course.next_session.time}
-                      </Typography>
-                    </Box>
-                  )}
-                </Box>
-
-                {/* Actions */}
-                <Box sx={{ 
-                  display: 'flex', 
-                  flexDirection: { xs: 'column', sm: 'row' },
-                  gap: { xs: 1.5, sm: 2 }, 
-                  pt: 1 
-                }}>
-                  <MUIButton 
-                    variant="contained"
-                    size="small" 
-                    onClick={() => router.push(`/lecturer/courses/${course.id}`)}
-                    sx={{
-                      ...BUTTON_STYLES.primary,
-                      width: { xs: '100%', sm: 'auto' },
-                      fontSize: { xs: '0.875rem', sm: '0.875rem' }
-                    }}
-                  >
-                    <EyeIcon className="h-4 w-4 mr-2" />
-                    View Details
-                  </MUIButton>
-                  <MUIButton 
-                    variant="outlined" 
-                    size="small"
-                    onClick={() => router.push(`/lecturer/homework?course=${course.id}`)}
-                    sx={{
-                      ...BUTTON_STYLES.outlined,
-                      width: { xs: '100%', sm: 'auto' },
-                      fontSize: { xs: '0.875rem', sm: '0.875rem' }
-                    }}
-                  >
-                    <BookOpenIcon className="h-4 w-4 mr-2" />
-                    Assignments
-                  </MUIButton>
-                  <MUIButton 
-                    variant="outlined" 
-                    size="small"
-                    onClick={() => router.push(`/lecturer/attendance?course=${course.id}`)}
-                    sx={{
-                      ...BUTTON_STYLES.outlined,
-                      width: { xs: '100%', sm: 'auto' },
-                      fontSize: { xs: '0.875rem', sm: '0.875rem' }
-                    }}
-                  >
-                    <CalendarDaysIcon className="h-4 w-4 mr-2" />
-                    Attendance
-                  </MUIButton>
-                  <MUIButton 
-                    variant="outlined" 
-                    size="small"
-                    onClick={() => router.push(`/lecturer/gradebook?course=${course.id}`)}
-                    sx={{
-                      ...BUTTON_STYLES.outlined,
-                      width: { xs: '100%', sm: 'auto' },
-                      fontSize: { xs: '0.875rem', sm: '0.875rem' }
-                    }}
-                  >
-                    <ChartBarIcon className="h-4 w-4 mr-2" />
-                    Gradebook
-                  </MUIButton>
-                </Box>
-              </MUICardContent>
-            </MUICard>
-          ))
-        )}
-      </div>
+        <DataTable
+          title="My Courses"
+          subtitle="Manage your assigned courses and track student progress"
+          columns={columns}
+          data={filteredCourses}
+          onRowClick={(course) => router.push(`/lecturer/courses/${course.id}`)}
+        />
+      )}
     </div>
   )
 }

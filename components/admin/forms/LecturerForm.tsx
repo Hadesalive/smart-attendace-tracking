@@ -14,6 +14,10 @@ interface Lecturer {
   specialization?: string
   qualification?: string
   experience_years?: number
+  position?: string
+  hire_date?: string
+  bio?: string
+  research_interests?: string
   is_active: boolean
 }
 
@@ -44,6 +48,10 @@ export default function LecturerForm({
     specialization: '',
     qualification: '',
     experience_years: 0,
+    position: '',
+    hire_date: '',
+    bio: '',
+    research_interests: '',
     is_active: true
   })
 
@@ -65,6 +73,10 @@ export default function LecturerForm({
         specialization: '',
         qualification: '',
         experience_years: 0,
+        position: '',
+        hire_date: '',
+        bio: '',
+        research_interests: '',
         is_active: true
       })
     }
@@ -99,8 +111,8 @@ export default function LecturerForm({
 
     if (mode === 'create' && !formData.password.trim()) {
       newErrors.password = 'Password is required'
-    } else if (formData.password && formData.password.length < 6) {
-      newErrors.password = 'Password must be at least 6 characters'
+    } else if (formData.password && formData.password.length < 8) {
+      newErrors.password = 'Password must be at least 8 characters'
     }
 
     if (formData.phone && !/^\+?[\d\s-()]+$/.test(formData.phone)) {
@@ -327,6 +339,45 @@ export default function LecturerForm({
             </div>
           </div>
 
+          {/* Position and Hire Date */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label htmlFor="position" className="block text-sm font-semibold mb-2 text-gray-900">
+                Position
+              </label>
+              <select
+                id="position"
+                name="position"
+                value={formData.position}
+                onChange={handleInputChange}
+                className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white text-gray-900 focus:border-gray-500 focus:ring-2 focus:ring-gray-300 focus:outline-none transition"
+                disabled={loading}
+              >
+                <option value="">Select Position</option>
+                <option value="Lecturer">Lecturer</option>
+                <option value="Senior Lecturer">Senior Lecturer</option>
+                <option value="Associate Professor">Associate Professor</option>
+                <option value="Professor">Professor</option>
+                <option value="Assistant Professor">Assistant Professor</option>
+              </select>
+            </div>
+
+            <div>
+              <label htmlFor="hire_date" className="block text-sm font-semibold mb-2 text-gray-900">
+                Hire Date
+              </label>
+              <input
+                id="hire_date"
+                name="hire_date"
+                type="date"
+                value={formData.hire_date}
+                onChange={handleInputChange}
+                className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white text-gray-900 focus:border-gray-500 focus:ring-2 focus:ring-gray-300 focus:outline-none transition"
+                disabled={loading}
+              />
+            </div>
+          </div>
+
           {/* Experience Years */}
           <div>
             <label htmlFor="experience_years" className="block text-sm font-semibold mb-2 text-gray-900">
@@ -348,6 +399,40 @@ export default function LecturerForm({
             {errors.experience_years && (
               <p className="mt-1 text-sm text-red-600">{errors.experience_years}</p>
             )}
+          </div>
+
+          {/* Bio */}
+          <div>
+            <label htmlFor="bio" className="block text-sm font-semibold mb-2 text-gray-900">
+              Professional Bio
+            </label>
+            <textarea
+              id="bio"
+              name="bio"
+              value={formData.bio}
+              onChange={handleInputChange}
+              placeholder="Brief professional biography..."
+              rows={3}
+              className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white text-gray-900 focus:border-gray-500 focus:ring-2 focus:ring-gray-300 focus:outline-none transition resize-none"
+              disabled={loading}
+            />
+          </div>
+
+          {/* Research Interests */}
+          <div>
+            <label htmlFor="research_interests" className="block text-sm font-semibold mb-2 text-gray-900">
+              Research Interests
+            </label>
+            <textarea
+              id="research_interests"
+              name="research_interests"
+              value={formData.research_interests}
+              onChange={handleInputChange}
+              placeholder="Areas of research interest..."
+              rows={2}
+              className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white text-gray-900 focus:border-gray-500 focus:ring-2 focus:ring-gray-300 focus:outline-none transition resize-none"
+              disabled={loading}
+            />
           </div>
 
           {/* Active Status */}

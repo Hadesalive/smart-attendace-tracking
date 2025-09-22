@@ -141,9 +141,14 @@ export default function StatsGrid({ stats, loading = false, className }: StatsGr
     >
       <Box sx={{ 
         display: "grid", 
-        gridTemplateColumns: { xs: "1fr", sm: "repeat(2, 1fr)", md: "repeat(4, 1fr)" },
-        gap: 3,
-        mb: 4 
+        gridTemplateColumns: { 
+          xs: "1fr", 
+          sm: "repeat(2, 1fr)", 
+          md: "repeat(4, 1fr)" 
+        },
+        gap: { xs: 2, sm: 2.5, md: 3 },
+        mb: 4,
+        minHeight: { xs: "auto", sm: "200px" }
       }}>
         {statCards.map((stat, index) => (
           <StatCard

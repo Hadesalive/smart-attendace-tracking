@@ -83,11 +83,10 @@ import {
 import { formatDate, formatTime} from "@/lib/utils"
 import { TYPOGRAPHY_STYLES } from "@/lib/design/fonts"
 import { BUTTON_STYLES, STATUS_COLORS } from "@/lib/constants/admin-constants"
-import { useAttendance, useCourses, useAuth } from "@/lib/domains"
-import { useMockData } from "@/lib/hooks/useMockData"
+import { useAttendance, useCourses, useAuth, useAcademicStructure } from "@/lib/domains"
 import PageHeader from "@/components/admin/PageHeader"
 import StatsGrid from "@/components/admin/StatsGrid"
-import SearchFilters from "@/components/admin/SearchFilters"
+import FilterBar from "@/components/admin/FilterBar"
 import DataTable from "@/components/admin/DataTable"
 import ErrorAlert from "@/components/admin/ErrorAlert"
 import { mapSessionStatus } from "@/lib/utils/statusMapping"
@@ -181,21 +180,43 @@ export default function SessionsPage() {
   const attendance = useAttendance()
   const courses = useCourses()
   const auth = useAuth()
+  const academic = useAcademicStructure()
   
-  // Create legacy state object for compatibility
+  // Create unified state object
   const state = {
     ...attendance.state,
     ...courses.state,
+    ...academic.state,
     users: auth.state.users
   }
-  const { isInitialized } = useMockData()
   
-  const [searchTerm, setSearchTerm] = useState("")
-  const [selectedStatus, setSelectedStatus] = useState<string>("all")
-  const [selectedCourse, setSelectedCourse] = useState<string>("all")
+  // Filtering state
+  const [filters, setFilters] = useState({
+    search: '',
+    status: 'all',
+    course: 'all',
+    lecturer: 'all'
+  })
+  
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null)
   const [selectedSession, setSelectedSession] = useState<Session | null>(null)
-  const [showFilters, setShowFilters] = useState(false)
+
+  // Data fetching
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        await Promise.all([
+          attendance.fetchAttendanceSessions(),
+          courses.fetchCourses(),
+          academic.fetchLecturerProfiles()
+        ])
+      } catch (error) {
+        console.error('Error fetching sessions data:', error)
+      }
+    }
+    
+    fetchData()
+  }, [])
 
   // ============================================================================
   // COMPUTED DATA
@@ -205,7 +226,6 @@ export default function SessionsPage() {
   const sessions = useMemo(() => {
     return state.attendanceSessions.map(session => {
       const course = state.courses.find(c => c.id === session.course_id)
-      const lecturer = state.users.find(u => u.role === 'lecturer')
       
       return {
         id: session.id,
@@ -221,13 +241,13 @@ export default function SessionsPage() {
           course_name: course.course_name,
           department: course.department || 'Computer Science'
         } : undefined,
-        users: lecturer ? {
-          full_name: lecturer.full_name,
-          email: lecturer.email
-        } : undefined
+        users: {
+          full_name: session.lecturer_name || 'Unknown Lecturer',
+          email: 'N/A'
+        }
       }
     })
-  }, [state.attendanceSessions, state.courses, state.users])
+  }, [state.attendanceSessions, state.courses])
 
   // Calculate stats from DataContext
   const stats = useMemo(() => {
@@ -253,8 +273,21 @@ export default function SessionsPage() {
     setSelectedSession(null)
   }, [])
 
-  const handleStatusChange = useCallback((event: React.SyntheticEvent, newValue: string) => {
-    setSelectedStatus(newValue)
+  const handleFilterChange = useCallback((key: string, value: string) => {
+    setFilters(prev => ({ ...prev, [key]: value }))
+  }, [])
+
+  const handleSearchChange = useCallback((value: string) => {
+    setFilters(prev => ({ ...prev, search: value }))
+  }, [])
+
+  const clearFilters = useCallback(() => {
+    setFilters({
+      search: '',
+      status: 'all',
+      course: 'all',
+      lecturer: 'all'
+    })
   }, [])
 
   const handleViewSession = useCallback(() => {
@@ -270,10 +303,6 @@ export default function SessionsPage() {
     }
     handleMenuClose()
   }, [selectedSession, router, handleMenuClose])
-
-  const handleToggleFilters = useCallback(() => {
-    setShowFilters(prev => !prev)
-  }, [])
 
   const handleAnalytics = useCallback(() => {
     if (selectedSession) {
@@ -296,34 +325,72 @@ export default function SessionsPage() {
     }))
   }, [stats])
 
+  // Filter options
+  const filterOptions = useMemo(() => {
+    const courseOptions = [
+      { value: 'all', label: 'All Courses' },
+      ...Array.from(new Set(sessions.map(s => s.courses?.course_code).filter(Boolean))).map(courseCode => ({
+        value: courseCode as string,
+        label: courseCode as string
+      }))
+    ]
+
+    const lecturerOptions = [
+      { value: 'all', label: 'All Lecturers' },
+      ...Array.from(new Set(sessions.map(s => s.users?.full_name).filter(Boolean))).map(lecturerName => ({
+        value: lecturerName as string,
+        label: lecturerName as string
+      }))
+    ]
+
+    const statusOptions = [
+      { value: 'all', label: 'All Status' },
+      { value: 'scheduled', label: 'Scheduled' },
+      { value: 'active', label: 'Active' },
+      { value: 'completed', label: 'Completed' },
+      { value: 'cancelled', label: 'Cancelled' }
+    ]
+
+    return {
+      courseOptions,
+      lecturerOptions,
+      statusOptions
+    }
+  }, [sessions])
+
   const filteredSessions = useMemo(() => {
     let filtered = sessions
 
     // Filter by search term
-    if (searchTerm) {
+    if (filters.search) {
       filtered = filtered.filter(session => 
-        session.session_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        session.courses?.course_code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        session.courses?.course_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        session.users?.full_name.toLowerCase().includes(searchTerm.toLowerCase())
+        session.session_name.toLowerCase().includes(filters.search.toLowerCase()) ||
+        session.courses?.course_code.toLowerCase().includes(filters.search.toLowerCase()) ||
+        session.courses?.course_name.toLowerCase().includes(filters.search.toLowerCase()) ||
+        session.users?.full_name.toLowerCase().includes(filters.search.toLowerCase())
       )
     }
 
-    // Filter by status (use centralized status mapping + is_active override)
-    if (selectedStatus !== "all") {
+    // Filter by status
+    if (filters.status !== "all") {
       filtered = filtered.filter(session => {
         const displayStatus = session.is_active ? 'active' : mapSessionStatus(session.status, 'admin')
-        return displayStatus === selectedStatus
+        return displayStatus === filters.status
       })
     }
 
     // Filter by course
-    if (selectedCourse !== "all") {
-      filtered = filtered.filter(session => session.courses?.course_code === selectedCourse)
+    if (filters.course !== "all") {
+      filtered = filtered.filter(session => session.courses?.course_code === filters.course)
+    }
+
+    // Filter by lecturer
+    if (filters.lecturer !== "all") {
+      filtered = filtered.filter(session => session.users?.full_name === filters.lecturer)
     }
 
     return filtered
-  }, [sessions, searchTerm, selectedStatus, selectedCourse])
+  }, [sessions, filters])
 
   const getSessionStatus = useCallback((session: Session) => {
     const displayStatus = session.is_active ? 'active' : mapSessionStatus(session.status, 'admin')
@@ -437,7 +504,7 @@ export default function SessionsPage() {
   ]
 
   // Loading state
-  if (!isInitialized) {
+  if (attendance.state.loading || courses.state.loading) {
     return (
       <Box sx={{ p: { xs: 2, sm: 3 } }}>
         <PageHeader
@@ -446,7 +513,7 @@ export default function SessionsPage() {
           actions={null}
         />
         <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 400 }}>
-          <Typography variant="body1">Loading sessions...</Typography>
+          <Typography variant="body1" sx={TYPOGRAPHY_STYLES.tableBody}>Loading sessions...</Typography>
         </Box>
       </Box>
     )
@@ -461,14 +528,6 @@ export default function SessionsPage() {
           <>
             <Button
               variant="outlined"
-              startIcon={<FunnelIcon className="h-4 w-4" />}
-              onClick={handleToggleFilters}
-              sx={BUTTON_STYLES.outlined}
-            >
-              {showFilters ? "Hide Filters" : "Show Filters"}
-            </Button>
-            <Button
-              variant="outlined"
               startIcon={<ChartBarIcon className="h-4 w-4" />}
               onClick={() => router.push('/admin/reports')}
               sx={BUTTON_STYLES.outlined}
@@ -481,23 +540,45 @@ export default function SessionsPage() {
 
       <StatsGrid stats={statsCardsWithData} />
 
-      <SearchFilters
-        searchTerm={searchTerm}
-        onSearchChange={setSearchTerm}
-        searchPlaceholder="Search sessions..."
-        showFilters={showFilters}
-        filters={[
+      <FilterBar
+        fields={[
           {
-            label: "Course",
-            value: selectedCourse,
-            options: [
-              { value: "all", label: "All Courses" },
-              ...Array.from(new Set(sessions.map(s => s.courses?.course_code).filter(Boolean))).map(courseCode => ({
-                value: courseCode as string,
-                label: courseCode as string
-              }))
-            ],
-            onChange: setSelectedCourse
+            type: 'text',
+            label: 'Search',
+            value: filters.search,
+            onChange: handleSearchChange,
+            placeholder: 'Search sessions, courses, lecturers...',
+            span: 3
+          },
+          {
+            type: 'native-select',
+            label: 'Status',
+            value: filters.status,
+            onChange: (value) => handleFilterChange('status', value),
+            options: filterOptions.statusOptions,
+            span: 2
+          },
+          {
+            type: 'native-select',
+            label: 'Course',
+            value: filters.course,
+            onChange: (value) => handleFilterChange('course', value),
+            options: filterOptions.courseOptions,
+            span: 2
+          },
+          {
+            type: 'native-select',
+            label: 'Lecturer',
+            value: filters.lecturer,
+            onChange: (value) => handleFilterChange('lecturer', value),
+            options: filterOptions.lecturerOptions,
+            span: 2
+          },
+          {
+            type: 'clear-button',
+            label: 'Clear Filters',
+            onClick: clearFilters,
+            span: 1
           }
         ]}
       />

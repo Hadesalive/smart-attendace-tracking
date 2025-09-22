@@ -84,12 +84,12 @@ import {
 import { formatDate, formatTime} from "@/lib/utils"
 import { TYPOGRAPHY_STYLES } from "@/lib/design/fonts"
 import { BUTTON_STYLES } from "@/lib/constants/admin-constants"
-import { supabase } from "@/lib/supabase"
+import { useAttendance, useCourses, useAuth, useAcademicStructure } from "@/lib/domains"
 import DetailHeader from "@/components/admin/DetailHeader"
 import InfoCard from "@/components/admin/InfoCard"
 import DetailTabs from "@/components/admin/DetailTabs"
 import StatsGrid from "@/components/admin/StatsGrid"
-import SearchFilters from "@/components/admin/SearchFilters"
+import FilterBar from "@/components/admin/FilterBar"
 import DataTable from "@/components/admin/DataTable"
 import {
   Chart as ChartJS,
@@ -180,6 +180,20 @@ export default function SessionDetailsPage() {
   const params = useParams()
   const sessionId = params.sessionId as string
   
+  // Data Context
+  const attendance = useAttendance()
+  const courses = useCourses()
+  const auth = useAuth()
+  const academic = useAcademicStructure()
+  
+  // Create unified state object
+  const state = {
+    ...attendance.state,
+    ...courses.state,
+    ...academic.state,
+    users: auth.state.users
+  }
+  
   const [session, setSession] = useState<SessionDetails | null>(null)
   const [students, setStudents] = useState<StudentAttendance[]>([])
   const [stats, setStats] = useState<SessionStats>({
@@ -191,8 +205,13 @@ export default function SessionDetailsPage() {
     attendanceRate: 0,
     averageCheckInTime: null
   })
-  const [searchTerm, setSearchTerm] = useState("")
-  const [statusFilter, setStatusFilter] = useState<string>("all")
+  
+  // Filtering state
+  const [filters, setFilters] = useState({
+    search: '',
+    status: 'all'
+  })
+  
   const [tabValue, setTabValue] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -201,119 +220,158 @@ export default function SessionDetailsPage() {
   // DATA FETCHING
   // ============================================================================
 
+  // Data fetching
   useEffect(() => {
-    if (sessionId) {
-      fetchSessionData()
-    }
-  }, [sessionId])
-
-  const fetchSessionData = useCallback(async () => {
-    try {
-      setLoading(true)
-      setError(null)
-
-      // Fetch session details
-      const { data: sessionData, error: sessionError } = await supabase
-        .from("attendance_sessions")
-        .select(`
-          *,
-          courses(course_code, course_name),
-          users(full_name, email)
-        `)
-        .eq("id", sessionId)
-        .single()
-
-      if (sessionError) throw sessionError
-
-      // Transform session data
-      const transformedSession: SessionDetails = {
-        id: sessionData.id,
-        session_name: sessionData.session_name,
-        course_code: sessionData.courses?.course_code || "N/A",
-        course_name: sessionData.courses?.course_name || "N/A",
-        lecturer_name: sessionData.users?.full_name || "N/A",
-        lecturer_email: sessionData.users?.email || "N/A",
-        session_date: sessionData.session_date,
-        start_time: sessionData.start_time,
-        end_time: sessionData.end_time,
-        attendance_method: sessionData.attendance_method || "QR_CODE",
-        location: sessionData.location || "TBD",
-        description: sessionData.description || "",
-        total_students: Math.floor(Math.random() * 50) + 20, // Mock data
-        present_students: Math.floor(Math.random() * 40) + 15, // Mock data
-        absent_students: Math.floor(Math.random() * 10) + 5, // Mock data
-        attendance_rate: Math.floor(Math.random() * 30) + 70, // Mock data
-        status: sessionData.status || 'scheduled',
-        is_active: sessionData.is_active || false,
-        created_at: sessionData.created_at,
-        updated_at: sessionData.updated_at
+    const fetchData = async () => {
+      try {
+        setLoading(true)
+        setError(null)
+        
+        await Promise.all([
+          attendance.fetchAttendanceSessions(),
+          attendance.fetchAttendanceRecords(),
+          courses.fetchCourses(),
+          academic.fetchStudentProfiles()
+        ])
+      } catch (error) {
+        console.error('Error fetching session data:', error)
+        setError('Failed to load session data. Please try again.')
+      } finally {
+        setLoading(false)
       }
+    }
+    
+    fetchData()
+  }, [])
 
+  // Get session data from context
+  const sessionData = useMemo(() => {
+    return state.attendanceSessions.find(s => s.id === sessionId)
+  }, [state.attendanceSessions, sessionId])
+
+  // Get attendance records for this session
+  const sessionAttendanceRecords = useMemo(() => {
+    return state.attendanceRecords.filter(record => record.session_id === sessionId)
+  }, [state.attendanceRecords, sessionId])
+
+  // Transform session data
+  const transformedSession = useMemo(() => {
+    if (!sessionData) return null
+
+    const course = state.courses.find(c => c.id === sessionData.course_id)
+    const presentCount = sessionAttendanceRecords.filter(r => r.status === 'present').length
+    const totalStudents = sessionAttendanceRecords.length || 0
+
+    return {
+      id: sessionData.id,
+      session_name: sessionData.session_name,
+      course_code: course?.course_code || "N/A",
+      course_name: course?.course_name || "N/A",
+      lecturer_name: sessionData.lecturer_name || "N/A",
+      lecturer_email: "N/A",
+      session_date: sessionData.session_date,
+      start_time: sessionData.start_time,
+      end_time: sessionData.end_time,
+      attendance_method: sessionData.attendance_method || "QR_CODE",
+      location: sessionData.location || "TBD",
+      description: sessionData.description || "",
+      total_students: totalStudents,
+      present_students: presentCount,
+      absent_students: totalStudents - presentCount,
+      attendance_rate: totalStudents > 0 ? Math.round((presentCount / totalStudents) * 100) : 0,
+      status: sessionData.status || 'scheduled',
+      is_active: sessionData.is_active || false,
+      created_at: sessionData.created_at,
+      updated_at: sessionData.created_at
+    }
+  }, [sessionData, state.courses, sessionAttendanceRecords])
+
+  // Transform student attendance data
+  const transformedStudents = useMemo(() => {
+    return sessionAttendanceRecords.map(record => {
+      const student = state.studentProfiles?.find(s => s.user_id === record.student_id)
+      return {
+        id: record.id,
+        student_id: record.student_id,
+        student_name: record.student_name || 'Unknown Student',
+        student_email: record.student_email || 'N/A',
+        student_id_number: student?.student_id || 'N/A',
+        attendance_status: record.status as 'present' | 'absent' | 'late' | 'excused',
+        check_in_time: record.marked_at,
+        check_out_time: null,
+        notes: null,
+        created_at: record.marked_at
+      }
+    })
+  }, [sessionAttendanceRecords, state.studentProfiles])
+
+  // Update session and students when data changes
+  useEffect(() => {
+    if (transformedSession) {
       setSession(transformedSession)
+    }
+    setStudents(transformedStudents)
+  }, [transformedSession, transformedStudents])
 
-      // Mock student attendance data
-      const mockStudents: StudentAttendance[] = Array.from({ length: transformedSession.total_students }, (_, i) => ({
-        id: `student-${i + 1}`,
-        student_id: `STU${String(i + 1).padStart(4, '0')}`,
-        student_name: `Student ${i + 1}`,
-        student_email: `student${i + 1}@university.edu`,
-        student_id_number: `2024${String(i + 1).padStart(4, '0')}`,
-        attendance_status: i < transformedSession.present_students ? 'present' : 'absent',
-        check_in_time: i < transformedSession.present_students ? new Date(Date.now() - Math.random() * 3600000).toISOString() : null,
-        check_out_time: i < transformedSession.present_students && Math.random() > 0.3 ? new Date(Date.now() - Math.random() * 1800000).toISOString() : null,
-        notes: Math.random() > 0.8 ? "Late arrival" : null,
-        created_at: new Date().toISOString()
-      }))
-
-      setStudents(mockStudents)
-
-      // Calculate stats
-      const presentCount = mockStudents.filter(s => s.attendance_status === 'present').length
-      const absentCount = mockStudents.filter(s => s.attendance_status === 'absent').length
-      const lateCount = mockStudents.filter(s => s.notes?.includes('Late')).length
-      const excusedCount = mockStudents.filter(s => s.attendance_status === 'excused').length
+  // Calculate stats
+  useEffect(() => {
+    if (transformedStudents.length > 0) {
+      const presentCount = transformedStudents.filter(s => s.attendance_status === 'present').length
+      const absentCount = transformedStudents.filter(s => s.attendance_status === 'absent').length
+      const lateCount = transformedStudents.filter(s => s.attendance_status === 'late').length
+      const excusedCount = transformedStudents.filter(s => s.attendance_status === 'excused').length
 
       setStats({
-        totalStudents: mockStudents.length,
+        totalStudents: transformedStudents.length,
         presentStudents: presentCount,
         absentStudents: absentCount,
         lateStudents: lateCount,
         excusedStudents: excusedCount,
-        attendanceRate: Math.round((presentCount / mockStudents.length) * 100),
+        attendanceRate: transformedStudents.length > 0 ? Math.round((presentCount / transformedStudents.length) * 100) : 0,
         averageCheckInTime: presentCount > 0 ? "09:15 AM" : null
       })
-
-    } catch (error) {
-      console.error("Error fetching session data:", error)
-      setError("Failed to load session data. Please try again.")
-    } finally {
-      setLoading(false)
     }
-  }, [sessionId])
+  }, [transformedStudents])
 
   // ============================================================================
   // MEMOIZED VALUES
   // ============================================================================
 
+  // Filter handlers
+  const handleFilterChange = useCallback((key: string, value: string) => {
+    setFilters(prev => ({ ...prev, [key]: value }))
+  }, [])
+
+  const handleSearchChange = useCallback((value: string) => {
+    setFilters(prev => ({ ...prev, search: value }))
+  }, [])
+
+  const clearFilters = useCallback(() => {
+    setFilters({
+      search: '',
+      status: 'all'
+    })
+  }, [])
+
   const filteredStudents = useMemo(() => {
     let filtered = students
 
     // Filter by search term
-    if (searchTerm) {
+    if (filters.search) {
       filtered = filtered.filter(student => 
-        student.student_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        student.student_email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        student.student_id_number.toLowerCase().includes(searchTerm.toLowerCase())
+        student.student_name.toLowerCase().includes(filters.search.toLowerCase()) ||
+        student.student_email.toLowerCase().includes(filters.search.toLowerCase()) ||
+        student.student_id_number.toLowerCase().includes(filters.search.toLowerCase())
       )
     }
 
     // Filter by status
-    if (statusFilter !== "all") {
-      filtered = filtered.filter(student => student.attendance_status === statusFilter)
+    if (filters.status !== "all") {
+      filtered = filtered.filter(student => student.attendance_status === filters.status)
     }
 
     return filtered
-  }, [students, searchTerm, statusFilter])
+  }, [students, filters])
 
   const statsCards = useMemo(() => [
     { 
@@ -374,7 +432,7 @@ export default function SessionDetailsPage() {
   // RENDER
   // ============================================================================
 
-  if (loading) {
+  if (loading || attendance.state.loading) {
     return (
       <Box sx={{ p: { xs: 2, sm: 3 } }}>
         <Box sx={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "400px" }}>
@@ -500,14 +558,21 @@ export default function SessionDetailsPage() {
       value: "attendance",
       content: (
         <>
-          <SearchFilters
-            searchTerm={searchTerm}
-            onSearchChange={setSearchTerm}
-            searchPlaceholder="Search students..."
-            filters={[
+          <FilterBar
+            fields={[
               {
-                label: "Status",
-                value: statusFilter,
+                type: 'text',
+                label: 'Search',
+                value: filters.search,
+                onChange: handleSearchChange,
+                placeholder: 'Search students...',
+                span: 3
+              },
+              {
+                type: 'native-select',
+                label: 'Status',
+                value: filters.status,
+                onChange: (value) => handleFilterChange('status', value),
                 options: [
                   { value: "all", label: "All Status" },
                   { value: "present", label: "Present" },
@@ -515,7 +580,13 @@ export default function SessionDetailsPage() {
                   { value: "late", label: "Late" },
                   { value: "excused", label: "Excused" }
                 ],
-                onChange: setStatusFilter
+                span: 2
+              },
+              {
+                type: 'clear-button',
+                label: 'Clear Filters',
+                onClick: clearFilters,
+                span: 1
               }
             ]}
           />

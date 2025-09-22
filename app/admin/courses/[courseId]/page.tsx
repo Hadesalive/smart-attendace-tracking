@@ -32,7 +32,8 @@ import {
   TrashIcon,
   EyeIcon,
   PlusIcon,
-  UserPlusIcon
+  UserPlusIcon,
+  UserGroupIcon
 } from "@heroicons/react/24/outline"
 import { formatDate, formatNumber } from "@/lib/utils"
 import { TYPOGRAPHY_STYLES } from "@/lib/design/fonts"
@@ -44,6 +45,7 @@ import PageHeader from "@/components/admin/PageHeader"
 import StatsGrid from "@/components/admin/StatsGrid"
 import DataTable from "@/components/admin/DataTable"
 import ErrorAlert from "@/components/admin/ErrorAlert"
+import FilterBar from "@/components/admin/FilterBar"
 import CourseAssignmentForm from "@/components/admin/forms/CourseAssignmentForm"
 import { Course } from "@/lib/types/shared"
 
@@ -73,19 +75,30 @@ export default function CourseDetailPage({ params }: CourseDetailProps) {
     createCourseAssignment,
     updateCourseAssignment,
     deleteCourseAssignment,
-    fetchEnrollments
+    fetchLecturerAssignments,
+    getLecturersByCourse
   } = courses
-  const { fetchLecturerProfiles } = academic
+  const { 
+    state: academicState,
+    fetchLecturerProfiles,
+    fetchSectionEnrollments,
+    fetchPrograms,
+    fetchAcademicYears,
+    fetchSemesters,
+    fetchSections
+  } = academic
   
   // Create legacy state object for compatibility
   const state = {
     ...coursesState,
-    lecturerProfiles: academic.state.lecturerProfiles,
+    lecturerProfiles: academicState.lecturerProfiles,
+    lecturerAssignments: coursesState.lecturerAssignments,
     users: auth.state.users,
-    academicYears: academic.state.academicYears,
-    semesters: academic.state.semesters,
-    programs: academic.state.programs,
-    sections: academic.state.sections
+    academicYears: academicState.academicYears,
+    semesters: academicState.semesters,
+    programs: academicState.programs,
+    sections: academicState.sections,
+    sectionEnrollments: academicState.sectionEnrollments
   } as any
 
   const [activeTab, setActiveTab] = useState(0)
@@ -96,21 +109,183 @@ export default function CourseDetailPage({ params }: CourseDetailProps) {
   const [isAssignLecturerOpen, setAssignLecturerOpen] = useState(false)
   const [selectedAssignment, setSelectedAssignment] = useState<any>(null)
   const [selectedLecturer, setSelectedLecturer] = useState<string>("")
+  
+  // Filtering state
+  const [filters, setFilters] = useState({
+    search: '',
+    program: 'all',
+    year: 'all',
+    semester: 'all',
+    academicYear: 'all',
+    status: 'all'
+  })
 
   // Get course details
   const course = useMemo(() => {
     return state.courses.find((c: Course) => c.id === courseId)
   }, [state.courses, courseId])
 
-  // Get course assignments
+  // Get course assignments with enriched data
   const courseAssignments = useMemo(() => {
-    return state.courseAssignments.filter((assignment: any) => assignment.course_id === courseId)
-  }, [state.courseAssignments, courseId])
+    const assignments = state.courseAssignments.filter((assignment: any) => assignment.course_id === courseId)
+    
+    return assignments.map((assignment: any) => {
+      // The data should already be joined from the database query
+      // But we'll also check if we need to enrich it further
+      const program = assignment.programs || state.programs?.find((p: any) => p.id === assignment.program_id)
+      const academicYear = assignment.academic_years || state.academicYears?.find((ay: any) => ay.id === assignment.academic_year_id)
+      const semester = assignment.semesters || state.semesters?.find((s: any) => s.id === assignment.semester_id)
+      
+      return {
+        ...assignment,
+        programs: program,
+        academic_years: academicYear,
+        semesters: semester
+      }
+    })
+  }, [state.courseAssignments, state.programs, state.academicYears, state.semesters, courseId])
 
-  // Get enrolled students
+  // Get enrolled students using inheritance-based system
   const enrolledStudents = useMemo(() => {
-    return getStudentsByCourse(courseId)
-  }, [getStudentsByCourse, courseId])
+    if (!courseAssignments || courseAssignments.length === 0) {
+      return []
+    }
+    
+    const inheritedStudents = new Map()
+    
+    // For each course assignment, find students enrolled in that program/semester/year
+    courseAssignments.forEach((assignment: any) => {
+      const studentsInProgram = state.sectionEnrollments?.filter((enrollment: any) => 
+        enrollment.program_id === assignment.program_id &&
+        enrollment.semester_id === assignment.semester_id &&
+        enrollment.academic_year_id === assignment.academic_year_id &&
+        enrollment.year === assignment.year &&
+        enrollment.status === 'active'
+      ) || []
+      
+      // Add each student to the map with their program context
+      studentsInProgram.forEach((enrollment: any) => {
+        const studentKey = `${enrollment.student_id}-${assignment.program_id}-${assignment.semester_id}-${assignment.academic_year_id}`
+        
+        if (!inheritedStudents.has(studentKey)) {
+          inheritedStudents.set(studentKey, {
+            id: enrollment.id,
+            student_id: enrollment.student_id,
+            student_name: enrollment.student_name || 'N/A',
+            student_id_number: enrollment.student_id_number || 'N/A',
+            program: assignment.programs?.program_name || 'N/A',
+            program_code: assignment.programs?.program_code || 'N/A',
+            year: assignment.year,
+            semester: assignment.semesters?.semester_name || 'N/A',
+            academic_year: assignment.academic_years?.year_name || 'N/A',
+            enrollment_date: enrollment.enrollment_date,
+            status: enrollment.status,
+            // Show which sections they're in
+            sections: [enrollment.section_code].filter(Boolean),
+            // Add assignment context
+            assignment_id: assignment.id,
+            is_mandatory: assignment.is_mandatory,
+            max_students: assignment.max_students
+          })
+        } else {
+          // Add section to existing student
+          const existingStudent = inheritedStudents.get(studentKey)
+          if (enrollment.section_code && !existingStudent.sections.includes(enrollment.section_code)) {
+            existingStudent.sections.push(enrollment.section_code)
+          }
+        }
+      })
+    })
+    
+    return Array.from(inheritedStudents.values())
+  }, [courseAssignments, state.sectionEnrollments])
+
+  // Filtered assignments
+  const filteredAssignments = useMemo(() => {
+    let filtered = courseAssignments
+
+    // Filter by program
+    if (filters.program !== 'all') {
+      filtered = filtered.filter((assignment: any) => 
+        assignment.programs?.program_name === filters.program
+      )
+    }
+
+    // Filter by year
+    if (filters.year !== 'all') {
+      filtered = filtered.filter((assignment: any) => 
+        assignment.year === parseInt(filters.year)
+      )
+    }
+
+    // Filter by semester
+    if (filters.semester !== 'all') {
+      filtered = filtered.filter((assignment: any) => 
+        assignment.semesters?.semester_name === filters.semester
+      )
+    }
+
+    // Filter by academic year
+    if (filters.academicYear !== 'all') {
+      filtered = filtered.filter((assignment: any) => 
+        assignment.academic_years?.year_name === filters.academicYear
+      )
+    }
+
+    return filtered
+  }, [courseAssignments, filters])
+
+  // Filtered students
+  const filteredStudents = useMemo(() => {
+    let filtered = enrolledStudents
+
+    // Filter by search
+    if (filters.search) {
+      const searchLower = filters.search.toLowerCase()
+      filtered = filtered.filter((student: any) => 
+        student.student_name?.toLowerCase().includes(searchLower) ||
+        student.student_id_number?.toLowerCase().includes(searchLower) ||
+        student.program?.toLowerCase().includes(searchLower)
+      )
+    }
+
+    // Filter by program
+    if (filters.program !== 'all') {
+      filtered = filtered.filter((student: any) => 
+        student.program === filters.program
+      )
+    }
+
+    // Filter by year
+    if (filters.year !== 'all') {
+      filtered = filtered.filter((student: any) => 
+        student.year === parseInt(filters.year)
+      )
+    }
+
+    // Filter by semester
+    if (filters.semester !== 'all') {
+      filtered = filtered.filter((student: any) => 
+        student.semester === filters.semester
+      )
+    }
+
+    // Filter by academic year
+    if (filters.academicYear !== 'all') {
+      filtered = filtered.filter((student: any) => 
+        student.academic_year === filters.academicYear
+      )
+    }
+
+    // Filter by status
+    if (filters.status !== 'all') {
+      filtered = filtered.filter((student: any) => 
+        student.status === filters.status
+      )
+    }
+
+    return filtered
+  }, [enrolledStudents, filters])
 
       // Calculate stats
   const stats = useMemo(() => {
@@ -123,6 +298,38 @@ export default function CourseDetailPage({ params }: CourseDetailProps) {
 
     return { totalAssignments, totalStudents, activeAssignments, totalPrograms }
   }, [courseAssignments, enrolledStudents])
+
+  // Filter options
+  const filterOptions = useMemo(() => {
+    const programs = [...new Set(courseAssignments.map((a: any) => a.programs?.program_name).filter(Boolean))]
+    const years = [...new Set(courseAssignments.map((a: any) => a.year).filter(Boolean))].sort()
+    const semesters = [...new Set(courseAssignments.map((a: any) => a.semesters?.semester_name).filter(Boolean))]
+    const academicYears = [...new Set(courseAssignments.map((a: any) => a.academic_years?.year_name).filter(Boolean))]
+
+    return {
+      programs: [
+        { value: 'all', label: 'All Programs' },
+        ...programs.map((program: any) => ({ value: program, label: program }))
+      ],
+      years: [
+        { value: 'all', label: 'All Years' },
+        ...years.map((year: any) => ({ value: year.toString(), label: `Year ${year}` }))
+      ],
+      semesters: [
+        { value: 'all', label: 'All Semesters' },
+        ...semesters.map((semester: any) => ({ value: semester, label: semester }))
+      ],
+      academicYears: [
+        { value: 'all', label: 'All Academic Years' },
+        ...academicYears.map((year: any) => ({ value: year, label: year }))
+      ],
+      status: [
+        { value: 'all', label: 'All Status' },
+        { value: 'active', label: 'Active' },
+        { value: 'inactive', label: 'Inactive' }
+      ]
+    }
+  }, [courseAssignments])
 
   const statsCards = [
     { 
@@ -167,7 +374,12 @@ export default function CourseDetailPage({ params }: CourseDetailProps) {
           fetchCourses(),
           fetchLecturerProfiles(),
           fetchCourseAssignments(),
-          fetchEnrollments()
+          fetchLecturerAssignments(),
+          fetchSectionEnrollments(),
+          fetchPrograms(),
+          fetchAcademicYears(),
+          fetchSemesters(),
+          fetchSections()
         ])
       } catch (error) {
         console.error('Error loading course detail data:', error)
@@ -175,7 +387,7 @@ export default function CourseDetailPage({ params }: CourseDetailProps) {
     }
     
     loadData()
-  }, [fetchCourses, fetchLecturerProfiles, fetchCourseAssignments, fetchEnrollments])
+  }, [fetchCourses, fetchLecturerProfiles, fetchCourseAssignments, fetchSectionEnrollments, fetchPrograms, fetchAcademicYears, fetchSemesters, fetchSections])
 
   // Handlers
   const handleBack = () => {
@@ -263,6 +475,26 @@ export default function CourseDetailPage({ params }: CourseDetailProps) {
   const handleCloseLecturerForm = () => {
     setAssignLecturerOpen(false)
     setSelectedLecturer("")
+  }
+
+  // Filter handlers
+  const handleFilterChange = (key: string, value: string) => {
+    setFilters(prev => ({ ...prev, [key]: value }))
+  }
+
+  const handleSearchChange = (value: string) => {
+    setFilters(prev => ({ ...prev, search: value }))
+  }
+
+  const clearFilters = () => {
+    setFilters({
+      search: '',
+      program: 'all',
+      year: 'all',
+      semester: 'all',
+      academicYear: 'all',
+      status: 'all'
+    })
   }
 
   // Loading state
@@ -438,26 +670,96 @@ export default function CourseDetailPage({ params }: CourseDetailProps) {
       render: (value: any, row: any) => (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
           <Avatar sx={{ width: 32, height: 32 }}>
-            {row.full_name?.charAt(0) || 'S'}
+            {row.student_name?.charAt(0) || 'S'}
           </Avatar>
           <Box>
-        <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
-              {row.full_name || 'Unknown Student'}
-        </Typography>
+            <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
+              {row.student_name || 'Unknown Student'}
+            </Typography>
             <Typography variant="caption" sx={TYPOGRAPHY_STYLES.tableCaption}>
-              {row.email || 'No email'}
-        </Typography>
+              {row.student_id_number || 'No ID'}
+            </Typography>
           </Box>
         </Box>
       )
     },
     {
+      key: 'program',
+      label: 'Program',
+      render: (value: any, row: any) => (
+        <Box>
+          <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
+            {row.program || 'N/A'}
+          </Typography>
+          <Typography variant="caption" sx={TYPOGRAPHY_STYLES.tableCaption}>
+            {row.program_code || ''}
+          </Typography>
+        </Box>
+      )
+    },
+    {
+      key: 'year_semester',
+      label: 'Year & Semester',
+      render: (value: any, row: any) => (
+        <Box>
+          <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
+            Year {row.year || 'N/A'}
+          </Typography>
+          <Typography variant="caption" sx={TYPOGRAPHY_STYLES.tableCaption}>
+            {row.semester || 'N/A'}
+          </Typography>
+        </Box>
+      )
+    },
+    {
+      key: 'academic_year',
+      label: 'Academic Year',
+      render: (value: any, row: any) => (
+        <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
+          {row.academic_year || 'N/A'}
+        </Typography>
+      )
+    },
+    {
+      key: 'sections',
+      label: 'Sections',
+      render: (value: any, row: any) => {
+        const sections = row.sections || []
+        if (sections.length === 0) {
+          return (
+            <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
+              No sections
+            </Typography>
+          )
+        }
+        
+        return (
+          <Box>
+            {sections.length === 1 ? (
+              <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
+                {sections[0]}
+              </Typography>
+            ) : (
+              <Box>
+                <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
+                  {sections[0]}
+                </Typography>
+                <Typography variant="caption" sx={TYPOGRAPHY_STYLES.tableCaption}>
+                  +{sections.length - 1} more
+                </Typography>
+              </Box>
+            )}
+          </Box>
+        )
+      }
+    },
+    {
       key: 'enrollment_date',
       label: 'Enrolled',
       render: (value: any, row: any) => (
-          <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
-          {formatDate(row.enrolled_at || row.created_at)}
-          </Typography>
+        <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
+          {formatDate(row.enrollment_date || row.created_at)}
+        </Typography>
       )
     },
     {
@@ -515,6 +817,7 @@ export default function CourseDetailPage({ params }: CourseDetailProps) {
 
         <StatsGrid stats={statsCards} />
 
+
       <Card sx={{ mt: 3 }}>
         <CardContent sx={{ p: 0 }}>
           <Tabs 
@@ -527,7 +830,8 @@ export default function CourseDetailPage({ params }: CourseDetailProps) {
               pt: 2,
               '& .MuiTabs-indicator': {
                 backgroundColor: '#000000',
-                height: 2
+                height: 3,
+                borderRadius: '2px 2px 0 0'
               },
               '& .MuiTab-root': {
                 color: '#666666',
@@ -535,30 +839,80 @@ export default function CourseDetailPage({ params }: CourseDetailProps) {
                 fontWeight: 500,
                 textTransform: 'none',
                 fontSize: '0.875rem',
-                minHeight: 48,
+                minHeight: 56,
+                px: 3,
+                py: 1.5,
+                borderRadius: '8px 8px 0 0',
+                transition: 'all 0.2s ease-in-out',
                 '&.Mui-selected': {
                   color: '#000000',
-                  fontWeight: 600
+                  fontWeight: 600,
+                  backgroundColor: '#f9f9f9'
                 },
                 '&:hover': {
                   color: '#000000',
-                  backgroundColor: '#f5f5f5'
+                  backgroundColor: '#f5f5f5',
+                  transform: 'translateY(-1px)'
                 }
               }
             }}
           >
-            <Tab label="Course Information" />
-            <Tab label="Assign Lecturer" />
-            <Tab label="Program Assignments" />
-            <Tab label="Enrolled Students" />
+            <Tab 
+              label={
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <BookOpenIcon className="h-4 w-4" />
+                  Course Information
+                </Box>
+              } 
+            />
+            <Tab 
+              label={
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <UserPlusIcon className="h-4 w-4" />
+                  Assign Lecturer
+                </Box>
+              } 
+            />
+            <Tab 
+              label={
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <BookOpenIcon className="h-4 w-4" />
+                  Program Assignments
+                </Box>
+              } 
+            />
+            <Tab 
+              label={
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <UserGroupIcon className="h-4 w-4" />
+                  Enrolled Students
+                </Box>
+              } 
+            />
           </Tabs>
 
           <Box sx={{ p: { xs: 2, sm: 3 } }}>
             {activeTab === 0 && (
               <Box sx={{ space: 3 }}>
-                <Typography variant="h6" sx={{ mb: 2, fontFamily: 'Poppins, sans-serif', fontWeight: 600 }}>
-                  Course Details
-                </Typography>
+                {/* Enhanced Header */}
+                <Box sx={{ mb: 3 }}>
+                  <Typography variant="h5" sx={{ 
+                    fontFamily: 'Poppins, sans-serif', 
+                    fontWeight: 700,
+                    fontSize: { xs: '1.25rem', sm: '1.5rem' },
+                    color: '#000000',
+                    mb: 0.5
+                  }}>
+                    Course Information
+                  </Typography>
+                  <Typography variant="body2" sx={{ 
+                    fontFamily: 'DM Sans, sans-serif',
+                    color: '#666666',
+                    fontSize: '0.875rem'
+                  }}>
+                    View detailed information about this course
+                  </Typography>
+                </Box>
                 <Box sx={{ 
                   display: 'grid', 
                   gridTemplateColumns: { xs: '1fr', lg: '2fr 1fr' }, 
@@ -776,6 +1130,7 @@ export default function CourseDetailPage({ params }: CourseDetailProps) {
 
             {activeTab === 1 && (
               <Box>
+                {/* Enhanced Header */}
                 <Box sx={{ 
                   display: 'flex', 
                   justifyContent: 'space-between', 
@@ -784,48 +1139,115 @@ export default function CourseDetailPage({ params }: CourseDetailProps) {
                   flexDirection: { xs: 'column', sm: 'row' },
                   gap: { xs: 2, sm: 0 }
                 }}>
-                  <Typography variant="h6" sx={{ 
-                    fontFamily: 'Poppins, sans-serif', 
-                    fontWeight: 600,
-                    fontSize: { xs: '1.1rem', sm: '1.25rem' }
-                  }}>
-                    Assign Lecturer
-                  </Typography>
+                  <Box>
+                    <Typography variant="h5" sx={{ 
+                      fontFamily: 'Poppins, sans-serif', 
+                      fontWeight: 700,
+                      fontSize: { xs: '1.25rem', sm: '1.5rem' },
+                      color: '#000000',
+                      mb: 0.5
+                    }}>
+                      Assign Lecturer
+                    </Typography>
+                    <Typography variant="body2" sx={{ 
+                      fontFamily: 'DM Sans, sans-serif',
+                      color: '#666666',
+                      fontSize: '0.875rem'
+                    }}>
+                      Manage lecturer assignments for this course
+                    </Typography>
+                  </Box>
                   <Button
                     variant="contained"
                     startIcon={<UserPlusIcon className="h-4 w-4" />}
                     onClick={handleAssignLecturer}
-                    sx={BUTTON_STYLES.primary}
+                    sx={{
+                      ...BUTTON_STYLES.primary,
+                      fontFamily: 'DM Sans, sans-serif',
+                      fontWeight: 600,
+                      textTransform: 'none',
+                      px: 3,
+                      py: 1.5,
+                      borderRadius: 2,
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+                      '&:hover': {
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.25)',
+                        transform: 'translateY(-1px)'
+                      },
+                      transition: 'all 0.2s ease-in-out'
+                    }}
                   >
                     Assign Lecturer
                   </Button>
-      </Box>
+                </Box>
 
-                {/* Current Lecturer */}
+                {/* Assigned Lecturers */}
                 <Card sx={{ mb: 3 }}>
                   <CardContent>
                     <Typography variant="subtitle1" sx={{ mb: 2, fontWeight: 600 }}>
-                      Current Lecturer
+                      Assigned Lecturers
                     </Typography>
-                    {course?.lecturer_name ? (
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                        <Avatar sx={{ width: 40, height: 40 }}>
-                          {course.lecturer_name.charAt(0)}
-                        </Avatar>
-                        <Box>
-                          <Typography variant="body1" sx={{ fontWeight: 500 }}>
-                            {course.lecturer_name}
+                    {(() => {
+                      const assignedLecturers = getLecturersByCourse(courseId)
+                      const primaryLecturer = assignedLecturers.find(l => (l as any).is_primary)
+                      const additionalLecturers = assignedLecturers.filter(l => !(l as any).is_primary)
+                      
+                      if (assignedLecturers.length === 0) {
+                        return (
+                          <Typography variant="body2" sx={{ color: 'text.secondary', fontStyle: 'italic' }}>
+                            No lecturers assigned to this course
                           </Typography>
-                          <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                            {course.lecturer_email || 'No email'}
-                          </Typography>
+                        )
+                      }
+                      
+                      return (
+                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                          {primaryLecturer && (
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, p: 2, border: '1px solid #e5e7eb', borderRadius: 1 }}>
+                              <Avatar sx={{ width: 40, height: 40, bgcolor: '#000000' }}>
+                                {(primaryLecturer as any).users?.full_name?.charAt(0) || 'L'}
+                              </Avatar>
+                              <Box sx={{ flex: 1 }}>
+                                <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                                  {(primaryLecturer as any).users?.full_name || 'Unknown Lecturer'}
+                                </Typography>
+                                <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                                  {(primaryLecturer as any).users?.email || 'No email'} • Primary Lecturer
+                                </Typography>
+                                <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                                  {(primaryLecturer as any).teaching_hours_per_week ? `${(primaryLecturer as any).teaching_hours_per_week} hours/week` : ''}
+                                  {(primaryLecturer as any).sections?.section_code ? ` • Section: ${(primaryLecturer as any).sections.section_code}` : ''}
+                                </Typography>
+                              </Box>
+                            </Box>
+                          )}
+                          
+                          {additionalLecturers.length > 0 && (
+                            <Box>
+                              <Typography variant="body2" sx={{ mb: 1, fontWeight: 500, color: 'text.secondary' }}>
+                                Additional Lecturers ({additionalLecturers.length})
+                              </Typography>
+                              {additionalLecturers.map((lecturer, index) => (
+                                <Box key={lecturer.id} sx={{ display: 'flex', alignItems: 'center', gap: 2, p: 1.5, border: '1px solid #f3f4f6', borderRadius: 1, mb: 1 }}>
+                                  <Avatar sx={{ width: 32, height: 32, bgcolor: '#6b7280' }}>
+                                    {(lecturer as any).users?.full_name?.charAt(0) || 'L'}
+                                  </Avatar>
+                                  <Box sx={{ flex: 1 }}>
+                                    <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                                      {(lecturer as any).users?.full_name || 'Unknown Lecturer'}
+                                    </Typography>
+                                    <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                                      {(lecturer as any).users?.email || 'No email'}
+                                      {(lecturer as any).teaching_hours_per_week ? ` • ${(lecturer as any).teaching_hours_per_week} hours/week` : ''}
+                                    </Typography>
+                                  </Box>
+                                </Box>
+                              ))}
+                            </Box>
+                          )}
                         </Box>
-                      </Box>
-                    ) : (
-                      <Typography variant="body2" sx={{ color: 'text.secondary', fontStyle: 'italic' }}>
-                        No lecturer assigned to this course
-                      </Typography>
-                    )}
+                      )
+                    })()}
                   </CardContent>
                 </Card>
 
@@ -883,6 +1305,7 @@ export default function CourseDetailPage({ params }: CourseDetailProps) {
 
             {activeTab === 2 && (
               <Box>
+                {/* Enhanced Header */}
                 <Box sx={{ 
                   display: 'flex', 
                   justifyContent: 'space-between', 
@@ -891,43 +1314,157 @@ export default function CourseDetailPage({ params }: CourseDetailProps) {
                   flexDirection: { xs: 'column', sm: 'row' },
                   gap: { xs: 2, sm: 0 }
                 }}>
-                  <Typography variant="h6" sx={{ 
-                    fontFamily: 'Poppins, sans-serif', 
-                    fontWeight: 600,
-                    fontSize: { xs: '1.1rem', sm: '1.25rem' }
-                  }}>
-                    Program Assignments
-                  </Typography>
+                  <Box>
+                    <Typography variant="h5" sx={{ 
+                      fontFamily: 'Poppins, sans-serif', 
+                      fontWeight: 700,
+                      fontSize: { xs: '1.25rem', sm: '1.5rem' },
+                      color: '#000000',
+                      mb: 0.5
+                    }}>
+                      Program Assignments
+                    </Typography>
+                    <Typography variant="body2" sx={{ 
+                      fontFamily: 'DM Sans, sans-serif',
+                      color: '#666666',
+                      fontSize: '0.875rem'
+                    }}>
+                      Manage course assignments to academic programs
+                    </Typography>
+                  </Box>
                   <Button
                     variant="contained"
                     startIcon={<PlusIcon className="h-4 w-4" />}
                     onClick={handleAddAssignment}
-                    sx={BUTTON_STYLES.primary}
+                    sx={{
+                      ...BUTTON_STYLES.primary,
+                      fontFamily: 'DM Sans, sans-serif',
+                      fontWeight: 600,
+                      textTransform: 'none',
+                      px: 3,
+                      py: 1.5,
+                      borderRadius: 2,
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+                      '&:hover': {
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.25)',
+                        transform: 'translateY(-1px)'
+                      },
+                      transition: 'all 0.2s ease-in-out'
+                    }}
                   >
                     Assign to Program
                   </Button>
                 </Box>
 
-                {courseAssignments.length === 0 ? (
+                {/* Filter Bar for Assignments */}
+                <Box sx={{ mb: 3 }}>
+                  <FilterBar
+                    fields={[
+                      { 
+                        type: 'native-select', 
+                        label: 'Program', 
+                        value: filters.program, 
+                        onChange: (v) => handleFilterChange('program', v), 
+                        options: filterOptions.programs, 
+                        span: 3 
+                      },
+                      { 
+                        type: 'native-select', 
+                        label: 'Year Level', 
+                        value: filters.year, 
+                        onChange: (v) => handleFilterChange('year', v), 
+                        options: filterOptions.years, 
+                        span: 2 
+                      },
+                      { 
+                        type: 'native-select', 
+                        label: 'Semester', 
+                        value: filters.semester, 
+                        onChange: (v) => handleFilterChange('semester', v), 
+                        options: filterOptions.semesters, 
+                        span: 2 
+                      },
+                      { 
+                        type: 'native-select', 
+                        label: 'Academic Year', 
+                        value: filters.academicYear, 
+                        onChange: (v) => handleFilterChange('academicYear', v), 
+                        options: filterOptions.academicYears, 
+                        span: 3 
+                      },
+                      { 
+                        type: 'clear-button', 
+                        label: 'Clear', 
+                        onClick: clearFilters,
+                        span: 2 
+                      }
+                    ]}
+                  />
+                </Box>
+
+                {filteredAssignments.length === 0 ? (
                   <Box sx={{ 
-                    p: 4, 
+                    p: 6, 
                     textAlign: 'center',
                     border: '2px dashed #e5e5e5',
-                    borderRadius: 2,
-                    backgroundColor: '#f9f9f9'
+                    borderRadius: 3,
+                    backgroundColor: '#f9f9f9',
+                    transition: 'all 0.2s ease-in-out',
+                    '&:hover': {
+                      borderColor: '#000000',
+                      backgroundColor: '#f5f5f5'
+                    }
                   }}>
-                    <Typography variant="h6" sx={{ mb: 2, color: '#666' }}>
+                    <Box sx={{ 
+                      width: 64, 
+                      height: 64, 
+                      borderRadius: '50%', 
+                      backgroundColor: '#00000020', 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      justifyContent: 'center', 
+                      mx: 'auto', 
+                      mb: 3 
+                    }}>
+                      <BookOpenIcon className="h-8 w-8" style={{ color: '#666666' }} />
+                    </Box>
+                    <Typography variant="h6" sx={{ 
+                      mb: 2, 
+                      color: '#000000',
+                      fontFamily: 'Poppins, sans-serif',
+                      fontWeight: 600
+                    }}>
                       No Assignments Found
                     </Typography>
-                    <Typography variant="body2" sx={{ mb: 3, color: '#888' }}>
-                      This course has not been assigned to any sections yet.
+                    <Typography variant="body2" sx={{ 
+                      mb: 4, 
+                      color: '#666666',
+                      fontFamily: 'DM Sans, sans-serif',
+                      maxWidth: 400,
+                      mx: 'auto'
+                    }}>
+                      This course has not been assigned to any programs yet. Create your first assignment to get started.
                     </Typography>
                     <Button
                       variant="contained"
                       onClick={handleAddAssignment}
-                      sx={BUTTON_STYLES.primary}
+                      sx={{
+                        ...BUTTON_STYLES.primary,
+                        fontFamily: 'DM Sans, sans-serif',
+                        fontWeight: 600,
+                        textTransform: 'none',
+                        px: 4,
+                        py: 1.5,
+                        borderRadius: 2,
+                        boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+                        '&:hover': {
+                          boxShadow: '0 4px 12px rgba(0,0,0,0.25)',
+                          transform: 'translateY(-1px)'
+                        },
+                        transition: 'all 0.2s ease-in-out'
+                      }}
                     >
-                      Create Assignment
+                      Create First Assignment
                     </Button>
                   </Box>
                 ) : (
@@ -935,7 +1472,7 @@ export default function CourseDetailPage({ params }: CourseDetailProps) {
                     title=""
                     subtitle=""
                     columns={assignmentColumns}
-                    data={courseAssignments}
+                    data={filteredAssignments}
                     onRowClick={(assignment) => handleEditAssignment(assignment)}
                   />
                 )}
@@ -958,27 +1495,113 @@ export default function CourseDetailPage({ params }: CourseDetailProps) {
 
             {activeTab === 3 && (
               <Box>
-                <Typography variant="h6" sx={{ 
-                  mb: 2, 
-                  fontFamily: 'Poppins, sans-serif', 
-                  fontWeight: 600,
-                  fontSize: { xs: '1.1rem', sm: '1.25rem' }
-                }}>
-                  Enrolled Students
-                </Typography>
-                {enrolledStudents.length === 0 ? (
+                {/* Enhanced Header */}
+                <Box sx={{ mb: 3 }}>
+                  <Typography variant="h5" sx={{ 
+                    fontFamily: 'Poppins, sans-serif', 
+                    fontWeight: 700,
+                    fontSize: { xs: '1.25rem', sm: '1.5rem' },
+                    color: '#000000',
+                    mb: 0.5
+                  }}>
+                    Enrolled Students
+                  </Typography>
+                  <Typography variant="body2" sx={{ 
+                    fontFamily: 'DM Sans, sans-serif',
+                    color: '#666666',
+                    fontSize: '0.875rem'
+                  }}>
+                    View and manage students enrolled in this course
+                  </Typography>
+                </Box>
+
+                {/* Filter Bar for Students */}
+                <Box sx={{ mb: 3 }}>
+                  <FilterBar
+                    fields={[
+                      { 
+                        type: 'text', 
+                        label: 'Search Students', 
+                        value: filters.search, 
+                        onChange: handleSearchChange, 
+                        placeholder: 'Search by name, ID, or program...',
+                        span: 4 
+                      },
+                      { 
+                        type: 'native-select', 
+                        label: 'Program', 
+                        value: filters.program, 
+                        onChange: (v) => handleFilterChange('program', v), 
+                        options: filterOptions.programs, 
+                        span: 2 
+                      },
+                      { 
+                        type: 'native-select', 
+                        label: 'Year Level', 
+                        value: filters.year, 
+                        onChange: (v) => handleFilterChange('year', v), 
+                        options: filterOptions.years, 
+                        span: 2 
+                      },
+                      { 
+                        type: 'native-select', 
+                        label: 'Status', 
+                        value: filters.status, 
+                        onChange: (v) => handleFilterChange('status', v), 
+                        options: filterOptions.status, 
+                        span: 2 
+                      },
+                      { 
+                        type: 'clear-button', 
+                        label: 'Clear', 
+                        onClick: clearFilters,
+                        span: 2 
+                      }
+                    ]}
+                  />
+                </Box>
+                {filteredStudents.length === 0 ? (
                   <Box sx={{ 
-                    p: 4, 
+                    p: 6, 
                     textAlign: 'center',
                     border: '2px dashed #e5e5e5',
-                    borderRadius: 2,
-                    backgroundColor: '#f9f9f9'
+                    borderRadius: 3,
+                    backgroundColor: '#f9f9f9',
+                    transition: 'all 0.2s ease-in-out',
+                    '&:hover': {
+                      borderColor: '#000000',
+                      backgroundColor: '#f5f5f5'
+                    }
                   }}>
-                    <Typography variant="h6" sx={{ mb: 2, color: '#666' }}>
+                    <Box sx={{ 
+                      width: 64, 
+                      height: 64, 
+                      borderRadius: '50%', 
+                      backgroundColor: '#00000020', 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      justifyContent: 'center', 
+                      mx: 'auto', 
+                      mb: 3 
+                    }}>
+                      <UserGroupIcon className="h-8 w-8" style={{ color: '#666666' }} />
+                    </Box>
+                    <Typography variant="h6" sx={{ 
+                      mb: 2, 
+                      color: '#000000',
+                      fontFamily: 'Poppins, sans-serif',
+                      fontWeight: 600
+                    }}>
                       No Students Enrolled
                     </Typography>
-                    <Typography variant="body2" sx={{ mb: 3, color: '#888' }}>
-                      No students are currently enrolled in this course.
+                    <Typography variant="body2" sx={{ 
+                      mb: 4, 
+                      color: '#666666',
+                      fontFamily: 'DM Sans, sans-serif',
+                      maxWidth: 400,
+                      mx: 'auto'
+                    }}>
+                      No students are currently enrolled in this course. Students will appear here once they are enrolled through program assignments.
                     </Typography>
                   </Box>
                 ) : (
@@ -986,7 +1609,7 @@ export default function CourseDetailPage({ params }: CourseDetailProps) {
                     title=""
                     subtitle=""
                     columns={studentColumns}
-                    data={enrolledStudents}
+                    data={filteredStudents}
                     onRowClick={(student) => router.push(`/admin/users/${student.id}`)}
                   />
                 )}

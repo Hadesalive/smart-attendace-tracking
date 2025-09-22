@@ -26,6 +26,9 @@ interface User {
 
 interface UserHeaderProps {
   user: User
+  onEdit?: () => void
+  onExport?: () => void
+  onDelete?: () => void
 }
 
 // ============================================================================
@@ -92,7 +95,7 @@ const getRoleIcon = (role: string) => {
 // COMPONENT
 // ============================================================================
 
-export default function UserHeader({ user }: UserHeaderProps) {
+export default function UserHeader({ user, onEdit, onExport, onDelete }: UserHeaderProps) {
   return (
     <DetailHeader
       title={user.name}
@@ -107,6 +110,7 @@ export default function UserHeader({ user }: UserHeaderProps) {
             variant="outlined"
             startIcon={<PencilIcon className="h-4 w-4" />}
             sx={BUTTON_STYLES.outlined}
+            onClick={onEdit}
           >
             Edit User
           </Button>
@@ -114,6 +118,7 @@ export default function UserHeader({ user }: UserHeaderProps) {
             variant="outlined"
             startIcon={<ArrowDownTrayIcon className="h-4 w-4" />}
             sx={BUTTON_STYLES.outlined}
+            onClick={onExport}
           >
             Export Data
           </Button>
@@ -121,33 +126,12 @@ export default function UserHeader({ user }: UserHeaderProps) {
             variant="contained"
             startIcon={<TrashIcon className="h-4 w-4" />}
             sx={BUTTON_STYLES.primary}
+            onClick={onDelete}
           >
             Delete User
           </Button>
         </>
       }
-      metadata={[
-        {
-          label: "Role",
-          value: `${getRoleIcon(user.role)} ${user.role}`,
-          icon: UserIcon
-        },
-        {
-          label: "Department",
-          value: user.department || "N/A",
-          icon: AcademicCapIcon
-        },
-        {
-          label: "Joined",
-          value: formatDate(user.joinDate),
-          icon: CalendarDaysIcon
-        },
-        {
-          label: "Last Login",
-          value: formatDate(user.lastLogin),
-          icon: ClockIcon
-        }
-      ]}
     />
   )
 }

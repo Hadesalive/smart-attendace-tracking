@@ -28,6 +28,19 @@ const EnrollmentSchema = z.object({
   courseId: z.string().uuid({ message: "A course must be selected." }),
 })
 
+const LecturerAssignmentSchema = z.object({
+  lecturer_id: z.string().uuid({ message: "Lecturer is required." }),
+  course_id: z.string().uuid({ message: "Course is required." }),
+  academic_year_id: z.string().uuid({ message: "Academic year is required." }),
+  semester_id: z.string().uuid({ message: "Semester is required." }),
+  program_id: z.string().uuid({ message: "Program is required." }),
+  section_id: z.string().uuid({ message: "Section is required." }),
+  is_primary: z.boolean().optional(),
+  teaching_hours_per_week: z.number().min(1).max(20).optional(),
+  start_date: z.string().optional(),
+  end_date: z.string().optional(),
+})
+
 // --- COURSE MANAGEMENT ---
 export async function createCourse(prevState: any, formData: FormData) {
 
@@ -282,8 +295,8 @@ export async function deleteEnrollment(enrollmentId: string) {
 
 // Course Assignment CRUD operations
 export async function createCourseAssignment(prevState: any, formData: FormData) {
-
-  const validatedFields = CourseAssignmentSchema.safeParse({
+  // Debug: Log the form data being received
+  const formDataObj = {
     course_id: formData.get("course_id"),
     program_id: formData.get("program_id"),
     academic_year_id: formData.get("academic_year_id"),
@@ -291,10 +304,14 @@ export async function createCourseAssignment(prevState: any, formData: FormData)
     year: formData.get("year") ? parseInt(formData.get("year") as string) : 1,
     is_mandatory: formData.get("is_mandatory") === "true",
     max_students: formData.get("max_students") ? parseInt(formData.get("max_students") as string) : undefined,
-  })
+  }
+  
+
+  const validatedFields = CourseAssignmentSchema.safeParse(formDataObj)
 
   if (!validatedFields.success) {
-    return { type: "error", message: "Validation failed.", errors: validatedFields.error.flatten().fieldErrors }
+    const validationErrors = validatedFields.error.flatten().fieldErrors
+    return { type: "error", message: "Validation failed.", errors: validationErrors }
   }
 
   const supabase = supabaseAdmin
@@ -345,4 +362,83 @@ export async function deleteCourseAssignment(id: string) {
 
   revalidatePath("/admin/academic")
   return { type: "success", message: "Course assignment deleted successfully." }
+}
+
+// --- LECTURER ASSIGNMENT MANAGEMENT ---
+export async function createLecturerAssignment(prevState: any, formData: FormData) {
+  const validatedFields = LecturerAssignmentSchema.safeParse({
+    lecturer_id: formData.get("lecturer_id"),
+    course_id: formData.get("course_id"),
+    academic_year_id: formData.get("academic_year_id"),
+    semester_id: formData.get("semester_id"),
+    program_id: formData.get("program_id"),
+    section_id: formData.get("section_id"),
+    is_primary: formData.get("is_primary") === "true",
+    teaching_hours_per_week: formData.get("teaching_hours_per_week") ? parseInt(formData.get("teaching_hours_per_week") as string) : undefined,
+    start_date: formData.get("start_date") || undefined,
+    end_date: formData.get("end_date") || undefined,
+  })
+
+  if (!validatedFields.success) {
+    return { type: "error", message: "Validation failed.", errors: validatedFields.error.flatten().fieldErrors }
+  }
+
+  const supabase = supabaseAdmin
+
+  const { error } = await supabase.from("lecturer_assignments").insert([validatedFields.data])
+
+  if (error) {
+    return { type: "error", message: `Database Error: Failed to create lecturer assignment. ${error.message}` }
+  }
+
+  revalidatePath("/admin/academic")
+  return { type: "success", message: "Lecturer assignment created successfully." }
+}
+
+export async function updateLecturerAssignment(prevState: any, formData: FormData) {
+  const id = formData.get("id") as string
+  
+  if (!id) {
+    return { type: "error", message: "Assignment ID is required for update." }
+  }
+
+  const validatedFields = LecturerAssignmentSchema.safeParse({
+    lecturer_id: formData.get("lecturer_id"),
+    course_id: formData.get("course_id"),
+    academic_year_id: formData.get("academic_year_id"),
+    semester_id: formData.get("semester_id"),
+    program_id: formData.get("program_id"),
+    section_id: formData.get("section_id"),
+    is_primary: formData.get("is_primary") === "true",
+    teaching_hours_per_week: formData.get("teaching_hours_per_week") ? parseInt(formData.get("teaching_hours_per_week") as string) : undefined,
+    start_date: formData.get("start_date") || undefined,
+    end_date: formData.get("end_date") || undefined,
+  })
+
+  if (!validatedFields.success) {
+    return { type: "error", message: "Validation failed.", errors: validatedFields.error.flatten().fieldErrors }
+  }
+
+  const supabase = supabaseAdmin
+
+  const { error } = await supabase.from("lecturer_assignments").update(validatedFields.data).eq("id", id)
+
+  if (error) {
+    return { type: "error", message: `Database Error: Failed to update lecturer assignment. ${error.message}` }
+  }
+
+  revalidatePath("/admin/academic")
+  return { type: "success", message: "Lecturer assignment updated successfully." }
+}
+
+export async function deleteLecturerAssignment(id: string) {
+  const supabase = supabaseAdmin
+  const { error } = await supabase.from("lecturer_assignments").delete().eq("id", id)
+
+  if (error) {
+    return { type: "error", message: `Database Error: Failed to delete lecturer assignment. ${error.message}` }
+  }
+
+  revalidatePath("/admin/academic")
+  return { type: "success", message: "Lecturer assignment deleted successfully." }
 }

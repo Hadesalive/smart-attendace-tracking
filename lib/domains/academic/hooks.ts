@@ -306,7 +306,7 @@ export function useAcademicStructure() {
       if (error) throw error
       setState(prev => ({ ...prev, programs: data || [], loading: false }))
     } catch (error) {
-      console.error('Error fetching programs:', error)
+      console.error('❌ Error fetching programs:', error)
       setState(prev => ({ 
         ...prev, 
         error: 'Failed to fetch programs', 
@@ -552,18 +552,30 @@ export function useAcademicStructure() {
   const fetchStudentProfiles = useCallback(async () => {
     try {
       setState(prev => ({ ...prev, loading: true }))
+      console.log('🔍 Fetching student profiles...')
       const { data, error } = await supabase
         .from('student_profiles')
         .select(`
           *,
           users!student_profiles_user_id_fkey(full_name, email),
-          programs!student_profiles_program_id_fkey(program_code, program_name),
-          sections!student_profiles_section_id_fkey(section_code),
-          academic_years!student_profiles_academic_year_id_fkey(year_name)
+          programs!student_profiles_program_id_fkey(
+            program_code, 
+            program_name, 
+            degree_type, 
+            duration_years,
+            departments!programs_department_id_fkey(department_name, department_code)
+          ),
+          sections!student_profiles_section_id_fkey(section_code, year),
+          academic_years!student_profiles_academic_year_id_fkey(year_name, start_date, end_date)
         `)
         .order('student_id', { ascending: true })
 
-      if (error) throw error
+      if (error) {
+        console.error('❌ Error fetching student profiles:', error)
+        throw error
+      }
+      
+      console.log('✅ Student profiles fetched successfully:', data)
       setState(prev => ({ ...prev, studentProfiles: data || [], loading: false }))
     } catch (error) {
       console.error('Error fetching student profiles:', error)
@@ -623,6 +635,42 @@ export function useAcademicStructure() {
     }
   }, [])
 
+  // Calculate total credits for a student
+  const calculateStudentTotalCredits = useCallback(async (studentId: string) => {
+    try {
+      // Get all section enrollments for this student
+      const { data: enrollments, error: enrollmentError } = await supabase
+        .from('section_enrollments')
+        .select(`
+          *,
+          sections!section_enrollments_section_id_fkey(
+            *,
+            course_assignments!sections_course_assignments_section_id_fkey(
+              *,
+              courses!course_assignments_course_id_fkey(credits)
+            )
+          )
+        `)
+        .eq('student_id', studentId)
+
+      if (enrollmentError) throw enrollmentError
+
+      // Calculate total credits from all enrolled courses
+      const totalCredits = enrollments?.reduce((sum, enrollment) => {
+        const courseAssignments = enrollment.sections?.course_assignments || []
+        const credits = courseAssignments.reduce((courseSum: number, assignment: any) => {
+          return courseSum + (assignment.courses?.credits || 0)
+        }, 0)
+        return sum + credits
+      }, 0) || 0
+
+      return totalCredits
+    } catch (error) {
+      console.error('Error calculating student total credits:', error)
+      return 0
+    }
+  }, [])
+
   // Section Enrollments
   const fetchSectionEnrollments = useCallback(async () => {
     try {
@@ -635,29 +683,47 @@ export function useAcademicStructure() {
           sections!section_enrollments_section_id_fkey(
             section_code,
             year,
-            programs!sections_program_id_fkey(program_name, program_code),
-            academic_years!sections_academic_year_id_fkey(year_name),
-            semesters!sections_semester_id_fkey(semester_name)
+            programs!sections_program_id_fkey(id, program_name, program_code),
+            academic_years!sections_academic_year_id_fkey(id, year_name),
+            semesters!sections_semester_id_fkey(id, semester_name)
           )
         `)
         .order('enrollment_date', { ascending: false })
 
       if (error) throw error
       
+      console.log('📊 Raw section enrollments data from database:', data)
+      console.log('📊 Number of enrollments:', data?.length || 0)
+      
       // Transform the data to include joined information
-      const transformedData = (data || []).map((enrollment: any) => ({
-        ...enrollment,
-        student_name: enrollment.users?.full_name,
-        student_id_number: enrollment.users?.student_id,
-        section_code: enrollment.sections?.section_code,
-        year: enrollment.sections?.year,
-        program_name: enrollment.sections?.programs?.program_name,
-        program_code: enrollment.sections?.programs?.program_code,
-        academic_year: enrollment.sections?.academic_years?.year_name,
-        semester_name: enrollment.sections?.semesters?.semester_name
-      }))
+      const transformedData = (data || []).map((enrollment: any) => {
+        // Debug the specific ID fields
+        console.log('🔍 Program ID:', enrollment.sections?.programs?.id)
+        console.log('🔍 Semester ID:', enrollment.sections?.semesters?.id)
+        console.log('🔍 Academic Year ID:', enrollment.sections?.academic_years?.id)
+        
+        return {
+          ...enrollment,
+          student_name: enrollment.users?.full_name,
+          student_id_number: enrollment.users?.student_id,
+          section_code: enrollment.sections?.section_code,
+          year: enrollment.sections?.year,
+          program_name: enrollment.sections?.programs?.program_name,
+          program_code: enrollment.sections?.programs?.program_code,
+          academic_year: enrollment.sections?.academic_years?.year_name,
+          semester_name: enrollment.sections?.semesters?.semester_name,
+          // Add ID properties for filtering - these are the critical ones
+          program_id: enrollment.sections?.programs?.id,
+          semester_id: enrollment.sections?.semesters?.id,
+          academic_year_id: enrollment.sections?.academic_years?.id
+        }
+      })
+      
+      console.log('📊 Transformed section enrollments data:', transformedData)
+      console.log('📊 Number of transformed enrollments:', transformedData.length)
       
       setState(prev => ({ ...prev, sectionEnrollments: transformedData, loading: false }))
+      console.log('✅ Section enrollments state updated successfully')
     } catch (error) {
       console.error('Error fetching section enrollments:', error)
       setState(prev => ({ 
@@ -705,6 +771,8 @@ export function useAcademicStructure() {
     // Profiles
     fetchStudentProfiles,
     fetchLecturerProfiles,
-    fetchAdminProfiles
+    fetchAdminProfiles,
+    // Utilities
+    calculateStudentTotalCredits
   }
 }

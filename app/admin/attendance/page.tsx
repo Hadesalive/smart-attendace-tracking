@@ -88,12 +88,11 @@ import { formatDate, formatTime} from "@/lib/utils"
 import { TYPOGRAPHY_STYLES } from "@/lib/design/fonts"
 import { BUTTON_STYLES } from "@/lib/constants/admin-constants"
 import { supabase } from "@/lib/supabase"
-import { useAttendance, useCourses } from "@/lib/domains"
-// Mock data removed - using DataContext
+import { useAttendance, useCourses, useAuth, useAcademicStructure } from "@/lib/domains"
 import { AttendanceSession, AttendanceRecord } from "@/lib/types/shared"
 import PageHeader from "@/components/admin/PageHeader"
 import StatsGrid from "@/components/admin/StatsGrid"
-import SearchFilters from "@/components/admin/SearchFilters"
+import FilterBar from "@/components/admin/FilterBar"
 import DataTable from "@/components/admin/DataTable"
 import { mapSessionStatus } from "@/lib/utils/statusMapping"
 
@@ -157,50 +156,55 @@ interface AttendanceStats {
 // ============================================================================
 
 export default function AttendancePage() {
+  // Data Context
   const attendance = useAttendance()
   const courses = useCourses()
+  const auth = useAuth()
+  const academic = useAcademicStructure()
   
-  // Extract state and methods
-  const { 
-    state: attendanceState,
-    getAttendanceSessionsByCourse,
-    getAttendanceRecordsBySession,
-    createAttendanceSession,
-    markAttendance,
-    fetchAttendanceSessions,
-    fetchAttendanceRecords
-  } = attendance
-  
-  const { 
-    state: coursesState,
-    fetchCourses
-  } = courses
-  
-  // Create legacy state object for compatibility
+  // Create unified state object
   const state = {
-    ...attendanceState,
-    ...coursesState
+    ...attendance.state,
+    ...courses.state,
+    ...academic.state,
+    users: auth.state.users
   }
-  // Mock data removed - using DataContext
 
-  // Load data on component mount
+  // Data fetching
   useEffect(() => {
-    fetchCourses()
-    fetchAttendanceSessions()
-    fetchAttendanceRecords()
-  }, [fetchCourses, fetchAttendanceSessions, fetchAttendanceRecords])
+    const fetchData = async () => {
+      try {
+        await Promise.all([
+          attendance.fetchAttendanceSessions(),
+          attendance.fetchAttendanceRecords(),
+          courses.fetchCourses(),
+          academic.fetchLecturerProfiles()
+        ])
+      } catch (error) {
+        console.error('Error fetching attendance data:', error)
+      }
+    }
+    
+    fetchData()
+  }, [])
 
   // ============================================================================
   // STATE & HOOKS
   // ============================================================================
   
   const router = useRouter()
-  const [searchTerm, setSearchTerm] = useState("")
-  const [selectedStatus, setSelectedStatus] = useState<string>("all")
+  
+  // Filtering state
+  const [filters, setFilters] = useState({
+    search: '',
+    status: 'all',
+    course: 'all',
+    lecturer: 'all'
+  })
+  
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null)
   const [selectedSession, setSelectedSession] = useState<AttendanceSession | null>(null)
   const [isDeleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
-  const [loading, setLoading] = useState(false)
 
   // ============================================================================
   // COMPUTED DATA
@@ -229,6 +233,24 @@ export default function AttendancePage() {
   // ============================================================================
   // EVENT HANDLERS
   // ============================================================================
+
+  // Filter handlers
+  const handleFilterChange = useCallback((key: string, value: string) => {
+    setFilters(prev => ({ ...prev, [key]: value }))
+  }, [])
+
+  const handleSearchChange = useCallback((value: string) => {
+    setFilters(prev => ({ ...prev, search: value }))
+  }, [])
+
+  const clearFilters = useCallback(() => {
+    setFilters({
+      search: '',
+      status: 'all',
+      course: 'all',
+      lecturer: 'all'
+    })
+  }, [])
 
   const handleMenuOpen = useCallback((event: React.MouseEvent<HTMLElement>, session: AttendanceSession) => {
     setAnchorEl(event.currentTarget)
@@ -285,28 +307,72 @@ export default function AttendancePage() {
     }))
   }, [stats])
 
+  // Filter options
+  const filterOptions = useMemo(() => {
+    const courseOptions = [
+      { value: 'all', label: 'All Courses' },
+      ...Array.from(new Set(sessions.map(s => s.course_code).filter(Boolean))).map(courseCode => ({
+        value: courseCode as string,
+        label: courseCode as string
+      }))
+    ]
+
+    const lecturerOptions = [
+      { value: 'all', label: 'All Lecturers' },
+      ...Array.from(new Set(sessions.map(s => s.lecturer_name).filter(Boolean))).map(lecturerName => ({
+        value: lecturerName as string,
+        label: lecturerName as string
+      }))
+    ]
+
+    const statusOptions = [
+      { value: 'all', label: 'All Status' },
+      { value: 'scheduled', label: 'Scheduled' },
+      { value: 'active', label: 'Active' },
+      { value: 'completed', label: 'Completed' },
+      { value: 'cancelled', label: 'Cancelled' }
+    ]
+
+    return {
+      courseOptions,
+      lecturerOptions,
+      statusOptions
+    }
+  }, [sessions])
+
   const filteredSessions = useMemo(() => {
     let filtered = sessions
 
     // Filter by search term
-    if (searchTerm) {
+    if (filters.search) {
       filtered = filtered.filter((session: AttendanceSession) => 
-        session.session_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        session.course_code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        session.course_name.toLowerCase().includes(searchTerm.toLowerCase())
+        session.session_name.toLowerCase().includes(filters.search.toLowerCase()) ||
+        session.course_code.toLowerCase().includes(filters.search.toLowerCase()) ||
+        session.course_name.toLowerCase().includes(filters.search.toLowerCase()) ||
+        session.lecturer_name?.toLowerCase().includes(filters.search.toLowerCase())
       )
     }
 
-    // Filter by status (centralized mapping with is_active override)
-    if (selectedStatus !== "all") {
+    // Filter by status
+    if (filters.status !== "all") {
       filtered = filtered.filter((session: AttendanceSession) => {
         const displayStatus = session.is_active ? 'active' : mapSessionStatus(session.status, 'admin')
-        return displayStatus === selectedStatus
+        return displayStatus === filters.status
       })
     }
 
+    // Filter by course
+    if (filters.course !== "all") {
+      filtered = filtered.filter((session: AttendanceSession) => session.course_code === filters.course)
+    }
+
+    // Filter by lecturer
+    if (filters.lecturer !== "all") {
+      filtered = filtered.filter((session: AttendanceSession) => session.lecturer_name === filters.lecturer)
+    }
+
     return filtered
-  }, [sessions, searchTerm, selectedStatus])
+  }, [sessions, filters])
 
   const getStatusColor = useCallback((status: string) => {
     const colors = {
@@ -374,7 +440,7 @@ export default function AttendancePage() {
       key: 'attendance',
       label: 'Attendance',
       render: (value: string, row: AttendanceSession) => {
-        const records = getAttendanceRecordsBySession(row.id)
+        const records = state.attendanceRecords.filter((r: AttendanceRecord) => r.session_id === row.id)
         const presentCount = records.filter((r: AttendanceRecord) => r.status === 'present' || r.status === 'late').length
         const totalCount = records.length
         return (
@@ -391,7 +457,7 @@ export default function AttendancePage() {
       key: 'rate',
       label: 'Rate',
       render: (value: string, row: AttendanceSession) => {
-        const records = getAttendanceRecordsBySession(row.id)
+        const records = state.attendanceRecords.filter((r: AttendanceRecord) => r.session_id === row.id)
         const presentCount = records.filter((r: AttendanceRecord) => r.status === 'present' || r.status === 'late').length
         const totalCount = records.length
         const rate = totalCount > 0 ? Math.round((presentCount / totalCount) * 100) : 0
@@ -466,22 +532,45 @@ export default function AttendancePage() {
 
       <StatsGrid stats={statsCardsWithData} />
 
-      <SearchFilters
-        searchTerm={searchTerm}
-        onSearchChange={setSearchTerm}
-        searchPlaceholder="Search sessions..."
-        filters={[
+      <FilterBar
+        fields={[
           {
-            label: "Status",
-            value: selectedStatus,
-            options: [
-              { value: "all", label: "All Status" },
-              { value: "scheduled", label: "Scheduled" },
-              { value: "active", label: "Active" },
-              { value: "completed", label: "Completed" },
-              { value: "cancelled", label: "Cancelled" }
-            ],
-            onChange: setSelectedStatus
+            type: 'text',
+            label: 'Search',
+            value: filters.search,
+            onChange: handleSearchChange,
+            placeholder: 'Search sessions, courses, lecturers...',
+            span: 3
+          },
+          {
+            type: 'native-select',
+            label: 'Status',
+            value: filters.status,
+            onChange: (value) => handleFilterChange('status', value),
+            options: filterOptions.statusOptions,
+            span: 2
+          },
+          {
+            type: 'native-select',
+            label: 'Course',
+            value: filters.course,
+            onChange: (value) => handleFilterChange('course', value),
+            options: filterOptions.courseOptions,
+            span: 2
+          },
+          {
+            type: 'native-select',
+            label: 'Lecturer',
+            value: filters.lecturer,
+            onChange: (value) => handleFilterChange('lecturer', value),
+            options: filterOptions.lecturerOptions,
+            span: 2
+          },
+          {
+            type: 'clear-button',
+            label: 'Clear Filters',
+            onClick: clearFilters,
+            span: 1
           }
         ]}
       />
