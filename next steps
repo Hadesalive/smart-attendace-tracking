@@ -1,0 +1,10 @@
+Next Steps
+
+- Verify student course inheritance using real program/year/semester data.
+- Seed or confirm `course_assignments` for all active programs.
+- Create a few sessions per inherited course to validate section-filtering.
+- QA student pages: FilterBar behavior, session lists, attendance records.
+- Remove or reduce verbose console logs after validation.
+- Add unit/integration tests for `fetchStudentAttendanceSessions` and course mapping.
+- Document the enrollment model (program → course assignments; sections for delivery).
+
