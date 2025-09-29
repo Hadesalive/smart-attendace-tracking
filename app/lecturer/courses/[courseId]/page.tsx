@@ -1,19 +1,24 @@
 "use client"
 
-import React, { useState, useEffect, useMemo } from "react"
+import React, { useState, useEffect, useMemo, useCallback, use } from "react"
 import { useRouter, useParams } from "next/navigation"
 import { 
   Box, 
-  Typography, 
+  Typography,  
   Button, 
   Chip,
+  IconButton,
   Card,
   CardContent,
   Tabs,
   Tab,
   Avatar,
   LinearProgress,
-  Divider
+  Divider,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions
 } from "@mui/material"
 import { 
   ArrowLeftIcon,
@@ -24,22 +29,34 @@ import {
   ChartBarIcon,
   DocumentTextIcon,
   PencilIcon,
-  EyeIcon
+  TrashIcon,
+  EyeIcon,
+  PlusIcon,
+  UserPlusIcon,
+  UserGroupIcon
 } from "@heroicons/react/24/outline"
 import { formatDate, formatNumber } from "@/lib/utils"
-import { useCourses, useAttendance, useGrades, useMaterials, useAuth } from "@/lib/domains"
+import { TYPOGRAPHY_STYLES } from "@/lib/design/fonts"
+import { BUTTON_STYLES } from "@/lib/constants/admin-constants"
+import PageHeader from "@/components/admin/PageHeader"
+import StatsGrid from "@/components/admin/StatsGrid"
+import DataTable from "@/components/admin/DataTable"
+import ErrorAlert from "@/components/admin/ErrorAlert"
+import FilterBar from "@/components/admin/FilterBar"
+import { useCourses, useAttendance, useGrades, useMaterials, useAuth, useAcademicStructure } from "@/lib/domains"
 import { Course, Assignment, Submission, AttendanceSession } from "@/lib/types/shared"
 import { mapSessionStatus, mapAttendanceStatus } from "@/lib/utils/statusMapping"
 
 interface CourseDetailProps {
-  params: {
+  params: Promise<{
     courseId: string
-  }
+  }>
 }
 
 export default function LecturerCourseDetailPage({ params }: CourseDetailProps) {
   const router = useRouter()
-  const courseId = params.courseId
+  const resolvedParams = use(params)
+  const courseId = resolvedParams.courseId
   
   // Data Context
   const coursesHook = useCourses()
@@ -47,25 +64,134 @@ export default function LecturerCourseDetailPage({ params }: CourseDetailProps) 
   const grades = useGrades()
   const materials = useMaterials()
   const auth = useAuth()
+  const academic = useAcademicStructure()
   
   // Extract state and methods
-  const { state: coursesState, getCoursesByLecturer, getStudentsByCourse } = coursesHook
+  const { state: coursesState, getCoursesByLecturer, getStudentsByCourse, fetchLecturerAssignments } = coursesHook
   const { getAttendanceSessionsByCourse, getAttendanceRecordsBySession } = attendance
   const { getAssignmentsByCourse, getSubmissionsByAssignment, getStudentGradesByCourse, calculateFinalGrade } = grades
   const { state: materialsState } = materials
   const { state: authState } = auth
+  const { state: academicState } = academic
   
-  // Create legacy state object for compatibility
+  // Create merged state object with academic data
   const state = {
-    ...coursesState,
     ...attendance.state,
     ...grades.state,
+    ...academic.state,
+    ...coursesState, // Put coursesState last to ensure courses are not overridden
     materials: materialsState.materials,
-    currentUser: authState.currentUser
+    currentUser: authState.currentUser,
+    lecturerAssignments: coursesState.lecturerAssignments || [],
+    // Ensure academic data is properly accessible
+    semesters: academic.state.semesters,
+    departments: academic.state.departments,
+    academicYears: academic.state.academicYears,
+    programs: academic.state.programs,
+    sectionEnrollments: academic.state.sectionEnrollments || []
   }
 
   const [activeTab, setActiveTab] = useState(0)
+  const [isLoading, setIsLoading] = useState(true)
   const lecturerId = state.currentUser?.id || "user_2"
+
+  // Function to get enrolled students using inheritance logic
+  const getEnrolledStudentsByCourse = useCallback((courseId: string) => {
+    // Early return if data is not loaded
+    if (!state.lecturerAssignments || !state.sectionEnrollments) {
+      return []
+    }
+    
+    // Get course assignments for this specific course
+    const courseAssignments = state.lecturerAssignments?.filter((assignment: any) => 
+      assignment.course_id === courseId && assignment.lecturer_id === lecturerId
+    ) || []
+    
+    if (courseAssignments.length === 0) {
+      return []
+    }
+    
+    const inheritedStudents = new Map()
+    
+    // For each course assignment, find students enrolled in that program/semester/year
+    courseAssignments.forEach((assignment: any) => {
+      const studentsInProgram = state.sectionEnrollments?.filter((enrollment: any) => 
+        enrollment.program_id === assignment.program_id &&
+        enrollment.semester_id === assignment.semester_id &&
+        enrollment.academic_year_id === assignment.academic_year_id &&
+        (enrollment.year === assignment.year || assignment.year === undefined) && // Handle undefined year
+        enrollment.status === 'active'
+      ) || []
+      
+      // Add each student to the map with their program context
+      studentsInProgram.forEach((enrollment: any) => {
+        const studentKey = `${enrollment.student_id}-${assignment.program_id}-${assignment.semester_id}-${assignment.academic_year_id}`
+        
+        if (!inheritedStudents.has(studentKey)) {
+          inheritedStudents.set(studentKey, {
+            id: enrollment.id,
+            student_id: enrollment.student_id,
+            student_name: enrollment.student_name || 'N/A',
+            student_id_number: enrollment.student_id_number || 'N/A',
+            program: assignment.programs?.program_name || 'N/A',
+            program_code: assignment.programs?.program_code || 'N/A',
+            year: assignment.year || enrollment.year,
+            semester: assignment.semesters?.semester_name || 'N/A',
+            academic_year: assignment.academic_years?.year_name || 'N/A',
+            enrollment_date: enrollment.enrollment_date,
+            status: enrollment.status,
+            // Show which sections they're in
+            sections: [enrollment.section_code].filter(Boolean),
+            // Add assignment context
+            assignment_id: assignment.id,
+            is_mandatory: assignment.is_mandatory,
+            max_students: assignment.max_students
+          })
+        } else {
+          // Add section to existing student
+          const existingStudent = inheritedStudents.get(studentKey)
+          if (enrollment.section_code && !existingStudent.sections.includes(enrollment.section_code)) {
+            existingStudent.sections.push(enrollment.section_code)
+          }
+        }
+      })
+    })
+    
+    return Array.from(inheritedStudents.values())
+  }, [state.lecturerAssignments, state.sectionEnrollments, lecturerId])
+
+  // Fetch data on component mount
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setIsLoading(true)
+        await Promise.all([
+          auth.loadCurrentUser(), // Load the current user first
+          coursesHook.fetchCourses(),
+          fetchLecturerAssignments(),
+          attendance.fetchAttendanceSessions(),
+          materials.fetchMaterials(),
+          academic.fetchLecturerProfiles(),
+          academic.fetchSections(),
+          academic.fetchSectionEnrollments(),
+          academic.fetchSemesters(),
+          academic.fetchAcademicYears(),
+          academic.fetchPrograms(),
+          academic.fetchDepartments()
+        ])
+        
+        // Wait for state to be updated
+        await new Promise(resolve => setTimeout(resolve, 1000))
+        
+      } catch (error) {
+        console.error('Error fetching course details data:', error)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+    
+    fetchData()
+  }, [])
 
   // Get course details
   const course = useMemo(() => {
@@ -74,13 +200,17 @@ export default function LecturerCourseDetailPage({ params }: CourseDetailProps) 
 
   // Check if lecturer is assigned to this course
   const isAssigned = useMemo(() => {
-    return course?.lecturer_id === lecturerId
-  }, [course, lecturerId])
+    if (!course) return false
+    // Check if lecturer is assigned to this course through lecturer_assignments
+    return state.lecturerAssignments?.some((assignment: any) => 
+      assignment.course_id === courseId && assignment.lecturer_id === lecturerId
+    ) || false
+  }, [course, courseId, lecturerId, state.lecturerAssignments])
 
-  // Get enrolled students
+  // Get enrolled students using inheritance logic
   const enrolledStudents = useMemo(() => {
-    return getStudentsByCourse(courseId)
-  }, [getStudentsByCourse, courseId])
+    return getEnrolledStudentsByCourse(courseId)
+  }, [getEnrolledStudentsByCourse, courseId])
 
   // Get course assignments
   const assignments = useMemo(() => {
@@ -145,10 +275,391 @@ export default function LecturerCourseDetailPage({ params }: CourseDetailProps) 
     setActiveTab(newValue)
   }
 
+  // Define table columns for students
+  const studentColumns = [
+    {
+      key: 'student',
+      label: 'Student',
+      render: (value: any, row: any) => (
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          <Avatar sx={{ width: 32, height: 32 }}>
+            {row.student_name?.charAt(0) || 'S'}
+          </Avatar>
+          <Box>
+            <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
+              {row.student_name || 'Unknown Student'}
+            </Typography>
+            <Typography variant="caption" sx={TYPOGRAPHY_STYLES.tableCaption}>
+              {row.student_id_number || 'No ID'}
+            </Typography>
+          </Box>
+        </Box>
+      )
+    },
+    {
+      key: 'program',
+      label: 'Program',
+      render: (value: any, row: any) => (
+        <Box>
+          <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
+            {row.program || 'N/A'}
+          </Typography>
+          <Typography variant="caption" sx={TYPOGRAPHY_STYLES.tableCaption}>
+            {row.program_code || ''}
+          </Typography>
+        </Box>
+      )
+    },
+    {
+      key: 'year_semester',
+      label: 'Year & Semester',
+      render: (value: any, row: any) => (
+        <Box>
+          <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
+            Year {row.year || 'N/A'}
+          </Typography>
+          <Typography variant="caption" sx={TYPOGRAPHY_STYLES.tableCaption}>
+            {row.semester || 'N/A'}
+          </Typography>
+        </Box>
+      )
+    },
+    {
+      key: 'academic_year',
+      label: 'Academic Year',
+      render: (value: any, row: any) => (
+        <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
+          {row.academic_year || 'N/A'}
+        </Typography>
+      )
+    },
+    {
+      key: 'sections',
+      label: 'Sections',
+      render: (value: any, row: any) => {
+        const sections = row.sections || []
+        if (sections.length === 0) {
+          return (
+            <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
+              No sections
+            </Typography>
+          )
+        }
+        
+        return (
+          <Box>
+            {sections.length === 1 ? (
+              <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
+                {sections[0]}
+              </Typography>
+            ) : (
+              <Box>
+                <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
+                  {sections[0]}
+                </Typography>
+                <Typography variant="caption" sx={TYPOGRAPHY_STYLES.tableCaption}>
+                  +{sections.length - 1} more
+                </Typography>
+              </Box>
+            )}
+          </Box>
+        )
+      }
+    },
+    {
+      key: 'enrollment_date',
+      label: 'Enrolled',
+      render: (value: any, row: any) => (
+        <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
+          {formatDate(row.enrollment_date || row.created_at)}
+        </Typography>
+      )
+    },
+    {
+      key: 'status',
+      label: 'Status',
+      render: (value: any, row: any) => (
+        <Chip 
+          label={row.status || 'Active'} 
+          size="small"
+          sx={{ 
+            backgroundColor: row.status === 'active' ? "#00000020" : "#66666620",
+            color: row.status === 'active' ? "#000000" : "#666666",
+            fontFamily: "DM Sans",
+            fontWeight: 500
+          }}
+        />
+      )
+    }
+  ]
+
+  // Define table columns for assignments
+  const assignmentColumns = [
+    {
+      key: 'title',
+      label: 'Assignment',
+      render: (value: any, row: any) => (
+        <Box>
+          <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
+            {row.title || 'Untitled Assignment'}
+          </Typography>
+          <Typography variant="caption" sx={TYPOGRAPHY_STYLES.tableCaption}>
+            {row.type || 'Assignment'}
+          </Typography>
+        </Box>
+      )
+    },
+    {
+      key: 'due_date',
+      label: 'Due Date',
+      render: (value: any, row: any) => (
+        <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
+          {formatDate(row.due_date)}
+        </Typography>
+      )
+    },
+    {
+      key: 'points',
+      label: 'Points',
+      render: (value: any, row: any) => (
+        <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
+          {row.points || 0}
+        </Typography>
+      )
+    },
+    {
+      key: 'submissions',
+      label: 'Submissions',
+      render: (value: any, row: any) => (
+        <Box>
+          <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
+            {row.submissions?.length || 0} total
+          </Typography>
+          <Typography variant="caption" sx={TYPOGRAPHY_STYLES.tableCaption}>
+            {row.graded_count || 0} graded
+          </Typography>
+        </Box>
+      )
+    },
+    {
+      key: 'created_at',
+      label: 'Created',
+      render: (value: any, row: any) => (
+        <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
+          {formatDate(row.created_at)}
+        </Typography>
+      )
+    },
+    {
+      key: 'status',
+      label: 'Status',
+      render: (value: any, row: any) => (
+        <Chip 
+          label={row.status || 'Active'} 
+          size="small"
+          sx={{ 
+            backgroundColor: row.status === 'active' ? "#00000020" : "#66666620",
+            color: row.status === 'active' ? "#000000" : "#666666",
+            fontFamily: "DM Sans",
+            fontWeight: 500
+          }}
+        />
+      )
+    }
+  ]
+
+  // Define table columns for attendance sessions
+  const sessionColumns = [
+    {
+      key: 'session_name',
+      label: 'Session',
+      render: (value: any, row: any) => (
+        <Box>
+          <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
+            {row.session_name || 'Untitled Session'}
+          </Typography>
+          <Typography variant="caption" sx={TYPOGRAPHY_STYLES.tableCaption}>
+            {row.session_type || 'Regular'}
+          </Typography>
+        </Box>
+      )
+    },
+    {
+      key: 'session_date',
+      label: 'Date',
+      render: (value: any, row: any) => (
+        <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
+          {formatDate(row.session_date)}
+        </Typography>
+      )
+    },
+    {
+      key: 'time',
+      label: 'Time',
+      render: (value: any, row: any) => (
+        <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
+          {row.start_time} - {row.end_time}
+        </Typography>
+      )
+    },
+    {
+      key: 'attendance',
+      label: 'Attendance',
+      render: (value: any, row: any) => (
+        <Box>
+          <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
+            {row.present_count || 0} present
+          </Typography>
+          <Typography variant="caption" sx={TYPOGRAPHY_STYLES.tableCaption}>
+            {row.attendance_rate || 0}% rate
+          </Typography>
+        </Box>
+      )
+    },
+    {
+      key: 'total_students',
+      label: 'Total Students',
+      render: (value: any, row: any) => (
+        <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
+          {row.attendance_records?.length || 0}
+        </Typography>
+      )
+    },
+    {
+      key: 'status',
+      label: 'Status',
+      render: (value: any, row: any) => (
+        <Chip 
+          label={row.status || 'Scheduled'} 
+          size="small"
+          sx={{ 
+            backgroundColor: row.status === 'completed' ? "#00000020" : "#66666620",
+            color: row.status === 'completed' ? "#000000" : "#666666",
+            fontFamily: "DM Sans",
+            fontWeight: 500
+          }}
+        />
+      )
+    }
+  ]
+
+  // Define table columns for course materials
+  const materialColumns = [
+    {
+      key: 'title',
+      label: 'Material',
+      render: (value: any, row: any) => (
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          <Box sx={{ 
+            p: 1.5, 
+            borderRadius: 1.5, 
+            backgroundColor: '#f9f9f9',
+            border: '1px solid #f0f0f0',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}>
+            <DocumentTextIcon className="h-4 w-4" style={{ color: '#666666' }} />
+          </Box>
+          <Box>
+            <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
+              {row.title || 'Untitled Material'}
+            </Typography>
+            <Typography variant="caption" sx={TYPOGRAPHY_STYLES.tableCaption}>
+              {row.type || 'Document'}
+            </Typography>
+          </Box>
+        </Box>
+      )
+    },
+    {
+      key: 'description',
+      label: 'Description',
+      render: (value: any, row: any) => (
+        <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
+          {row.description || 'No description'}
+        </Typography>
+      )
+    },
+    {
+      key: 'file_size',
+      label: 'Size',
+      render: (value: any, row: any) => (
+        <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
+          {row.file_size || 'Unknown'}
+        </Typography>
+      )
+    },
+    {
+      key: 'downloads',
+      label: 'Downloads',
+      render: (value: any, row: any) => (
+        <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
+          {row.download_count || 0}
+        </Typography>
+      )
+    },
+    {
+      key: 'created_at',
+      label: 'Uploaded',
+      render: (value: any, row: any) => (
+        <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
+          {formatDate(row.created_at)}
+        </Typography>
+      )
+    },
+    {
+      key: 'status',
+      label: 'Status',
+      render: (value: any, row: any) => (
+        <Chip 
+          label={row.status || 'Active'} 
+          size="small"
+          sx={{ 
+            backgroundColor: row.status === 'active' ? "#00000020" : "#66666620",
+            color: row.status === 'active' ? "#000000" : "#666666",
+            fontFamily: "DM Sans",
+            fontWeight: 500
+          }}
+        />
+      )
+    }
+  ]
+
+  // Loading state
+  if (isLoading) {
+    return (
+      <Box sx={{ p: { xs: 2, sm: 3 } }}>
+        <PageHeader
+          title="Course Details"
+          subtitle="Loading course information..."
+          actions={null}
+        />
+        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 400 }}>
+          <Typography variant="body1">Loading course details...</Typography>
+        </Box>
+      </Box>
+    )
+  }
+
   // Course not found
   if (!course) {
     return (
       <Box sx={{ p: { xs: 2, sm: 3 } }}>
+        <PageHeader
+          title="Course Not Found"
+          subtitle="The requested course could not be found"
+          actions={
+        <Button
+              variant="outlined"
+              startIcon={<ArrowLeftIcon className="h-4 w-4" />}
+              onClick={handleBack}
+              sx={BUTTON_STYLES.outlined}
+        >
+          Back to Courses
+        </Button>
+          }
+        />
         <Box sx={{ 
           p: 4, 
           textAlign: 'center',
@@ -160,16 +671,12 @@ export default function LecturerCourseDetailPage({ params }: CourseDetailProps) 
             Course Not Found
           </Typography>
           <Typography variant="body2" sx={{ mb: 3, color: '#888' }}>
-            The course you're looking for doesn't exist or you don't have access to it.
+            The course you're looking for doesn't exist or has been removed.
           </Typography>
           <Button
             variant="contained"
             onClick={handleBack}
-            sx={{ 
-              backgroundColor: 'hsl(var(--foreground))',
-              color: 'hsl(var(--background))',
-              '&:hover': { backgroundColor: 'hsl(var(--foreground) / 0.9)' }
-            }}
+            sx={BUTTON_STYLES.primary}
           >
             Return to Courses
           </Button>
@@ -182,6 +689,20 @@ export default function LecturerCourseDetailPage({ params }: CourseDetailProps) 
   if (!isAssigned) {
     return (
       <Box sx={{ p: { xs: 2, sm: 3 } }}>
+        <PageHeader
+          title="Not Assigned"
+          subtitle="You are not assigned to teach this course"
+          actions={
+        <Button
+              variant="outlined"
+              startIcon={<ArrowLeftIcon className="h-4 w-4" />}
+              onClick={handleBack}
+              sx={BUTTON_STYLES.outlined}
+        >
+          Back to Courses
+        </Button>
+          }
+        />
         <Box sx={{ 
           p: 4, 
           textAlign: 'center',
@@ -198,11 +719,7 @@ export default function LecturerCourseDetailPage({ params }: CourseDetailProps) 
           <Button
             variant="contained"
             onClick={handleBack}
-            sx={{ 
-              backgroundColor: 'hsl(var(--foreground))',
-              color: 'hsl(var(--background))',
-              '&:hover': { backgroundColor: 'hsl(var(--foreground) / 0.9)' }
-            }}
+            sx={BUTTON_STYLES.primary}
           >
             Return to Courses
           </Button>
@@ -247,162 +764,249 @@ export default function LecturerCourseDetailPage({ params }: CourseDetailProps) 
   ]
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-2">
-            <Button
-              variant="outlined"
-              startIcon={<ArrowLeftIcon className="h-4 w-4" />}
-              onClick={handleBack}
-              sx={{ 
-                borderColor: '#000',
-                color: 'hsl(var(--foreground))',
-                '&:hover': { borderColor: '#000', backgroundColor: 'hsl(var(--muted))' }
-              }}
-            >
-              Back
-            </Button>
-          </div>
-          <h1 className="text-2xl sm:text-3xl font-bold font-poppins">
-            {course.course_code} - {course.course_name}
-          </h1>
-          <p className="text-muted-foreground font-dm-sans">
-            {course.credits} Credits • {course.department || 'General'} • {course.semester || 'Current Semester'}
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Button
-            variant="outlined"
-            startIcon={<PencilIcon className="h-4 w-4" />}
-            sx={{ 
-              borderColor: '#000',
-              color: 'hsl(var(--foreground))',
-              '&:hover': { borderColor: '#000', backgroundColor: 'hsl(var(--muted))' }
-            }}
-          >
-            Edit Course
-          </Button>
-        </div>
-      </div>
+    <Box sx={{ p: { xs: 2, sm: 3 } }}>
+      <PageHeader
+        title={`${course.course_code} - ${course.course_name}`}
+        subtitle={`${course.credits} Credits • ${course.department || 'General'}`}
+        actions={null}
+      />
 
-      {/* KPI Grid */}
-      <Box sx={{
-        display: 'grid',
-        gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', lg: 'repeat(4, 1fr)' },
-        gap: { xs: 2, sm: 3 },
-        mb: 1
-      }}>
-        {statsCards.map((card, index) => (
-          <Card key={index} sx={{ 
-            border: '1px solid #000',
-            borderRadius: 3,
-            boxShadow: '0 2px 4px -1px rgba(0, 0, 0, 0.1)',
-            transition: 'all 0.3s ease',
-            '&:hover': {
-              transform: 'translateY(-2px)',
-              boxShadow: '0 8px 25px -5px rgba(0, 0, 0, 0.1)',
-            }
-          }}>
-            <CardContent sx={{ p: 3 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
-                <Box sx={{ 
-                  p: 1.5, 
-                  borderRadius: 2, 
-                  backgroundColor: `${card.color}20`,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}>
-                  <card.icon className="h-5 w-5" style={{ color: card.color }} />
-                </Box>
-                <Box sx={{ flex: 1 }}>
-                  <Typography variant="h4" sx={{ 
-                    fontFamily: 'Poppins, sans-serif', 
-                    fontWeight: 700,
-                    color: card.color,
-                    lineHeight: 1
-                  }}>
-                    {card.value}
-                  </Typography>
-                  <Typography variant="body2" sx={{ 
-                    color: 'hsl(var(--muted-foreground))',
-                    fontSize: '0.75rem',
-                    fontWeight: 500
-                  }}>
-                    {card.subtitle}
-                  </Typography>
-                </Box>
-              </Box>
-              <Typography variant="caption" sx={{ 
-                color: 'hsl(var(--muted-foreground))',
-                fontSize: '0.75rem'
-              }}>
-                {card.change}
-              </Typography>
-            </CardContent>
-          </Card>
-        ))}
-      </Box>
+      <StatsGrid stats={statsCards} />
 
       {/* Course Content */}
-      <Card sx={{ 
-        border: '1px solid #000',
-        borderRadius: 3,
-        boxShadow: '0 2px 4px -1px rgba(0, 0, 0, 0.1)'
-      }}>
+      <Card sx={{ mt: 3 }}>
         <CardContent sx={{ p: 0 }}>
           <Tabs 
             value={activeTab} 
             onChange={handleTabChange}
             sx={{ 
               borderBottom: 1, 
-              borderColor: 'divider',
+              borderColor: '#e5e5e5',
               px: 3,
-              pt: 2
+              pt: 2,
+              '& .MuiTabs-indicator': {
+                backgroundColor: '#000000',
+                height: 3,
+                borderRadius: '2px 2px 0 0'
+              },
+              '& .MuiTab-root': {
+                color: '#666666',
+                fontFamily: 'DM Sans, sans-serif',
+                fontWeight: 500,
+                textTransform: 'none',
+                fontSize: '0.875rem',
+                minHeight: 56,
+                px: 3,
+                py: 1.5,
+                borderRadius: '8px 8px 0 0',
+                transition: 'all 0.2s ease-in-out',
+                '&.Mui-selected': {
+                  color: '#000000',
+                  fontWeight: 600,
+                  backgroundColor: '#f9f9f9'
+                },
+                '&:hover': {
+                  color: '#000000',
+                  backgroundColor: '#f5f5f5',
+                  transform: 'translateY(-1px)'
+                }
+              }
             }}
           >
-            <Tab label="Course Information" />
-            <Tab label="Students" />
-            <Tab label="Assignments" />
-            <Tab label="Attendance" />
-            <Tab label="Materials" />
+            <Tab 
+              label={
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <BookOpenIcon className="h-4 w-4" />
+                  Course Information
+                </Box>
+              } 
+            />
+            <Tab 
+              label={
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <UserGroupIcon className="h-4 w-4" />
+                  Enrolled Students
+                </Box>
+              } 
+            />
+            <Tab 
+              label={
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <BookOpenIcon className="h-4 w-4" />
+                  Assignments
+                </Box>
+              } 
+            />
+            <Tab 
+              label={
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <CalendarDaysIcon className="h-4 w-4" />
+                  Attendance
+                </Box>
+              } 
+            />
+            <Tab 
+              label={
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <DocumentTextIcon className="h-4 w-4" />
+                  Materials
+                </Box>
+              } 
+            />
           </Tabs>
 
-          <Box sx={{ p: 3 }}>
+          <Box sx={{ p: { xs: 2, sm: 3 } }}>
+
             {activeTab === 0 && (
               <Box sx={{ space: 3 }}>
-                <Typography variant="h6" sx={{ mb: 2, fontFamily: 'Poppins, sans-serif', fontWeight: 600 }}>
-                  Course Details
-                </Typography>
-                <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '2fr 1fr' }, gap: 3 }}>
-                  <Box>
-                    <Typography variant="body2" sx={{ color: 'hsl(var(--muted-foreground))', mb: 1 }}>
+                {/* Enhanced Header */}
+                <Box sx={{ mb: 3 }}>
+                  <Typography variant="h5" sx={{ 
+                    fontFamily: 'Poppins, sans-serif', 
+                    fontWeight: 700,
+                    fontSize: { xs: '1.25rem', sm: '1.5rem' },
+                    color: '#000000',
+                    mb: 0.5
+                  }}>
+                    Course Information
+                  </Typography>
+                  <Typography variant="body2" sx={{ 
+                    fontFamily: 'DM Sans, sans-serif',
+                    color: '#666666',
+                    fontSize: '0.875rem'
+                  }}>
+                    View detailed information about this course
+                  </Typography>
+                </Box>
+                <Box sx={{ 
+                  display: 'grid', 
+                  gridTemplateColumns: { xs: '1fr', lg: '2fr 1fr' }, 
+                  gap: { xs: 2, sm: 3 },
+                  alignItems: 'start'
+                }}>
+                  <Box sx={{ 
+                    p: { xs: 2, sm: 3 },
+                    backgroundColor: '#ffffff',
+                    borderRadius: 2,
+                    border: '1px solid #e5e5e5'
+                  }}>
+                    <Typography variant="body2" sx={{ 
+                      color: '#666666', 
+                      mb: 1.5, 
+                      fontFamily: 'DM Sans, sans-serif',
+                      fontWeight: 500,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.5px',
+                      fontSize: '0.75rem'
+                    }}>
                       Description
                     </Typography>
-                    <Typography variant="body1" sx={{ mb: 3, lineHeight: 1.6 }}>
-                      {course.description || 'No description available for this course.'}
+                    <Typography variant="body1" sx={{ 
+                      mb: 3, 
+                      lineHeight: 1.6,
+                      fontFamily: 'DM Sans, sans-serif',
+                      color: '#333333'
+                    }}>
+                      {(course as any).description || 'No description available for this course.'}
                     </Typography>
-                    
-                    <Typography variant="body2" sx={{ color: 'hsl(var(--muted-foreground))', mb: 1 }}>
+                  </Box>
+
+                  <Box sx={{ 
+                    backgroundColor: '#f9f9f9', 
+                    p: { xs: 2, sm: 3 }, 
+                    borderRadius: 2,
+                    border: '1px solid #e5e5e5'
+                  }}>
+                    <Typography variant="body2" sx={{ 
+                      color: '#666666', 
+                      mb: 2, 
+                      fontFamily: 'DM Sans, sans-serif',
+                      fontWeight: 500,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.5px',
+                      fontSize: '0.75rem'
+                    }}>
                       Course Information
                     </Typography>
-                    <Box sx={{ space: 2 }}>
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 1 }}>
-                        <Typography variant="body2">Course Code:</Typography>
-                        <Typography variant="body2" sx={{ fontWeight: 600 }}>{course.course_code}</Typography>
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: { xs: 1.5, sm: 2 } }}>
+                      <Box sx={{ 
+                        display: 'flex', 
+                        justifyContent: 'space-between', 
+                        alignItems: 'center',
+                        py: { xs: 1, sm: 1.5 },
+                        borderBottom: '1px solid #f0f0f0'
+                      }}>
+                        <Typography variant="body2" sx={{ 
+                          fontFamily: 'DM Sans, sans-serif',
+                          color: '#666666'
+                        }}>
+                          Course Code:
+                        </Typography>
+                        <Typography variant="body2" sx={{ 
+                          fontWeight: 600, 
+                          fontFamily: 'DM Sans, sans-serif',
+                          color: '#000000'
+                        }}>
+                          {course.course_code}
+                        </Typography>
                       </Box>
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 1 }}>
-                        <Typography variant="body2">Credits:</Typography>
-                        <Typography variant="body2" sx={{ fontWeight: 600 }}>{course.credits}</Typography>
+                      <Box sx={{ 
+                        display: 'flex', 
+                        justifyContent: 'space-between', 
+                        alignItems: 'center',
+                        py: { xs: 1, sm: 1.5 },
+                        borderBottom: '1px solid #f0f0f0'
+                      }}>
+                        <Typography variant="body2" sx={{ 
+                          fontFamily: 'DM Sans, sans-serif',
+                          color: '#666666'
+                        }}>
+                          Credits:
+                        </Typography>
+                        <Typography variant="body2" sx={{ 
+                          fontWeight: 600, 
+                          fontFamily: 'DM Sans, sans-serif',
+                          color: '#000000'
+                        }}>
+                          {course.credits}
+                        </Typography>
                       </Box>
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 1 }}>
-                        <Typography variant="body2">Department:</Typography>
-                        <Typography variant="body2" sx={{ fontWeight: 600 }}>{course.department || 'General'}</Typography>
+                      <Box sx={{ 
+                        display: 'flex', 
+                        justifyContent: 'space-between', 
+                        alignItems: 'center',
+                        py: { xs: 1, sm: 1.5 },
+                        borderBottom: '1px solid #f0f0f0'
+                      }}>
+                        <Typography variant="body2" sx={{ 
+                          fontFamily: 'DM Sans, sans-serif',
+                          color: '#666666'
+                        }}>
+                          Department:
+                        </Typography>
+                        <Typography variant="body2" sx={{ 
+                          fontWeight: 600, 
+                          fontFamily: 'DM Sans, sans-serif',
+                          color: '#000000',
+                          textAlign: 'right',
+                          maxWidth: '60%'
+                        }}>
+                          {course.department || 'General'}
+                        </Typography>
                       </Box>
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 1 }}>
-                        <Typography variant="body2">Status:</Typography>
+                      <Box sx={{ 
+                        display: 'flex', 
+                        justifyContent: 'space-between', 
+                        alignItems: 'center',
+                        py: { xs: 1, sm: 1.5 },
+                        borderBottom: '1px solid #f0f0f0'
+                      }}>
+                        <Typography variant="body2" sx={{ 
+                          fontFamily: 'DM Sans, sans-serif',
+                          color: '#666666'
+                        }}>
+                          Status:
+                        </Typography>
                         <Chip 
                           label="Active" 
                           size="small"
@@ -414,62 +1018,26 @@ export default function LecturerCourseDetailPage({ params }: CourseDetailProps) 
                           }}
                         />
                       </Box>
-                    </Box>
-                  </Box>
-                  
-                  <Box>
-                    <Typography variant="body2" sx={{ color: 'hsl(var(--muted-foreground))', mb: 1 }}>
-                      Quick Actions
-                    </Typography>
-                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                      <Button
-                        variant="outlined"
-                        startIcon={<BookOpenIcon className="h-4 w-4" />}
-                        onClick={() => router.push(`/lecturer/homework?course=${courseId}`)}
-                        sx={{ 
-                          borderColor: '#000',
-                          color: 'hsl(var(--foreground))',
-                          '&:hover': { borderColor: '#000', backgroundColor: 'hsl(var(--muted))' }
-                        }}
-                      >
-                        Manage Assignments
-                      </Button>
-                      <Button
-                        variant="outlined"
-                        startIcon={<CalendarDaysIcon className="h-4 w-4" />}
-                        onClick={() => router.push(`/lecturer/attendance?course=${courseId}`)}
-                        sx={{ 
-                          borderColor: '#000',
-                          color: 'hsl(var(--foreground))',
-                          '&:hover': { borderColor: '#000', backgroundColor: 'hsl(var(--muted))' }
-                        }}
-                      >
-                        Manage Attendance
-                      </Button>
-                      <Button
-                        variant="outlined"
-                        startIcon={<ChartBarIcon className="h-4 w-4" />}
-                        onClick={() => router.push(`/lecturer/gradebook?course=${courseId}`)}
-                        sx={{ 
-                          borderColor: '#000',
-                          color: 'hsl(var(--foreground))',
-                          '&:hover': { borderColor: '#000', backgroundColor: 'hsl(var(--muted))' }
-                        }}
-                      >
-                        View Gradebook
-                      </Button>
-                      <Button
-                        variant="outlined"
-                        startIcon={<DocumentTextIcon className="h-4 w-4" />}
-                        onClick={() => router.push(`/lecturer/materials?course=${courseId}`)}
-                        sx={{ 
-                          borderColor: '#000',
-                          color: 'hsl(var(--foreground))',
-                          '&:hover': { borderColor: '#000', backgroundColor: 'hsl(var(--muted))' }
-                        }}
-                      >
-                        Manage Materials
-                      </Button>
+                      <Box sx={{ 
+                        display: 'flex', 
+                        justifyContent: 'space-between', 
+                        alignItems: 'center',
+                        py: { xs: 1, sm: 1.5 }
+                      }}>
+                        <Typography variant="body2" sx={{ 
+                          fontFamily: 'DM Sans, sans-serif',
+                          color: '#666666'
+                        }}>
+                          Created:
+                        </Typography>
+                        <Typography variant="body2" sx={{ 
+                          fontWeight: 600, 
+                          fontFamily: 'DM Sans, sans-serif',
+                          color: '#000000'
+                        }}>
+                          {formatDate(course.created_at)}
+                        </Typography>
+                      </Box>
                     </Box>
                   </Box>
                 </Box>
@@ -478,323 +1046,475 @@ export default function LecturerCourseDetailPage({ params }: CourseDetailProps) 
 
             {activeTab === 1 && (
               <Box>
-                <Typography variant="h6" sx={{ mb: 2, fontFamily: 'Poppins, sans-serif', fontWeight: 600 }}>
-                  Enrolled Students
-                </Typography>
+                {/* Enhanced Header */}
+                <Box sx={{ mb: 3 }}>
+                  <Typography variant="h5" sx={{ 
+                    fontFamily: 'Poppins, sans-serif', 
+                    fontWeight: 700,
+                    fontSize: { xs: '1.25rem', sm: '1.5rem' },
+                    color: '#000000',
+                    mb: 0.5
+                  }}>
+                    Enrolled Students
+                  </Typography>
+                  <Typography variant="body2" sx={{ 
+                    fontFamily: 'DM Sans, sans-serif',
+                    color: '#666666',
+                    fontSize: '0.875rem'
+                  }}>
+                    View and manage students enrolled in this course
+                  </Typography>
+                </Box>
+              
                 {enrolledStudents.length === 0 ? (
                   <Box sx={{ 
-                    p: 4, 
+                    p: 6, 
                     textAlign: 'center',
                     border: '2px dashed #e5e5e5',
-                    borderRadius: 2,
-                    backgroundColor: '#f9f9f9'
+                    borderRadius: 3,
+                    backgroundColor: '#f9f9f9',
+                    transition: 'all 0.2s ease-in-out',
+                    '&:hover': {
+                      borderColor: '#000000',
+                      backgroundColor: '#f5f5f5'
+                    }
                   }}>
-                    <Typography variant="h6" sx={{ mb: 2, color: '#666' }}>
+                    <Box sx={{ 
+                      width: 64, 
+                      height: 64, 
+                      borderRadius: '50%', 
+                      backgroundColor: '#00000020', 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      justifyContent: 'center', 
+                      mx: 'auto', 
+                      mb: 3 
+                    }}>
+                      <UserGroupIcon className="h-8 w-8" style={{ color: '#666666' }} />
+                    </Box>
+                    <Typography variant="h6" sx={{ 
+                      mb: 2, 
+                      color: '#000000',
+                      fontFamily: 'Poppins, sans-serif',
+                      fontWeight: 600
+                    }}>
                       No Students Enrolled
                     </Typography>
-                    <Typography variant="body2" sx={{ color: '#888' }}>
-                      No students are currently enrolled in this course.
+                    <Typography variant="body2" sx={{ 
+                      mb: 4, 
+                      color: '#666666',
+                      fontFamily: 'DM Sans, sans-serif',
+                      maxWidth: 400,
+                      mx: 'auto'
+                    }}>
+                      No students are currently enrolled in this course. Students will appear here once they are enrolled through program assignments.
                     </Typography>
                   </Box>
                 ) : (
-                  <Box sx={{ space: 2 }}>
-                    {enrolledStudents.map((student: any) => (
-                      <Card key={student.id} sx={{ 
-                        border: '1px solid #e5e5e5',
-                        borderRadius: 2,
-                        mb: 2
-                      }}>
-                        <CardContent sx={{ p: 3 }}>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                            <Avatar sx={{ width: 40, height: 40 }}>
-                              {student.full_name?.charAt(0) || 'S'}
-                            </Avatar>
-                            <Box sx={{ flex: 1 }}>
-                              <Typography variant="h6" sx={{ fontFamily: 'Poppins, sans-serif', fontWeight: 600, mb: 1 }}>
-                                {student.full_name || 'Unknown Student'}
-                              </Typography>
-                              <Typography variant="body2" sx={{ color: 'hsl(var(--muted-foreground))' }}>
-                                {student.email || 'No email'}
-                              </Typography>
-                              <Typography variant="caption" sx={{ color: 'hsl(var(--muted-foreground))' }}>
-                                Enrolled on {formatDate(student.enrolled_at || student.created_at)}
-                              </Typography>
-                            </Box>
-                            <Box sx={{ textAlign: 'right' }}>
-                              <Chip 
-                                label={student.status || 'Active'} 
-                                size="small"
-                                sx={{ 
-                                  backgroundColor: '#00000020',
-                                  color: '#000000',
-                                  fontFamily: "DM Sans",
-                                  fontWeight: 500
-                                }}
-                              />
-                            </Box>
-                          </Box>
-                        </CardContent>
-                      </Card>
-                    ))}
-                  </Box>
+                  <DataTable
+                    title=""
+                    subtitle=""
+                    columns={studentColumns}
+                    data={enrolledStudents}
+                    onRowClick={(student) => router.push(`/lecturer/students/${student.student_id}`)}
+                  />
                 )}
               </Box>
             )}
 
             {activeTab === 2 && (
               <Box>
-                <Typography variant="h6" sx={{ mb: 2, fontFamily: 'Poppins, sans-serif', fontWeight: 600 }}>
-                  Assignments
-                </Typography>
+                {/* Enhanced Header */}
+                <Box sx={{ 
+                  display: 'flex', 
+                  justifyContent: 'space-between', 
+                  alignItems: 'center', 
+                  mb: 3,
+                  flexDirection: { xs: 'column', sm: 'row' },
+                  gap: { xs: 2, sm: 0 }
+                }}>
+                  <Box>
+                    <Typography variant="h5" sx={{ 
+                      fontFamily: 'Poppins, sans-serif', 
+                      fontWeight: 700,
+                      fontSize: { xs: '1.25rem', sm: '1.5rem' },
+                      color: '#000000',
+                      mb: 0.5
+                    }}>
+                      Assignments
+                    </Typography>
+                    <Typography variant="body2" sx={{ 
+                      fontFamily: 'DM Sans, sans-serif',
+                      color: '#666666',
+                      fontSize: '0.875rem'
+                    }}>
+                      Manage course assignments and submissions
+                    </Typography>
+                  </Box>
+                <Button
+                    variant="contained"
+                    startIcon={<PlusIcon className="h-4 w-4" />}
+                  onClick={() => router.push(`/lecturer/homework?course=${courseId}`)}
+                    sx={{
+                      ...BUTTON_STYLES.primary,
+                      fontFamily: 'DM Sans, sans-serif',
+                      fontWeight: 600,
+                      textTransform: 'none',
+                      px: 3,
+                      py: 1.5,
+                      borderRadius: 2,
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+                      '&:hover': {
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.25)',
+                        transform: 'translateY(-1px)'
+                      },
+                      transition: 'all 0.2s ease-in-out'
+                    }}
+                  >
+                  Manage Assignments
+                </Button>
+                </Box>
+              
                 {assignments.length === 0 ? (
                   <Box sx={{ 
-                    p: 4, 
+                    p: 6, 
                     textAlign: 'center',
                     border: '2px dashed #e5e5e5',
-                    borderRadius: 2,
-                    backgroundColor: '#f9f9f9'
+                    borderRadius: 3,
+                    backgroundColor: '#f9f9f9',
+                    transition: 'all 0.2s ease-in-out',
+                    '&:hover': {
+                      borderColor: '#000000',
+                      backgroundColor: '#f5f5f5'
+                    }
                   }}>
-                    <Typography variant="h6" sx={{ mb: 2, color: '#666' }}>
+                    <Box sx={{ 
+                      width: 64, 
+                      height: 64, 
+                      borderRadius: '50%', 
+                      backgroundColor: '#00000020', 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      justifyContent: 'center', 
+                      mx: 'auto', 
+                      mb: 3 
+                    }}>
+                      <BookOpenIcon className="h-8 w-8" style={{ color: '#666666' }} />
+                    </Box>
+                    <Typography variant="h6" sx={{ 
+                      mb: 2, 
+                      color: '#000000',
+                      fontFamily: 'Poppins, sans-serif',
+                      fontWeight: 600
+                    }}>
                       No Assignments
                     </Typography>
-                    <Typography variant="body2" sx={{ mb: 3, color: '#888' }}>
-                      No assignments have been created for this course yet.
+                    <Typography variant="body2" sx={{ 
+                      mb: 4, 
+                      color: '#666666',
+                      fontFamily: 'DM Sans, sans-serif',
+                      maxWidth: 400,
+                      mx: 'auto'
+                    }}>
+                      No assignments have been created for this course yet. Create your first assignment to get started.
                     </Typography>
                     <Button
                       variant="contained"
                       onClick={() => router.push(`/lecturer/homework?course=${courseId}`)}
-                      sx={{ 
-                        backgroundColor: 'hsl(var(--foreground))',
-                        color: 'hsl(var(--background))',
-                        '&:hover': { backgroundColor: 'hsl(var(--foreground) / 0.9)' }
+                      sx={{
+                        ...BUTTON_STYLES.primary,
+                        fontFamily: 'DM Sans, sans-serif',
+                        fontWeight: 600,
+                        textTransform: 'none',
+                        px: 4,
+                        py: 1.5,
+                        borderRadius: 2,
+                        boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+                        '&:hover': {
+                          boxShadow: '0 4px 12px rgba(0,0,0,0.25)',
+                          transform: 'translateY(-1px)'
+                        },
+                        transition: 'all 0.2s ease-in-out'
                       }}
                     >
-                      Create Assignment
+                      Create First Assignment
                     </Button>
                   </Box>
                 ) : (
-                  <Box sx={{ space: 2 }}>
-                    {assignments.map((assignment: Assignment) => {
-                      const assignmentSubmissions = getSubmissionsByAssignment(assignment.id)
-                      const gradedCount = assignmentSubmissions.filter(sub => sub.grade !== null).length
-                      
-                      return (
-                        <Card key={assignment.id} sx={{ 
-                          border: '1px solid #e5e5e5',
-                          borderRadius: 2,
-                          mb: 2
-                        }}>
-                          <CardContent sx={{ p: 3 }}>
-                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
-                              <Box sx={{ flex: 1 }}>
-                                <Typography variant="h6" sx={{ fontFamily: 'Poppins, sans-serif', fontWeight: 600, mb: 1 }}>
-                                  {assignment.title}
-                                </Typography>
-                                <Typography variant="body2" sx={{ color: 'hsl(var(--muted-foreground))', mb: 2 }}>
-                                  {assignment.description}
-                                </Typography>
-                                <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-                                  <Typography variant="body2" sx={{ color: 'hsl(var(--muted-foreground))' }}>
-                                    Due: {formatDate(assignment.due_date)}
-                                  </Typography>
-                                  <Typography variant="body2" sx={{ color: 'hsl(var(--muted-foreground))' }}>
-                                    Points: {assignment.total_points}
-                                  </Typography>
-                                  <Typography variant="body2" sx={{ color: 'hsl(var(--muted-foreground))' }}>
-                                    Submissions: {assignmentSubmissions.length}
-                                  </Typography>
-                                </Box>
-                              </Box>
-                              <Box sx={{ textAlign: 'right' }}>
-                                <Chip 
-                                  label={`${gradedCount}/${assignmentSubmissions.length} Graded`} 
-                                  size="small"
-                                  sx={{ 
-                                    backgroundColor: gradedCount === assignmentSubmissions.length ? '#00000020' : '#66666620',
-                                    color: gradedCount === assignmentSubmissions.length ? '#000000' : '#666666',
-                                    fontFamily: "DM Sans",
-                                    fontWeight: 500
-                                  }}
-                                />
-                              </Box>
-                            </Box>
-                            <LinearProgress 
-                              variant="determinate" 
-                              value={assignmentSubmissions.length > 0 ? (gradedCount / assignmentSubmissions.length) * 100 : 0}
-                              sx={{
-                                height: 6,
-                                borderRadius: 3,
-                                backgroundColor: 'hsl(var(--muted))',
-                                '& .MuiLinearProgress-bar': {
-                                  backgroundColor: 'hsl(var(--foreground))',
-                                  borderRadius: 3,
-                                }
-                              }}
-                            />
-                          </CardContent>
-                        </Card>
-                      )
-                    })}
-                  </Box>
+                  <DataTable
+                    title=""
+                    subtitle=""
+                    columns={assignmentColumns}
+                    data={assignments}
+                    onRowClick={(assignment) => router.push(`/lecturer/homework/${assignment.id}`)}
+                  />
                 )}
               </Box>
             )}
 
             {activeTab === 3 && (
               <Box>
-                <Typography variant="h6" sx={{ mb: 2, fontFamily: 'Poppins, sans-serif', fontWeight: 600 }}>
-                  Attendance Sessions
-                </Typography>
+                {/* Enhanced Header */}
+                <Box sx={{ 
+                  display: 'flex', 
+                  justifyContent: 'space-between', 
+                  alignItems: 'center', 
+                  mb: 3,
+                  flexDirection: { xs: 'column', sm: 'row' },
+                  gap: { xs: 2, sm: 0 }
+                }}>
+                  <Box>
+                    <Typography variant="h5" sx={{ 
+                      fontFamily: 'Poppins, sans-serif', 
+                      fontWeight: 700,
+                      fontSize: { xs: '1.25rem', sm: '1.5rem' },
+                      color: '#000000',
+                      mb: 0.5
+                    }}>
+                      Attendance Sessions
+                    </Typography>
+                    <Typography variant="body2" sx={{ 
+                      fontFamily: 'DM Sans, sans-serif',
+                      color: '#666666',
+                      fontSize: '0.875rem'
+                    }}>
+                      Manage attendance tracking and sessions
+                    </Typography>
+                  </Box>
+                <Button
+                    variant="contained"
+                    startIcon={<PlusIcon className="h-4 w-4" />}
+                  onClick={() => router.push(`/lecturer/attendance?course=${courseId}`)}
+                    sx={{
+                      ...BUTTON_STYLES.primary,
+                      fontFamily: 'DM Sans, sans-serif',
+                      fontWeight: 600,
+                      textTransform: 'none',
+                      px: 3,
+                      py: 1.5,
+                      borderRadius: 2,
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+                      '&:hover': {
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.25)',
+                        transform: 'translateY(-1px)'
+                      },
+                      transition: 'all 0.2s ease-in-out'
+                    }}
+                  >
+                  Manage Attendance
+                </Button>
+                </Box>
+              
                 {sessions.length === 0 ? (
                   <Box sx={{ 
-                    p: 4, 
+                    p: 6, 
                     textAlign: 'center',
                     border: '2px dashed #e5e5e5',
-                    borderRadius: 2,
-                    backgroundColor: '#f9f9f9'
+                    borderRadius: 3,
+                    backgroundColor: '#f9f9f9',
+                    transition: 'all 0.2s ease-in-out',
+                    '&:hover': {
+                      borderColor: '#000000',
+                      backgroundColor: '#f5f5f5'
+                    }
                   }}>
-                    <Typography variant="h6" sx={{ mb: 2, color: '#666' }}>
+                    <Box sx={{ 
+                      width: 64, 
+                      height: 64, 
+                      borderRadius: '50%', 
+                      backgroundColor: '#00000020', 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      justifyContent: 'center', 
+                      mx: 'auto', 
+                      mb: 3 
+                    }}>
+                      <CalendarDaysIcon className="h-8 w-8" style={{ color: '#666666' }} />
+                    </Box>
+                    <Typography variant="h6" sx={{ 
+                      mb: 2, 
+                      color: '#000000',
+                      fontFamily: 'Poppins, sans-serif',
+                      fontWeight: 600
+                    }}>
                       No Sessions
                     </Typography>
-                    <Typography variant="body2" sx={{ mb: 3, color: '#888' }}>
-                      No attendance sessions have been created for this course yet.
+                    <Typography variant="body2" sx={{ 
+                      mb: 4, 
+                      color: '#666666',
+                      fontFamily: 'DM Sans, sans-serif',
+                      maxWidth: 400,
+                      mx: 'auto'
+                    }}>
+                      No attendance sessions have been created for this course yet. Create your first session to start tracking attendance.
                     </Typography>
                     <Button
                       variant="contained"
                       onClick={() => router.push(`/lecturer/attendance?course=${courseId}`)}
-                      sx={{ 
-                        backgroundColor: 'hsl(var(--foreground))',
-                        color: 'hsl(var(--background))',
-                        '&:hover': { backgroundColor: 'hsl(var(--foreground) / 0.9)' }
+                      sx={{
+                        ...BUTTON_STYLES.primary,
+                        fontFamily: 'DM Sans, sans-serif',
+                        fontWeight: 600,
+                        textTransform: 'none',
+                        px: 4,
+                        py: 1.5,
+                        borderRadius: 2,
+                        boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+                        '&:hover': {
+                          boxShadow: '0 4px 12px rgba(0,0,0,0.25)',
+                          transform: 'translateY(-1px)'
+                        },
+                        transition: 'all 0.2s ease-in-out'
                       }}
                     >
-                      Create Session
+                      Create First Session
                     </Button>
                   </Box>
                 ) : (
-                  <Box sx={{ space: 2 }}>
-                    {sessions.map((session: AttendanceSession) => {
-                      const records = getAttendanceRecordsBySession(session.id)
-                      const presentCount = records.filter(record => {
-                        const mappedStatus = mapAttendanceStatus(record.status, 'lecturer')
-                        return mappedStatus === 'present' || mappedStatus === 'late'
-                      }).length
-                      const attendanceRate = records.length > 0 ? Math.round((presentCount / records.length) * 100) : 0
-                      
-                      return (
-                        <Card key={session.id} sx={{ 
-                          border: '1px solid #e5e5e5',
-                          borderRadius: 2,
-                          mb: 2
-                        }}>
-                          <CardContent sx={{ p: 3 }}>
-                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                              <Box>
-                                <Typography variant="h6" sx={{ fontFamily: 'Poppins, sans-serif', fontWeight: 600, mb: 1 }}>
-                                  {session.session_name}
-                                </Typography>
-                                <Typography variant="body2" sx={{ color: 'hsl(var(--muted-foreground))' }}>
-                                  {formatDate(session.session_date)} • {session.start_time} - {session.end_time}
-                                </Typography>
-                                <Typography variant="body2" sx={{ color: 'hsl(var(--muted-foreground))' }}>
-                                  {presentCount}/{records.length} students present ({attendanceRate}%)
-                                </Typography>
-                              </Box>
-                              <Chip 
-                                label={mapSessionStatus(session.status, 'lecturer')} 
-                                size="small"
-                                sx={{ 
-                                  backgroundColor: session.status === 'active' ? '#00000020' : '#66666620',
-                                  color: session.status === 'active' ? '#000000' : '#666666',
-                                  fontFamily: "DM Sans",
-                                  fontWeight: 500
-                                }}
-                              />
-                            </Box>
-                          </CardContent>
-                        </Card>
-                      )
-                    })}
-                  </Box>
+                  <DataTable
+                    title=""
+                    subtitle=""
+                    columns={sessionColumns}
+                    data={sessions}
+                    onRowClick={(session) => router.push(`/lecturer/attendance/${session.id}`)}
+                  />
                 )}
               </Box>
             )}
 
             {activeTab === 4 && (
               <Box>
-                <Typography variant="h6" sx={{ mb: 2, fontFamily: 'Poppins, sans-serif', fontWeight: 600 }}>
-                  Course Materials
-                </Typography>
+                {/* Enhanced Header */}
+                <Box sx={{ 
+                  display: 'flex', 
+                  justifyContent: 'space-between', 
+                  alignItems: 'center', 
+                  mb: 3,
+                  flexDirection: { xs: 'column', sm: 'row' },
+                  gap: { xs: 2, sm: 0 }
+                }}>
+                  <Box>
+                    <Typography variant="h5" sx={{ 
+                      fontFamily: 'Poppins, sans-serif', 
+                      fontWeight: 700,
+                      fontSize: { xs: '1.25rem', sm: '1.5rem' },
+                      color: '#000000',
+                      mb: 0.5
+                    }}>
+                      Course Materials
+                    </Typography>
+                    <Typography variant="body2" sx={{ 
+                      fontFamily: 'DM Sans, sans-serif',
+                      color: '#666666',
+                      fontSize: '0.875rem'
+                    }}>
+                      Manage course materials and resources
+                    </Typography>
+                  </Box>
+                <Button
+                    variant="contained"
+                    startIcon={<PlusIcon className="h-4 w-4" />}
+                  onClick={() => router.push(`/lecturer/materials?course=${courseId}`)}
+                    sx={{
+                      ...BUTTON_STYLES.primary,
+                      fontFamily: 'DM Sans, sans-serif',
+                      fontWeight: 600,
+                      textTransform: 'none',
+                      px: 3,
+                      py: 1.5,
+                      borderRadius: 2,
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+                      '&:hover': {
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.25)',
+                        transform: 'translateY(-1px)'
+                      },
+                      transition: 'all 0.2s ease-in-out'
+                    }}
+                  >
+                  Manage Materials
+                </Button>
+                </Box>
+              
                 {courseMaterials.length === 0 ? (
                   <Box sx={{ 
-                    p: 4, 
+                    p: 6, 
                     textAlign: 'center',
                     border: '2px dashed #e5e5e5',
-                    borderRadius: 2,
-                    backgroundColor: '#f9f9f9'
+                    borderRadius: 3,
+                    backgroundColor: '#f9f9f9',
+                    transition: 'all 0.2s ease-in-out',
+                    '&:hover': {
+                      borderColor: '#000000',
+                      backgroundColor: '#f5f5f5'
+                    }
                   }}>
-                    <Typography variant="h6" sx={{ mb: 2, color: '#666' }}>
+                    <Box sx={{ 
+                      width: 64, 
+                      height: 64, 
+                      borderRadius: '50%', 
+                      backgroundColor: '#00000020', 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      justifyContent: 'center', 
+                      mx: 'auto', 
+                      mb: 3 
+                    }}>
+                      <DocumentTextIcon className="h-8 w-8" style={{ color: '#666666' }} />
+                    </Box>
+                    <Typography variant="h6" sx={{ 
+                      mb: 2, 
+                      color: '#000000',
+                      fontFamily: 'Poppins, sans-serif',
+                      fontWeight: 600
+                    }}>
                       No Materials
                     </Typography>
-                    <Typography variant="body2" sx={{ mb: 3, color: '#888' }}>
-                      No course materials have been uploaded yet.
+                    <Typography variant="body2" sx={{ 
+                      mb: 4, 
+                      color: '#666666',
+                      fontFamily: 'DM Sans, sans-serif',
+                      maxWidth: 400,
+                      mx: 'auto'
+                    }}>
+                      No materials have been uploaded for this course yet. Upload your first material to share resources with students.
                     </Typography>
                     <Button
                       variant="contained"
                       onClick={() => router.push(`/lecturer/materials?course=${courseId}`)}
-                      sx={{ 
-                        backgroundColor: 'hsl(var(--foreground))',
-                        color: 'hsl(var(--background))',
-                        '&:hover': { backgroundColor: 'hsl(var(--foreground) / 0.9)' }
+                      sx={{
+                        ...BUTTON_STYLES.primary,
+                        fontFamily: 'DM Sans, sans-serif',
+                        fontWeight: 600,
+                        textTransform: 'none',
+                        px: 4,
+                        py: 1.5,
+                        borderRadius: 2,
+                        boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+                        '&:hover': {
+                          boxShadow: '0 4px 12px rgba(0,0,0,0.25)',
+                          transform: 'translateY(-1px)'
+                        },
+                        transition: 'all 0.2s ease-in-out'
                       }}
                     >
-                      Upload Material
+                      Upload First Material
                     </Button>
                   </Box>
                 ) : (
-                  <Box sx={{ space: 2 }}>
-                    {courseMaterials.map((material: any) => (
-                      <Card key={material.id} sx={{ 
-                        border: '1px solid #e5e5e5',
-                        borderRadius: 2,
-                        mb: 2
-                      }}>
-                        <CardContent sx={{ p: 3 }}>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                            <DocumentTextIcon className="h-8 w-8 text-muted-foreground" />
-                            <Box sx={{ flex: 1 }}>
-                              <Typography variant="h6" sx={{ fontFamily: 'Poppins, sans-serif', fontWeight: 600, mb: 1 }}>
-                                {material.title}
-                              </Typography>
-                              <Typography variant="body2" sx={{ color: 'hsl(var(--muted-foreground))' }}>
-                                {material.description || 'No description available'}
-                              </Typography>
-                              <Typography variant="caption" sx={{ color: 'hsl(var(--muted-foreground))' }}>
-                                Uploaded on {formatDate(material.created_at)}
-                              </Typography>
-                            </Box>
-                            <Button
-                              variant="outlined"
-                              size="small"
-                              sx={{ 
-                                borderColor: '#000',
-                                color: 'hsl(var(--foreground))',
-                                '&:hover': { borderColor: '#000', backgroundColor: 'hsl(var(--muted))' }
-                              }}
-                            >
-                              Download
-                            </Button>
-                          </Box>
-                        </CardContent>
-                      </Card>
-                    ))}
-                  </Box>
+                  <DataTable
+                    title=""
+                    subtitle=""
+                    columns={materialColumns}
+                    data={courseMaterials}
+                    onRowClick={(material) => router.push(`/lecturer/materials/${material.id}`)}
+                  />
                 )}
               </Box>
             )}
           </Box>
         </CardContent>
       </Card>
-    </div>
+
+    </Box>
   )
 }

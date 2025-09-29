@@ -37,9 +37,10 @@ import {
   BookOpenIcon
 } from "@heroicons/react/24/outline"
 import { formatDate, formatNumber } from "@/lib/utils"
-import { useAttendance, useCourses, useAuth } from "@/lib/domains"
+import { useAttendance, useCourses, useAuth, useAcademicStructure } from "@/lib/domains"
 import { AttendanceRecord, Course } from "@/lib/types/shared"
 import { mapAttendanceStatus } from "@/lib/utils/statusMapping"
+import FilterBar from "@/components/admin/FilterBar"
 
 // Constants
 const CARD_SX = {
@@ -100,6 +101,7 @@ export default function StudentAttendancePage() {
     subscribeToAttendanceRecords,
     unsubscribeAll,
     fetchAttendanceSessions,
+    fetchStudentAttendanceSessions, // New section-based function
     fetchAttendanceRecords
   } = attendance
   
@@ -112,56 +114,119 @@ export default function StudentAttendancePage() {
   } = coursesHook
   
   const { state: authState } = auth
+  const academic = useAcademicStructure()
+  const { state: academicState } = academic
   
   // Create legacy state object for compatibility
   const state = {
     ...attendanceState,
     ...coursesState,
+    ...academicState,
     currentUser: authState.currentUser
   }
 
-  // Load data on component mount
+  // Load all data on component mount (same pattern as lecturer sessions page)
   useEffect(() => {
-    fetchCourses()
-    fetchEnrollments()
-    fetchAttendanceSessions()
-    fetchAttendanceRecords()
-  }, [fetchCourses, fetchEnrollments, fetchAttendanceSessions, fetchAttendanceRecords])
+    const fetchData = async () => {
+      try {
+        console.log('Student Attendance Page: Loading all data...')
+        await Promise.all([
+          auth.loadCurrentUser(), // Load the current user first
+          fetchCourses(),
+          coursesHook.fetchCourseAssignments(), // Load course assignments for course inheritance
+          academic.fetchSectionEnrollments(), // Use section enrollments instead of old enrollments
+          fetchAttendanceRecords()
+        ])
+        console.log('Student Attendance Page: Data loaded successfully')
+      } catch (error) {
+        console.error('Error loading student attendance page data:', error)
+      }
+    }
+    
+    fetchData()
+  }, [auth.loadCurrentUser, fetchCourses, coursesHook.fetchCourseAssignments, academic.fetchSectionEnrollments, fetchAttendanceRecords])
+
+  // Load section-based sessions after user is available
+  useEffect(() => {
+    if (authState.currentUser?.id) {
+      console.log('Loading student sessions for user:', authState.currentUser.id)
+      fetchStudentAttendanceSessions(authState.currentUser.id)
+    }
+  }, [authState.currentUser?.id, fetchStudentAttendanceSessions])
 
   const [selectedCourse, setSelectedCourse] = useState<string>("")
   const [statusTab, setStatusTab] = useState<"all" | "present" | "late" | "absent">("all")
   const [searchQuery, setSearchQuery] = useState<string>("")
 
-  // Get student's courses (based on authenticated user)
+  // Get student's courses (inherited from program/academic year/semester/year level)
   const courses = useMemo(() => {
     console.log('Student Attendance - State data:', {
       courses: state.courses.length,
-      enrollments: state.enrollments.length,
+      sectionEnrollments: state.sectionEnrollments.length,
+      courseAssignments: state.courseAssignments?.length || 0,
       attendanceSessions: state.attendanceSessions.length,
-      attendanceRecords: state.attendanceRecords.length
+      attendanceRecords: state.attendanceRecords.length,
+      currentUserId: state.currentUser?.id
     })
     
-    const filteredCourses = state.courses.filter(course => 
-      state.enrollments.some(enrollment => 
-        (!!state.currentUser?.id && enrollment.student_id === state.currentUser.id) && enrollment.course_id === course.id
-      )
+    // Get student's enrolled section
+    const studentSectionEnrollment = state.sectionEnrollments.find(
+      (enrollment: any) => enrollment.student_id === state.currentUser?.id
     )
     
-    console.log('Student Attendance - Filtered courses:', filteredCourses.length)
-    return filteredCourses
-  }, [state.courses, state.enrollments, state.currentUser?.id])
+    console.log('Student Attendance - Student section enrollment:', studentSectionEnrollment)
+    
+    if (!(studentSectionEnrollment as any)?.sections) {
+      console.log('Student Attendance - No section enrollment found')
+      return []
+    }
+    
+    const section = (studentSectionEnrollment as any).sections
+    console.log('Student Attendance - Student section details:', section)
+    
+    // Get course assignments for this student's program/academic year/semester/year level
+    const relevantCourseAssignments = state.courseAssignments?.filter((assignment: any) => 
+      assignment.program_id === section.program_id &&
+      assignment.academic_year_id === section.academic_year_id &&
+      assignment.semester_id === section.semester_id &&
+      assignment.year === section.year
+    ) || []
+    
+    console.log('Student Attendance - Relevant course assignments:', relevantCourseAssignments)
+    
+    // Get courses from these assignments
+    const studentCourses = relevantCourseAssignments
+      .map((assignment: any) => state.courses.find(course => course?.id === assignment.course_id))
+      .filter((course): course is Course => Boolean(course))
+    
+    console.log('Student Attendance - Student courses (inherited from program):', studentCourses.length)
+    console.log('Student Attendance - Student courses details:', studentCourses)
+    return studentCourses
+  }, [state.courses, state.sectionEnrollments, state.courseAssignments, state.currentUser?.id])
 
   // Get student's attendance records from shared data
   const attendanceRecords = useMemo(() => {
     const studentId = state.currentUser?.id
     const allRecords: any[] = []
     
-    // Get all sessions for student's courses
-    state.courses.forEach(course => {
-      const sessions = getAttendanceSessionsByCourse(course.id)
+    console.log('📊 Student attendance records calculation:', {
+      studentId,
+      coursesCount: courses.length,
+      sessionsCount: state.attendanceSessions.length,
+      recordsCount: state.attendanceRecords.length
+    })
+    
+    // Get all sessions for student's courses (these should already be filtered by section)
+    courses.forEach(course => {
+      if (course) {
+        const sessions = getAttendanceSessionsByCourse(course.id)
+        console.log(`📚 Course ${course.course_code} has ${sessions.length} sessions`)
+      
       sessions.forEach(session => {
         const records = getAttendanceRecordsBySession(session.id)
         const studentRecord = records.find(r => !!studentId && r.student_id === studentId)
+        
+        console.log(`🎯 Session ${session.session_name}: ${records.length} records, student record:`, !!studentRecord)
         
         // Only include sessions where student has an attendance record
         // This is correct behavior - students only see their own attendance history
@@ -176,15 +241,17 @@ export default function StudentAttendancePage() {
             endTime: session.end_time,
             status: studentRecord.status,
             checkInTime: studentRecord.check_in_time,
-            instructor: "Instructor", // Would need to get from lecturer data
+            instructor: session.lecturer_name || "Instructor",
             location: session.location
           })
         }
-      })
+        })
+      }
     })
     
+    console.log('📋 Final attendance records:', allRecords.length)
     return allRecords
-  }, [courses, getAttendanceSessionsByCourse, getAttendanceRecordsBySession, state.currentUser?.id])
+  }, [courses, getAttendanceSessionsByCourse, getAttendanceRecordsBySession, state.currentUser?.id, state.attendanceSessions, state.attendanceRecords])
 
   // Computed values
   const filteredRecords = useMemo(() => {
@@ -238,20 +305,22 @@ export default function StudentAttendancePage() {
     const courseStatsMap = new Map()
     
     state.courses.forEach(course => {
-      const courseRecords = attendanceRecords.filter(r => r.courseCode === course.course_code)
-      const present = courseRecords.filter(r => {
-        const mappedStatus = mapAttendanceStatus(r.status, 'student')
-        return mappedStatus === 'present' || mappedStatus === 'late'
-      }).length
-      const total = courseRecords.length
-      const rate = total > 0 ? (present / total) * 100 : 0
-      
-      courseStatsMap.set(course.course_code, {
-        courseName: course.course_name,
-        present,
-        total,
-        rate
-      })
+      if (course) {
+        const courseRecords = attendanceRecords.filter(r => r.courseCode === course!.course_code)
+        const present = courseRecords.filter(r => {
+          const mappedStatus = mapAttendanceStatus(r.status, 'student')
+          return mappedStatus === 'present' || mappedStatus === 'late'
+        }).length
+        const total = courseRecords.length
+        const rate = total > 0 ? (present / total) * 100 : 0
+        
+        courseStatsMap.set(course!.course_code, {
+          courseName: course!.course_name,
+          present,
+          total,
+          rate
+        })
+      }
     })
     
     return courseStatsMap
@@ -365,110 +434,57 @@ export default function StudentAttendancePage() {
         </MUICardContent>
       </MUICard>
 
-      {/* Search and Filter */}
-      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: '2fr 1fr' }, gap: 3 }}>
-        {/* Search */}
-        <MUICard sx={CARD_SX}>
-          <MUICardContent sx={{ p: { xs: 2, sm: 2.5, md: 3 } }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
-              <MagnifyingGlassIcon className="h-5 w-5 text-muted-foreground" />
-              <Typography variant="h6" sx={{ fontFamily: 'Poppins, sans-serif', fontWeight: 600 }}>
-                Search Records
-              </Typography>
-            </Box>
-            
-            <Box sx={{ position: 'relative' }}>
-              <TextField
-                fullWidth
-                placeholder="Search by session, course, or instructor..."
-                value={searchQuery}
-                onChange={handleSearchChange}
-                sx={INPUT_STYLES}
-                InputProps={{
-                  startAdornment: (
-                    <Box sx={{ mr: 1, display: 'flex', alignItems: 'center' }}>
-                      <MagnifyingGlassIcon className="h-4 w-4 text-muted-foreground" />
-                    </Box>
-                  ),
-                  endAdornment: searchQuery && (
-                    <IconButton
-                      onClick={handleClearSearch}
-                      size="small"
-                      sx={{ 
-                        position: 'absolute',
-                        right: 8,
-                        color: 'hsl(var(--muted-foreground))',
-                        '&:hover': { 
-                          color: 'hsl(var(--foreground))',
-                          backgroundColor: 'hsl(var(--muted))' 
-                        }
-                      }}
-                    >
-                      <XMarkIcon className="h-4 w-4" />
-                    </IconButton>
-                  )
-                }}
-              />
-            </Box>
-          </MUICardContent>
-        </MUICard>
+      {/* Filter Bar */}
+      <FilterBar
+        fields={[
+          {
+            type: 'text',
+            label: 'Search',
+            value: searchQuery,
+            onChange: setSearchQuery,
+            placeholder: 'Search by session, course, or instructor...',
+            span: 4
+          },
+          {
+            type: 'native-select',
+            label: 'Course',
+            value: selectedCourse,
+            onChange: setSelectedCourse,
+            options: [
+              { value: '', label: 'All Courses' },
+              ...courses.filter(course => course).map(course => ({
+                value: course!.course_code,
+                label: `${course!.course_code} - ${course!.course_name}`
+              }))
+            ],
+            span: 4
+          },
+          {
+            type: 'native-select',
+            label: 'Status',
+            value: statusTab,
+            onChange: (value) => setStatusTab(value as "all" | "present" | "late" | "absent"),
+            options: [
+              { value: 'all', label: `All (${attendanceRecords.length})` },
+              { value: 'present', label: `Present (${attendanceRecords.filter(r => mapAttendanceStatus(r.status, 'student') === 'present').length})` },
+              { value: 'late', label: `Late (${attendanceRecords.filter(r => mapAttendanceStatus(r.status, 'student') === 'late').length})` },
+              { value: 'absent', label: `Absent (${attendanceRecords.filter(r => mapAttendanceStatus(r.status, 'student') === 'absent').length})` }
+            ],
+            span: 3
+          },
+          {
+            type: 'clear-button',
+            label: 'Clear Filters',
+            onClick: () => {
+              setSearchQuery('')
+              setSelectedCourse('')
+              setStatusTab('all')
+            },
+            span: 1
+          }
+        ]}
+      />
 
-        {/* Course Filter */}
-        <MUICard sx={CARD_SX}>
-          <MUICardContent sx={{ p: { xs: 2, sm: 2.5, md: 3 } }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
-              <BookOpenIcon className="h-5 w-5 text-muted-foreground" />
-              <Typography variant="h6" sx={{ fontFamily: 'Poppins, sans-serif', fontWeight: 600 }}>
-                Filter Course
-              </Typography>
-            </Box>
-            
-            <FormControl fullWidth sx={INPUT_STYLES}>
-              <InputLabel>Select Course</InputLabel>
-              <Select
-                native
-                value={selectedCourse}
-                onChange={(e) => setSelectedCourse((e.target as HTMLSelectElement).value)}
-              >
-                <option value="">All Courses</option>
-                {state.courses.map(course => (
-                  <option key={course.id} value={course.course_code}>
-                    {course.course_code} - {course.course_name}
-                  </option>
-                ))}
-              </Select>
-            </FormControl>
-          </MUICardContent>
-        </MUICard>
-      </Box>
-
-      {/* Status Tabs */}
-      <MUICard sx={CARD_SX}>
-        <MUICardContent sx={{ p: 0 }}>
-          <Tabs 
-            value={statusTab} 
-            onChange={(e, newValue) => setStatusTab(newValue)}
-            variant="scrollable"
-            scrollButtons="auto"
-            sx={{
-              '& .MuiTabs-indicator': { backgroundColor: 'hsl(var(--foreground))' },
-              '& .MuiTab-root': {
-                color: 'hsl(var(--muted-foreground))',
-                fontFamily: 'Poppins, sans-serif',
-                fontWeight: 500,
-                textTransform: 'none',
-                '&.Mui-selected': { color: 'hsl(var(--foreground))', fontWeight: 600 },
-                '&:hover': { color: 'hsl(var(--foreground))' },
-              },
-            }}
-          >
-            <Tab label={`All (${filteredRecords.length})`} value="all" />
-            <Tab label={`Present (${filteredRecords.filter(r => mapAttendanceStatus(r.status, 'student') === 'present').length})`} value="present" />
-            <Tab label={`Late (${filteredRecords.filter(r => mapAttendanceStatus(r.status, 'student') === 'late').length})`} value="late" />
-            <Tab label={`Absent (${filteredRecords.filter(r => mapAttendanceStatus(r.status, 'student') === 'absent').length})`} value="absent" />
-          </Tabs>
-        </MUICardContent>
-      </MUICard>
 
       {/* Records Table */}
       <MUICard sx={CARD_SX}>

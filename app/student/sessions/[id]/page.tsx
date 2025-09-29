@@ -114,6 +114,7 @@ export default function StudentSessionDetailsPage() {
   const { 
     state: attendanceState,
     fetchAttendanceSessions,
+    fetchStudentAttendanceSessions,
     fetchAttendanceRecords,
     getAttendanceRecordsBySession
   } = attendance
@@ -139,16 +140,43 @@ export default function StudentSessionDetailsPage() {
   // Load required data and resolve session from store
   useEffect(() => {
     const load = async () => {
-      await Promise.all([
-        fetchCourses(),
-        fetchEnrollments(),
-        fetchAttendanceSessions(),
-        fetchAttendanceRecords()
-      ])
+      try {
+        setLoading(true)
+        console.log('🔄 Loading student session details for:', sessionId)
+        
+        // Load current user first
+        await auth.loadCurrentUser()
+        
+        // Wait for user to be loaded
+        await new Promise(resolve => setTimeout(resolve, 300))
+        
+        // Load all required data with user ID
+        await Promise.all([
+          fetchCourses(),
+          fetchEnrollments(),
+          // Use section-based session fetching for students
+          fetchStudentAttendanceSessions(authState.currentUser?.id || ''),
+          fetchAttendanceRecords()
+        ])
+        
+        // Wait for state to be updated
+        await new Promise(resolve => setTimeout(resolve, 500))
+        
+        console.log('📊 Student session data loaded:', {
+          currentUser: state.currentUser?.id,
+          sessionsCount: state.attendanceSessions?.length || 0
+        })
+      } catch (error) {
+        console.error('❌ Error loading student session data:', error)
+      } finally {
+        setLoading(false)
+      }
     }
-    load()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+    
+    if (sessionId) {
+      load()
+    }
+  }, [sessionId]) // Only depend on sessionId to prevent infinite loops
 
   // Build session view model from store
   useEffect(() => {

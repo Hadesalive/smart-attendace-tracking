@@ -1,6 +1,7 @@
 // Domain exports
 export * from './auth'
 export * from './courses'
+export * from './courses/useStudentCourses'
 export * from './attendance'
 export * from './academic'
 export * from './grades'

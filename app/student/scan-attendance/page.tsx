@@ -78,6 +78,7 @@ export default function StudentScanAttendancePage() {
         .select(`
           id,
           course_id,
+          section_id,
           session_name,
           session_date,
           start_time,
@@ -104,23 +105,38 @@ export default function StudentScanAttendancePage() {
 
       console.log('Course data:', { courseData, courseError })
       
-      // Check if user is enrolled in this course
+      // Check if user is enrolled in the section for this session
+      if (!dbSessionData.section_id) {
+        throw new Error('This session is not assigned to any section. Please contact your lecturer.')
+      }
+
       const { data: enrollment, error: enrollmentError } = await supabase
-        .from('enrollments')
-        .select('id')
+        .from('section_enrollments')
+        .select(`
+          id,
+          section_id,
+          status,
+          sections!inner(
+            id,
+            section_code,
+            program_id
+          )
+        `)
         .eq('student_id', authState.currentUser?.id)
-        .eq('course_id', dbSessionData.course_id)
+        .eq('section_id', dbSessionData.section_id)
+        .eq('status', 'active')
         .single()
 
-      console.log('Enrollment check:', { 
-        courseId: dbSessionData.course_id, 
+      console.log('Section enrollment check:', { 
+        courseId: dbSessionData.course_id,
+        sectionId: dbSessionData.section_id,
         userId: authState.currentUser?.id, 
         enrollment,
         enrollmentError
       })
       
       if (enrollmentError || !enrollment) {
-        throw new Error('You are not enrolled in this course')
+        throw new Error('You are not enrolled in this section or the session is not for your section')
       }
       
       // Mark attendance using Supabase

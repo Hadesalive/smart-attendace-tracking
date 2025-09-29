@@ -137,16 +137,30 @@ export default function AttendSessionPage() {
         throw new Error('You must be logged in to mark attendance. Please log in and try again.')
       }
 
-      // Check if user is enrolled in this course
+      // Check if user is enrolled in the section for this session
+      if (!session.section_id) {
+        throw new Error('This session is not assigned to any section. Please contact your lecturer.')
+      }
+
       const { data: enrollment, error: enrollmentError } = await supabase
-        .from('enrollments')
-        .select('id')
+        .from('section_enrollments')
+        .select(`
+          id,
+          section_id,
+          status,
+          sections!inner(
+            id,
+            section_code,
+            program_id
+          )
+        `)
         .eq('student_id', user.id)
-        .eq('course_id', session.course_id)
+        .eq('section_id', session.section_id)
+        .eq('status', 'active')
         .single()
 
       if (enrollmentError || !enrollment) {
-        throw new Error('You are not enrolled in this course')
+        throw new Error('You are not enrolled in this section or the session is not for your section')
       }
 
       // Check if attendance already marked

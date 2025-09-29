@@ -34,7 +34,7 @@ Deno.serve(async (req: Request) => {
     // 1. Check if the session is valid and active (triggering deployment)
     const { data: session, error: sessionError } = await supabase
       .from('attendance_sessions')
-      .select('id, session_date, start_time, end_time, course_id')
+      .select('id, session_date, start_time, end_time, course_id, section_id')
       .eq('id', session_id)
       .single()
 
@@ -50,16 +50,44 @@ Deno.serve(async (req: Request) => {
       throw new Error(`Attendance can only be marked within the session time. Current time: ${now.toISOString()}, Session start: ${startTime.toISOString()}, Session end: ${endTime.toISOString()}`)
     }
 
-    // 2. Check if the student is enrolled in the course for this session
+    // 2. Check if the student is enrolled in the section for this session
+    if (!session.section_id) {
+      throw new Error('This session is not assigned to any section. Please contact your lecturer.')
+    }
+
     const { data: enrollment, error: enrollmentError } = await supabase
-      .from('enrollments')
-      .select('id')
+      .from('section_enrollments')
+      .select(`
+        id,
+        section_id,
+        status,
+        sections!inner(
+          id,
+          section_code,
+          program_id
+        )
+      `)
       .eq('student_id', student_id)
-      .eq('course_id', session.course_id)
+      .eq('section_id', session.section_id)
+      .eq('status', 'active')
       .maybeSingle()
 
-    if (enrollmentError) throw new Error(`Enrollment check error: ${enrollmentError.message}`)
-    if (!enrollment) throw new Error('You are not enrolled in this course.')
+    if (enrollmentError) throw new Error(`Section enrollment check error: ${enrollmentError.message}`)
+    if (!enrollment) {
+      console.log('Section enrollment check failed:', {
+        student_id,
+        session_section_id: session.section_id,
+        course_id: session.course_id
+      })
+      throw new Error('You are not enrolled in this section or the session is not for your section.')
+    }
+
+    console.log('Section enrollment validated:', {
+      student_id,
+      section_id: enrollment.section_id,
+      section_code: enrollment.sections?.section_code,
+      status: enrollment.status
+    })
 
     // 3. Check if attendance has already been marked (prevent duplicates)
     const { data: existingAttendance, error: existingAttendanceError } = await supabase

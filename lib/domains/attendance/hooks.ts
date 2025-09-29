@@ -1,4 +1,4 @@
-"use client"
+  "use client"
 
 import { useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
@@ -13,17 +13,61 @@ export function useAttendance() {
     error: null
   })
 
-  const fetchAttendanceSessions = useCallback(async () => {
+  const fetchAttendanceSessions = useCallback(async (studentId?: string) => {
     try {
-      console.log('DataContext: Starting to fetch attendance sessions...')
+      console.log('DataContext: Starting to fetch attendance sessions...', { studentId })
       setState(prev => ({ ...prev, loading: true }))
-      const { data, error } = await supabase
+      
+      let query = supabase
         .from('attendance_sessions')
         .select(`
           *,
           courses!attendance_sessions_course_id_fkey(course_code, course_name),
-          users!attendance_sessions_lecturer_id_fkey(full_name)
+          users!attendance_sessions_lecturer_id_fkey(full_name),
+          sections!attendance_sessions_section_id_fkey(
+            id,
+            section_code,
+            program_id
+          )
         `)
+
+      // If studentId is provided, filter by student's section enrollment
+      if (studentId) {
+        console.log('DataContext: Filtering sessions by student section enrollment...')
+        
+        // First, get student's section enrollments
+        const { data: sectionEnrollments, error: enrollmentError } = await supabase
+          .from('section_enrollments')
+          .select(`
+            section_id,
+            sections!inner(
+              id,
+              section_code,
+              program_id
+            )
+          `)
+          .eq('student_id', studentId)
+          .eq('status', 'active')
+
+        if (enrollmentError) {
+          console.error('DataContext: Error fetching section enrollments:', enrollmentError)
+          throw new Error(`Failed to fetch section enrollments: ${enrollmentError.message}`)
+        }
+
+        const sectionIds = sectionEnrollments?.map(se => se.section_id) || []
+        console.log('DataContext: Student section enrollments:', { sectionIds, sectionEnrollments })
+
+        if (sectionIds.length === 0) {
+          console.log('DataContext: No active section enrollments found, returning empty sessions')
+          setState(prev => ({ ...prev, attendanceSessions: [], loading: false }))
+          return
+        }
+
+        // Filter sessions by student's enrolled sections
+        query = query.in('section_id', sectionIds)
+      }
+
+      const { data, error } = await query
         .order('session_date', { ascending: false })
         .order('start_time', { ascending: false })
 
@@ -53,6 +97,8 @@ export function useAttendance() {
           class_id: `class_${session.course_id}`, // Mock class_id
           class_name: session.courses?.course_name || `Class ${session.course_id}`,
           lecturer_name: session.users?.full_name || `Lecturer ${session.lecturer_id}`,
+          section_code: session.sections?.section_code || 'Unknown Section',
+          section_id: session.section_id,
           type: 'lecture' as const,
           capacity: 50, // Mock capacity
           enrolled: 25, // Mock enrolled count
@@ -73,6 +119,122 @@ export function useAttendance() {
         error: 'Failed to fetch attendance sessions', 
         loading: false 
       }))
+    }
+  }, [])
+
+  // New function specifically for fetching student sessions with section filtering
+  const fetchStudentAttendanceSessions = useCallback(async (studentId: string) => {
+    try {
+      console.log('DataContext: Fetching student attendance sessions for:', studentId)
+      setState(prev => ({ ...prev, loading: true }))
+      
+      // Get student's section enrollments first
+      const { data: sectionEnrollments, error: enrollmentError } = await supabase
+        .from('section_enrollments')
+        .select(`
+          section_id,
+          sections!inner(
+            id,
+            section_code,
+            program_id,
+            programs!inner(
+              id,
+              program_name
+            )
+          )
+        `)
+        .eq('student_id', studentId)
+        .eq('status', 'active')
+
+      if (enrollmentError) {
+        console.error('DataContext: Error fetching section enrollments:', enrollmentError)
+        throw new Error(`Failed to fetch section enrollments: ${enrollmentError.message}`)
+      }
+
+      const sectionIds = sectionEnrollments?.map(se => se.section_id) || []
+      console.log('DataContext: Student section enrollments:', { sectionIds, sectionEnrollments })
+
+      if (sectionIds.length === 0) {
+        console.log('DataContext: No active section enrollments found')
+        setState(prev => ({ ...prev, attendanceSessions: [], loading: false }))
+        return []
+      }
+
+      // Fetch sessions for student's enrolled sections
+      const { data, error } = await supabase
+        .from('attendance_sessions')
+        .select(`
+          *,
+          courses!attendance_sessions_course_id_fkey(
+            course_code, 
+            course_name,
+            department_id
+          ),
+          users!attendance_sessions_lecturer_id_fkey(full_name),
+          sections!attendance_sessions_section_id_fkey(
+            id,
+            section_code,
+            program_id,
+            programs!inner(
+              id,
+              program_name
+            )
+          )
+        `)
+        .in('section_id', sectionIds)
+        .order('session_date', { ascending: false })
+        .order('start_time', { ascending: false })
+
+      if (error) {
+        console.error('DataContext: Error fetching student sessions:', error)
+        throw error
+      }
+
+      // Transform sessions with section information
+      const transformedSessions = (data || []).map(session => {
+        const now = new Date()
+        const startTime = new Date(`${session.session_date}T${session.start_time}`)
+        const endTime = new Date(`${session.session_date}T${session.end_time}`)
+        
+        let timeBasedStatus: 'scheduled' | 'active' | 'completed' = 'scheduled'
+        if (now < startTime) {
+          timeBasedStatus = 'scheduled'
+        } else if (now >= startTime && now <= endTime) {
+          timeBasedStatus = 'active'
+        } else {
+          timeBasedStatus = 'completed'
+        }
+
+        return {
+          ...session,
+          course_code: session.courses?.course_code || `COURSE_${session.course_id}`,
+          course_name: session.courses?.course_name || `Course ${session.course_id}`,
+          class_id: `class_${session.course_id}`,
+          class_name: session.courses?.course_name || `Class ${session.course_id}`,
+          lecturer_name: session.users?.full_name || `Lecturer ${session.lecturer_id}`,
+          section_code: session.sections?.section_code || 'Unknown Section',
+          section_id: session.section_id,
+          program_name: session.sections?.programs?.program_name || 'Unknown Program',
+          type: 'lecture' as const,
+          capacity: 50, // Mock capacity
+          enrolled: 25, // Mock enrolled count
+          description: `Attendance session for ${session.courses?.course_name || 'course'} - ${session.sections?.section_code || 'section'}`,
+          status: timeBasedStatus,
+          is_active: timeBasedStatus === 'active'
+        }
+      })
+
+      console.log('DataContext: Student sessions transformed:', transformedSessions)
+      setState(prev => ({ ...prev, attendanceSessions: transformedSessions, loading: false }))
+      return transformedSessions
+    } catch (error) {
+      console.error('Error fetching student attendance sessions:', error)
+      setState(prev => ({ 
+        ...prev, 
+        error: 'Failed to fetch student attendance sessions', 
+        loading: false 
+      }))
+      return []
     }
   }, [])
 
@@ -455,6 +617,7 @@ export function useAttendance() {
   return {
     state,
     fetchAttendanceSessions,
+    fetchStudentAttendanceSessions, // New function for section-based student sessions
     fetchAttendanceRecords,
     createAttendanceSession,
     createAttendanceSessionSupabase,

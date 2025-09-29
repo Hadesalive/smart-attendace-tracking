@@ -1,8 +1,9 @@
 import React from "react"
 import { Button } from "@mui/material"
-import { PencilIcon, TrashIcon, ArrowDownTrayIcon, UserIcon, AcademicCapIcon, CalendarDaysIcon, ClockIcon } from "@heroicons/react/24/outline"
+import { PencilIcon, TrashIcon, UserIcon, AcademicCapIcon, CalendarDaysIcon, ClockIcon } from "@heroicons/react/24/outline"
 import { formatDate } from "@/lib/utils"
 import DetailHeader from "@/components/admin/DetailHeader"
+import { FONT_FAMILIES, FONT_WEIGHTS } from "@/lib/design/fonts"
 
 // ============================================================================
 // TYPES
@@ -27,7 +28,6 @@ interface User {
 interface UserHeaderProps {
   user: User
   onEdit?: () => void
-  onExport?: () => void
   onDelete?: () => void
 }
 
@@ -39,8 +39,9 @@ const BUTTON_STYLES = {
   primary: {
     backgroundColor: "#000",
     color: "#fff",
-    fontFamily: "DM Sans",
-    fontWeight: 500,
+    fontFamily: FONT_FAMILIES.secondary,
+    fontWeight: FONT_WEIGHTS.semibold,
+    fontSize: "0.875rem",
     textTransform: "none",
     borderRadius: "8px",
     px: 3,
@@ -54,8 +55,9 @@ const BUTTON_STYLES = {
   outlined: {
     borderColor: "#000",
     color: "#000",
-    fontFamily: "DM Sans",
-    fontWeight: 500,
+    fontFamily: FONT_FAMILIES.secondary,
+    fontWeight: FONT_WEIGHTS.semibold,
+    fontSize: "0.875rem",
     textTransform: "none",
     borderRadius: "8px",
     px: 3,
@@ -95,7 +97,7 @@ const getRoleIcon = (role: string) => {
 // COMPONENT
 // ============================================================================
 
-export default function UserHeader({ user, onEdit, onExport, onDelete }: UserHeaderProps) {
+export default function UserHeader({ user, onEdit, onDelete }: UserHeaderProps) {
   return (
     <DetailHeader
       title={user.name}
@@ -113,14 +115,6 @@ export default function UserHeader({ user, onEdit, onExport, onDelete }: UserHea
             onClick={onEdit}
           >
             Edit User
-          </Button>
-          <Button
-            variant="outlined"
-            startIcon={<ArrowDownTrayIcon className="h-4 w-4" />}
-            sx={BUTTON_STYLES.outlined}
-            onClick={onExport}
-          >
-            Export Data
           </Button>
           <Button
             variant="contained"

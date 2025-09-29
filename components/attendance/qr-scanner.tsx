@@ -18,11 +18,20 @@ export default function QrScannerComponent({ onScanSuccess }: QrScannerComponent
 
     try {
       const url = new URL(result)
-      const sessionId = url.searchParams.get("session_id")
+      
+      // Extract session ID from URL path (format: /attend/[sessionId])
+      const pathParts = url.pathname.split('/').filter(part => part.length > 0)
+      const sessionId = pathParts[pathParts.length - 1] // Last part of path
 
-      if (!sessionId) {
-        throw new Error("Invalid QR code. Session ID not found.")
+      if (!sessionId || sessionId === 'attend') {
+        throw new Error("Invalid QR code. Session ID not found in URL path.")
       }
+
+      console.log('QR Code scanned:', {
+        fullUrl: result,
+        pathname: url.pathname,
+        extractedSessionId: sessionId
+      })
 
       const { data: userData, error: userError } = await supabase.auth.getUser()
       if (userError || !userData.user) {

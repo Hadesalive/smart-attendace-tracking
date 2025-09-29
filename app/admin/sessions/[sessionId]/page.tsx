@@ -227,22 +227,34 @@ export default function SessionDetailsPage() {
         setLoading(true)
         setError(null)
         
+        console.log('🔄 Loading admin session details for:', sessionId)
+        
         await Promise.all([
           attendance.fetchAttendanceSessions(),
           attendance.fetchAttendanceRecords(),
           courses.fetchCourses(),
           academic.fetchStudentProfiles()
         ])
+        
+        // Wait for state to be updated
+        await new Promise(resolve => setTimeout(resolve, 500))
+        
+        console.log('📊 Admin session data loaded:', {
+          sessionsCount: state.attendanceSessions?.length || 0,
+          recordsCount: state.attendanceRecords?.length || 0
+        })
       } catch (error) {
-        console.error('Error fetching session data:', error)
+        console.error('❌ Error fetching session data:', error)
         setError('Failed to load session data. Please try again.')
       } finally {
         setLoading(false)
       }
     }
     
-    fetchData()
-  }, [])
+    if (sessionId) {
+      fetchData()
+    }
+  }, [sessionId]) // Only depend on sessionId to prevent infinite loops
 
   // Get session data from context
   const sessionData = useMemo(() => {

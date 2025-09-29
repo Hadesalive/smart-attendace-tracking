@@ -64,6 +64,7 @@ interface EditUserFormProps {
   academicYears?: any[]
   semesters?: any[]
   sections?: any[]
+  profileData?: any // Role-specific profile data
 }
 
 export default function EditUserForm({
@@ -75,7 +76,8 @@ export default function EditUserForm({
   programs = [],
   academicYears = [],
   semesters = [],
-  sections = []
+  sections = [],
+  profileData = null
 }: EditUserFormProps) {
   const [formData, setFormData] = useState<Partial<User & StudentFields & LecturerFields & AdminFields>>({
     name: '',
@@ -114,7 +116,7 @@ export default function EditUserForm({
   // Initialize form data when user prop changes
   useEffect(() => {
     if (user && open) {
-      setFormData({
+      const initialData: Partial<User & StudentFields & LecturerFields & AdminFields> = {
         name: user.name || '',
         email: user.email || '',
         role: user.role || 'student',
@@ -122,10 +124,46 @@ export default function EditUserForm({
         phone: user.phone || '',
         department: user.department || '',
         bio: user.bio || ''
-      })
+      }
+
+      // Add role-specific data if available
+      if (profileData) {
+        if (user.role === 'student') {
+          Object.assign(initialData, {
+            student_id: profileData.studentId || '',
+            program_id: profileData.program_id || '',
+            academic_year_id: profileData.academic_year_id || '',
+            semester_id: profileData.semester_id || '',
+            section_id: profileData.section_id || '',
+            year_level: profileData.year || 1,
+            gpa: profileData.gpa || 0,
+            enrollment_date: profileData.enrollment_date || '',
+            graduation_date: profileData.graduation_date || ''
+          })
+        } else if (user.role === 'lecturer') {
+          Object.assign(initialData, {
+            employee_id: profileData.employee_id || '',
+            department_id: profileData.department_id || '',
+            specialization: profileData.specialization || '',
+            qualification: profileData.qualification || '',
+            experience_years: profileData.experience_years || 0,
+            position: profileData.position || '',
+            hire_date: profileData.hire_date || '',
+            research_interests: profileData.research_interests || ''
+          })
+        } else if (user.role === 'admin') {
+          Object.assign(initialData, {
+            employee_id: profileData.employee_id || '',
+            department_id: profileData.department_id || '',
+            access_level: profileData.access_level || 'basic'
+          })
+        }
+      }
+
+      setFormData(initialData)
     }
     setErrors({})
-  }, [user, open])
+  }, [user, open, profileData])
 
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {

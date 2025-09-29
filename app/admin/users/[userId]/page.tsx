@@ -14,7 +14,6 @@ import { useAuth, useAcademicStructure, useCourses, useAttendance } from "@/lib/
 import DetailTabs from "@/components/admin/DetailTabs"
 import ErrorAlert from "@/components/admin/ErrorAlert"          
 import UserHeader from "@/components/admin/user-tabs/UserHeader"
-import UserInfo from "@/components/admin/user-tabs/UserInfo"
 import StudentTabs from "@/components/admin/user-tabs/StudentTabs"
 import LecturerTabs from "@/components/admin/user-tabs/LecturerTabs"
 import AdminTabs from "@/components/admin/user-tabs/AdminTabs"
@@ -407,9 +406,9 @@ export default function UserDetailsPage() {
           status: ar.status as 'present' | 'absent' | 'late'
         }))
       }
-        } else if (userRole === 'lecturer') {
-          // Get lecturer profile
-          const lecturerProfile = state.lecturerProfiles.find(lp => lp.user_id === userData.id)
+    } else if (userRole === 'lecturer') {
+      // Get lecturer profile
+      const lecturerProfile = state.lecturerProfiles.find(lp => lp.user_id === userData.id)
           
           // Get lecturer assignments (from lecturer_assignments table)
           const lecturerAssignments = (state.lecturerAssignments as any[])?.filter(la => 
@@ -426,11 +425,11 @@ export default function UserDetailsPage() {
             sectionEnrollments: state.sectionEnrollments?.length || 0,
             allSectionEnrollments: state.sectionEnrollments
           })
-
-          // Get lecturer sessions
-          const lecturerSessions = state.attendanceSessions.filter(session => 
-            session.lecturer_id === userData.id
-          )
+      
+      // Get lecturer sessions
+      const lecturerSessions = state.attendanceSessions.filter(session => 
+        session.lecturer_id === userData.id
+      )
 
           // Get lecturer courses from lecturer assignments
           const lecturerCourses = lecturerAssignments.map(assignment => {
@@ -440,10 +439,10 @@ export default function UserDetailsPage() {
             const academicYear = state.academicYears.find(ay => ay.id === assignment.academic_year_id)
             const program = state.programs.find(p => p.id === assignment.program_id)
             
-            return {
-              id: course?.id || '',
+        return {
+          id: course?.id || '',
               name: course?.course_name?.trim() || 'Unknown Course',
-              code: course?.course_code || 'N/A',
+          code: course?.course_code || 'N/A',
               credits: course?.credits || 0,
               students: 0, // Will be calculated below
               status: 'active' as 'active' | 'completed' | 'upcoming',
@@ -561,7 +560,7 @@ export default function UserDetailsPage() {
               const studentDetails = sectionStudents.map(student => {
                 const user = state.users.find(u => u.id === student.user_id)
                 const section = state.sections.find(s => s.id === student.section_id)
-                return {
+      return {
                   id: student.user_id,
                   name: user?.full_name || 'Unknown Student',
                   email: user?.email || 'No email',
@@ -638,8 +637,8 @@ export default function UserDetailsPage() {
 
       // Get upcoming sessions
       const upcomingSessions = lecturerSessions
-        .filter(session => new Date(session.session_date) > new Date())
-        .slice(0, 5)
+          .filter(session => new Date(session.session_date) > new Date())
+          .slice(0, 5)
         .map(session => {
           const course = state.courses.find(c => c.id === session.course_id)
           return {
@@ -970,13 +969,18 @@ export default function UserDetailsPage() {
     URL.revokeObjectURL(url)
   }
 
-  const handleDeleteUser = () => {
+  const handleDeleteUser = async () => {
     if (!user) return
     
     if (confirm(`Are you sure you want to delete user "${user.name}"? This action cannot be undone.`)) {
-      // Implement delete functionality
-      console.log('Delete user:', user.id)
-      // You can add actual delete logic here
+      try {
+        await auth.deleteUser(user.id)
+        // Redirect to users list after successful deletion
+        router.push('/admin/users')
+      } catch (error) {
+        console.error('Error deleting user:', error)
+        setError('Failed to delete user. Please try again.')
+      }
     }
   }
 
@@ -985,7 +989,6 @@ export default function UserDetailsPage() {
       <UserHeader 
         user={user} 
         onEdit={handleEditUser}
-        onExport={handleExportUser}
         onDelete={handleDeleteUser}
       />
       
@@ -1019,6 +1022,7 @@ export default function UserDetailsPage() {
         academicYears={state.academicYears || []}
         semesters={state.semesters || []}
         sections={state.sections || []}
+        profileData={roleSpecificData}
       />
     </Box>
   )

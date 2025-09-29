@@ -37,7 +37,7 @@ export function useCourses() {
       
       setState(prev => ({ ...prev, courses: transformedCourses, loading: false }))
     } catch (error) {
-      console.error('❌ Error fetching courses:', error)
+      console.error('Error fetching courses:', error)
       setState(prev => ({ 
         ...prev, 
         error: 'Failed to fetch courses', 

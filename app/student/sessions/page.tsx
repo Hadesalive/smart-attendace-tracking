@@ -32,10 +32,11 @@ import {
   ChartBarIcon
 } from "@heroicons/react/24/outline"
 import { formatDate, formatNumber } from "@/lib/utils"
-import { useAttendance, useCourses, useAuth } from "@/lib/domains"
+import { useAttendance, useCourses, useAuth, useAcademicStructure } from "@/lib/domains"
 import { useMockData } from "@/lib/hooks/useMockData"
 import { AttendanceSession, Course } from "@/lib/types/shared"
 import { mapSessionStatus } from "@/lib/utils/statusMapping"
+import FilterBar from "@/components/admin/FilterBar"
 
 // ============================================================================
 // CONSTANTS
@@ -129,6 +130,7 @@ export default function StudentSessionsPage() {
     getAttendanceSessionsByCourse,
     getAttendanceRecordsBySession,
     fetchAttendanceSessions,
+    fetchStudentAttendanceSessions, // New section-based function
     fetchAttendanceRecords
   } = attendance
   
@@ -140,11 +142,14 @@ export default function StudentSessionsPage() {
   } = coursesHook
   
   const { state: authState } = auth
+  const academic = useAcademicStructure()
+  const { state: academicState } = academic
   
   // Create legacy state object for compatibility
   const state = {
     ...attendanceState,
     ...coursesState,
+    ...academicState,
     currentUser: authState.currentUser
   }
   const { isInitialized } = useMockData()
@@ -162,49 +167,104 @@ export default function StudentSessionsPage() {
   // EFFECTS
   // ============================================================================
 
-  // Load data on component mount
+  // Load all data on component mount (same pattern as lecturer sessions page)
   React.useEffect(() => {
-    fetchCourses()
-    fetchEnrollments()
-    fetchAttendanceSessions()
-    fetchAttendanceRecords()
-  }, [fetchCourses, fetchEnrollments, fetchAttendanceSessions, fetchAttendanceRecords])
+    const fetchData = async () => {
+      try {
+        console.log('Student Sessions Page: Loading all data...')
+        await Promise.all([
+          auth.loadCurrentUser(), // Load the current user first
+          fetchCourses(),
+          coursesHook.fetchCourseAssignments(), // Load course assignments for course inheritance
+          academic.fetchSectionEnrollments(), // Use section enrollments instead of old enrollments
+          fetchAttendanceRecords()
+        ])
+        console.log('Student Sessions Page: Data loaded successfully')
+      } catch (error) {
+        console.error('Error loading student sessions page data:', error)
+      }
+    }
+    
+    fetchData()
+  }, [auth.loadCurrentUser, fetchCourses, coursesHook.fetchCourseAssignments, academic.fetchSectionEnrollments, fetchAttendanceRecords])
+
+  // Load section-based sessions after user is available
+  React.useEffect(() => {
+    if (authState.currentUser?.id) {
+      console.log('Loading student sessions for user:', authState.currentUser.id)
+      fetchStudentAttendanceSessions(authState.currentUser.id)
+    }
+  }, [authState.currentUser?.id, fetchStudentAttendanceSessions])
 
   // ============================================================================
   // COMPUTED DATA
   // ============================================================================
 
-  // Get student's courses (based on authenticated user)
+  // Get student's courses (inherited from program/academic year/semester/year level)
   const courses = useMemo(() => {
     console.log('Student Sessions - State data:', {
       courses: state.courses.length,
-      enrollments: state.enrollments.length,
-      attendanceSessions: state.attendanceSessions.length
+      sectionEnrollments: state.sectionEnrollments.length,
+      courseAssignments: state.courseAssignments?.length || 0,
+      attendanceSessions: state.attendanceSessions.length,
+      currentUserId: state.currentUser?.id
     })
     
-    const filteredCourses = state.courses.filter(course => 
-      state.enrollments.some(enrollment => 
-        (!!state.currentUser?.id && enrollment.student_id === state.currentUser.id) && enrollment.course_id === course.id
-      )
+    // Get student's enrolled section
+    const studentSectionEnrollment = state.sectionEnrollments.find(
+      (enrollment: any) => enrollment.student_id === state.currentUser?.id
     )
     
-    console.log('Student Sessions - Filtered courses:', filteredCourses.length)
-    return filteredCourses
-  }, [state.courses, state.enrollments, state.currentUser?.id])
+    console.log('Student Sessions - Student section enrollment:', studentSectionEnrollment)
+    
+    if (!(studentSectionEnrollment as any)?.sections) {
+      console.log('Student Sessions - No section enrollment found')
+      return []
+    }
+    
+    const section = (studentSectionEnrollment as any).sections
+    console.log('Student Sessions - Student section details:', section)
+    
+    // Get course assignments for this student's program/academic year/semester/year level
+    const relevantCourseAssignments = state.courseAssignments?.filter((assignment: any) => 
+      assignment.program_id === section.program_id &&
+      assignment.academic_year_id === section.academic_year_id &&
+      assignment.semester_id === section.semester_id &&
+      assignment.year === section.year
+    ) || []
+    
+    console.log('Student Sessions - Relevant course assignments:', relevantCourseAssignments)
+    
+    // Get courses from these assignments
+    const studentCourses = relevantCourseAssignments
+      .map((assignment: any) => state.courses.find(course => course?.id === assignment.course_id))
+      .filter((course): course is Course => Boolean(course))
+    
+    console.log('Student Sessions - Student courses (inherited from program):', studentCourses.length)
+    console.log('Student Sessions - Student courses details:', studentCourses)
+    return studentCourses
+  }, [state.courses, state.sectionEnrollments, state.courseAssignments, state.currentUser?.id])
 
   // Get student's sessions from shared data
   const sessions = useMemo(() => {
     const allSessions: AttendanceSession[] = []
     
-    courses.forEach(course => {
-      const courseSessions = getAttendanceSessionsByCourse(course.id)
-      console.log(`Student Sessions - Course ${course.course_code} sessions:`, courseSessions.length)
-      allSessions.push(...courseSessions)
+    console.log('📊 Student sessions calculation:', {
+      coursesCount: courses.length,
+      totalSessionsInState: state.attendanceSessions.length
     })
     
-    console.log('Student Sessions - Total sessions:', allSessions.length)
+    courses.forEach(course => {
+      if (course) {
+        const courseSessions = getAttendanceSessionsByCourse(course.id)
+        console.log(`📚 Course ${course.course_code} has ${courseSessions.length} sessions`)
+        allSessions.push(...courseSessions)
+      }
+    })
+    
+    console.log('📋 Final student sessions:', allSessions.length)
     return allSessions
-  }, [courses, getAttendanceSessionsByCourse])
+  }, [courses, getAttendanceSessionsByCourse, state.attendanceSessions])
 
   // ============================================================================
   // COMPUTED VALUES
@@ -435,156 +495,60 @@ export default function StudentSessionsPage() {
         <StatCard title="Attendance Rate" value={`${Math.round(stats.attendanceRate)}%`} icon={ChartBarIcon} color="#000000" change="Overall" />
       </Box>
 
-      {/* Search Section */}
-      <MUICard sx={CARD_SX}>
-        <MUICardContent sx={{ p: { xs: 2, sm: 2.5, md: 3 } }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
-            <MagnifyingGlassIcon className="h-5 w-5 text-muted-foreground" />
-            <Typography variant="h6" sx={{ fontFamily: 'Poppins, sans-serif', fontWeight: 600, color: 'hsl(var(--card-foreground))' }}>
-              Search Sessions
-            </Typography>
-          </Box>
-          
-          <Box sx={{ position: 'relative' }}>
-            <TextField
-              fullWidth
-              placeholder="Search by title, course, or instructor..."
-              value={searchQuery}
-              onChange={handleSearchChange}
-              sx={{
-                ...INPUT_STYLES,
-                '& .MuiOutlinedInput-root': {
-                  ...INPUT_STYLES['& .MuiOutlinedInput-root'],
-                  pr: searchQuery ? 5 : 1,
+      {/* Filter Bar */}
+      <FilterBar
+        fields={[
+          {
+            type: 'text',
+            label: 'Search',
+            value: searchQuery,
+            onChange: setSearchQuery,
+            placeholder: 'Search by title, course, or instructor...',
+            span: 4
+          },
+          {
+            type: 'native-select',
+            label: 'Course',
+            value: selectedCourse,
+            onChange: setSelectedCourse,
+            options: [
+              { value: '', label: `All Courses (${sessions.length} sessions)` },
+              ...courses.filter(course => course).map(course => {
+                const courseSessions = sessions.filter(s => s.course_code === course!.course_code)
+                return {
+                  value: course!.course_code,
+                  label: `${course!.course_code} • ${course!.course_name} (${courseSessions.length} sessions)`
                 }
-              }}
-              InputProps={{
-                startAdornment: (
-                  <Box sx={{ mr: 1, display: 'flex', alignItems: 'center' }}>
-                    <MagnifyingGlassIcon className="h-4 w-4 text-muted-foreground" />
-                  </Box>
-                ),
-                endAdornment: searchQuery && (
-                  <IconButton
-                    onClick={handleClearSearch}
-                    size="small"
-                    sx={{ 
-                      position: 'absolute',
-                      right: 8,
-                      color: 'hsl(var(--muted-foreground))',
-                      '&:hover': { 
-                        color: 'hsl(var(--foreground))',
-                        backgroundColor: 'hsl(var(--muted))' 
-                      }
-                    }}
-                  >
-                    <XMarkIcon className="h-4 w-4" />
-                  </IconButton>
-                )
-              }}
-            />
-            {searchQuery && (
-              <Typography variant="body2" sx={{ 
-                mt: 1, 
-                color: 'hsl(var(--muted-foreground))', 
-                fontSize: '0.875rem',
-                fontFamily: 'DM Sans, sans-serif'
-              }}>
-                Found {filteredSessions.length} session{filteredSessions.length !== 1 ? 's' : ''} matching "{searchQuery}"
-              </Typography>
-            )}
-          </Box>
-        </MUICardContent>
-      </MUICard>
+              })
+            ],
+            span: 4
+          },
+          {
+            type: 'native-select',
+            label: 'Status',
+            value: statusTab,
+            onChange: (value) => setStatusTab(value as "all" | "upcoming" | "active" | "completed"),
+            options: [
+              { value: 'all', label: `All (${sessions.length})` },
+              { value: 'upcoming', label: `Upcoming (${sessions.filter(s => mapSessionStatus(s.status, 'student') === 'upcoming').length})` },
+              { value: 'active', label: `Active (${sessions.filter(s => mapSessionStatus(s.status, 'student') === 'active').length})` },
+              { value: 'completed', label: `Completed (${sessions.filter(s => mapSessionStatus(s.status, 'student') === 'completed').length})` }
+            ],
+            span: 3
+          },
+          {
+            type: 'clear-button',
+            label: 'Clear Filters',
+            onClick: () => {
+              setSearchQuery('')
+              setSelectedCourse('')
+              setStatusTab('all')
+            },
+            span: 1
+          }
+        ]}
+      />
 
-      {/* Course Filter Section */}
-      <MUICard sx={CARD_SX}>
-        <MUICardContent sx={{ p: { xs: 2, sm: 2.5, md: 3 } }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
-            <BookOpenIcon className="h-5 w-5 text-muted-foreground" />
-            <Typography variant="h6" sx={{ fontFamily: 'Poppins, sans-serif', fontWeight: 600, color: 'hsl(var(--card-foreground))' }}>
-              Filter by Course
-            </Typography>
-          </Box>
-          
-          <Box sx={{ 
-            display: 'flex', 
-            flexDirection: { xs: 'column', sm: 'row' }, 
-            gap: { xs: 2, sm: 3 }, 
-            alignItems: { xs: 'stretch', sm: 'center' } 
-          }}>
-            <FormControl sx={{ 
-              minWidth: { xs: '100%', sm: 300 },
-              ...INPUT_STYLES
-            }}>
-              <InputLabel>Select Course</InputLabel>
-              <Select
-                native
-                value={selectedCourse}
-                onChange={(e) => setSelectedCourse((e.target as HTMLSelectElement).value)}
-              >
-                <option value="">All Courses ({sessions.length} sessions)</option>
-                {courses.map(course => {
-                  const courseSessions = sessions.filter(s => s.course_code === course.course_code)
-                  return (
-                    <option key={course.id} value={course.course_code}>
-                      {course.course_code} • {course.course_name} ({courseSessions.length} sessions)
-                    </option>
-                  )
-                })}
-              </Select>
-            </FormControl>
-            
-            {selectedCourse && (
-              <MUIButton 
-                size="small" 
-                onClick={() => setSelectedCourse("")}
-                sx={{ 
-                  color: 'hsl(var(--muted-foreground))',
-                  textTransform: 'none',
-                  fontSize: '0.875rem',
-                  minWidth: 'auto',
-                  px: 2,
-                  '&:hover': { backgroundColor: 'hsl(var(--muted))' }
-                }}
-              >
-                Clear Filter
-              </MUIButton>
-            )}
-          </Box>
-        </MUICardContent>
-      </MUICard>
-
-      {/* Status Tabs */}
-      <MUICard sx={CARD_SX}>
-        <MUICardContent sx={{ p: 0 }}>
-          <Tabs 
-            value={statusTab} 
-            onChange={(e, newValue) => setStatusTab(newValue)}
-            variant="scrollable"
-            scrollButtons="auto"
-            sx={{
-              '& .MuiTabs-indicator': { backgroundColor: 'hsl(var(--foreground))' },
-              '& .MuiTab-root': {
-                color: 'hsl(var(--muted-foreground))',
-                fontFamily: 'Poppins, sans-serif',
-                fontWeight: 500,
-                textTransform: 'none',
-                fontSize: { xs: '0.75rem', sm: '0.875rem' },
-                minHeight: { xs: 40, sm: 48 },
-                px: { xs: 1, sm: 2 },
-                '&.Mui-selected': { color: 'hsl(var(--foreground))', fontWeight: 600 },
-                '&:hover': { color: 'hsl(var(--foreground))' },
-              },
-            }}
-          >
-            <Tab label={`All (${filteredSessions.length})`} value="all" />
-            <Tab label={`Upcoming (${filteredSessions.filter(s => mapSessionStatus(s.status, 'student') === 'upcoming').length})`} value="upcoming" />
-            <Tab label={`Active (${filteredSessions.filter(s => mapSessionStatus(s.status, 'student') === 'active').length})`} value="active" />
-            <Tab label={`Completed (${filteredSessions.filter(s => mapSessionStatus(s.status, 'student') === 'completed').length})`} value="completed" />
-          </Tabs>
-        </MUICardContent>
-      </MUICard>
 
       {/* Sessions List */}
       <div className="space-y-4">

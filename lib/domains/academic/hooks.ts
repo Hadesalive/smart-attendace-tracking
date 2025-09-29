@@ -45,7 +45,7 @@ export function useAcademicStructure() {
       if (error) throw error
       setState(prev => ({ ...prev, academicYears: data || [], loading: false }))
     } catch (error) {
-      console.error('Error fetching academic years:', error)
+      console.error('❌ Error fetching academic years:', error)
       setState(prev => ({ 
         ...prev, 
         error: 'Failed to fetch academic years', 
@@ -139,7 +139,7 @@ export function useAcademicStructure() {
       if (error) throw error
       setState(prev => ({ ...prev, semesters: data || [], loading: false }))
     } catch (error) {
-      console.error('Error fetching semesters:', error)
+      console.error('❌ Error fetching semesters:', error)
       setState(prev => ({ 
         ...prev, 
         error: 'Failed to fetch semesters', 
@@ -210,7 +210,7 @@ export function useAcademicStructure() {
       if (error) throw error
       setState(prev => ({ ...prev, departments: data || [], loading: false }))
     } catch (error) {
-      console.error('Error fetching departments:', error)
+      console.error('❌ Error fetching departments:', error)
       setState(prev => ({ 
         ...prev, 
         error: 'Failed to fetch departments', 
@@ -233,19 +233,11 @@ export function useAcademicStructure() {
       }
       formData.append('is_active', data.is_active ? 'true' : 'false')
 
-      console.log('Creating department with data:', {
-        department_code: data.department_code,
-        department_name: data.department_name,
-        head_id: data.head_id,
-        description: data.description,
-        is_active: data.is_active
-      })
 
       // Import and call server action
       const { createDepartment: serverCreateDepartment } = await import('./actions')
       const result = await serverCreateDepartment({ message: '' }, formData)
       
-      console.log('Server action result:', result)
       
       if (result.type === 'error') {
         throw new Error(result.message)
@@ -477,13 +469,11 @@ export function useAcademicStructure() {
       formData.append('description', data.description || '')
       formData.append('is_active', data.is_active ? 'true' : 'false')
 
-      console.log('Creating section with data:', data)
 
       // Import and call server action
       const { createSection: serverCreateSection } = await import('./actions')
       const result = await serverCreateSection({ message: '' }, formData)
       
-      console.log('Server action result:', result)
       
       if (result.type === 'error') {
         throw new Error(result.message)
@@ -512,13 +502,11 @@ export function useAcademicStructure() {
       formData.append('description', data.description || '')
       formData.append('is_active', data.is_active ? 'true' : 'false')
 
-      console.log('Updating section with data:', data)
 
       // Import and call server action
       const { updateSection: serverUpdateSection } = await import('./actions')
       const result = await serverUpdateSection(id, { message: '' }, formData)
       
-      console.log('Server action result:', result)
       
       if (result.type === 'error') {
         throw new Error(result.message)
@@ -552,7 +540,6 @@ export function useAcademicStructure() {
   const fetchStudentProfiles = useCallback(async () => {
     try {
       setState(prev => ({ ...prev, loading: true }))
-      console.log('🔍 Fetching student profiles...')
       const { data, error } = await supabase
         .from('student_profiles')
         .select(`
@@ -575,7 +562,6 @@ export function useAcademicStructure() {
         throw error
       }
       
-      console.log('✅ Student profiles fetched successfully:', data)
       setState(prev => ({ ...prev, studentProfiles: data || [], loading: false }))
     } catch (error) {
       console.error('Error fetching student profiles:', error)
@@ -594,7 +580,7 @@ export function useAcademicStructure() {
         .from('lecturer_profiles')
         .select(`
           *,
-          users!lecturer_profiles_user_id_fkey(full_name, email),
+          users!lecturer_profiles_user_id_fkey(full_name, email, role),
           departments!lecturer_profiles_department_id_fkey(department_code, department_name)
         `)
         .order('employee_id', { ascending: true })
@@ -692,15 +678,9 @@ export function useAcademicStructure() {
 
       if (error) throw error
       
-      console.log('📊 Raw section enrollments data from database:', data)
-      console.log('📊 Number of enrollments:', data?.length || 0)
       
       // Transform the data to include joined information
       const transformedData = (data || []).map((enrollment: any) => {
-        // Debug the specific ID fields
-        console.log('🔍 Program ID:', enrollment.sections?.programs?.id)
-        console.log('🔍 Semester ID:', enrollment.sections?.semesters?.id)
-        console.log('🔍 Academic Year ID:', enrollment.sections?.academic_years?.id)
         
         return {
           ...enrollment,
@@ -719,11 +699,7 @@ export function useAcademicStructure() {
         }
       })
       
-      console.log('📊 Transformed section enrollments data:', transformedData)
-      console.log('📊 Number of transformed enrollments:', transformedData.length)
-      
       setState(prev => ({ ...prev, sectionEnrollments: transformedData, loading: false }))
-      console.log('✅ Section enrollments state updated successfully')
     } catch (error) {
       console.error('Error fetching section enrollments:', error)
       setState(prev => ({ 

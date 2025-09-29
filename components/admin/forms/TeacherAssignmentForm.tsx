@@ -159,15 +159,23 @@ export default function TeacherAssignmentForm({
     section.semester_id === formData.semester_id
   )
 
-  // Filter lecturers by role
-  const availableLecturers = lecturers.filter(lecturer => lecturer.role === 'lecturer')
+  // Filter lecturers by role (check both direct role and joined users.role)
+  // If lecturers have users data joined, use that; otherwise check direct role
+  const availableLecturers = lecturers.filter(lecturer => {
+    // If lecturer has users data joined, check users.role
+    if (lecturer.users) {
+      return lecturer.users.role === 'lecturer'
+    }
+    // Otherwise check direct role field
+    return lecturer.role === 'lecturer'
+  })
 
   // Transform data for SearchableSelect
   const lecturerOptions = useMemo(() => {
     return availableLecturers.map(lecturer => ({
-      id: lecturer.id,
-      label: lecturer.full_name,
-      subtitle: lecturer.email,
+      id: lecturer.user_id || lecturer.id,
+      label: lecturer.users?.full_name || lecturer.full_name || 'Unknown Lecturer',
+      subtitle: lecturer.users?.email || lecturer.email || 'No email',
       group: 'Lecturers'
     }))
   }, [availableLecturers])

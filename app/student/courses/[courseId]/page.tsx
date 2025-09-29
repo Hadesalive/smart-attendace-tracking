@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect, useMemo } from "react"
+import React, { useState, useEffect, useMemo, use } from "react"
 import { useRouter, useParams } from "next/navigation"
 import { 
   Box, 
@@ -12,7 +12,6 @@ import {
   Tabs,
   Tab,
   Avatar,
-  LinearProgress,
   Divider
 } from "@mui/material"
 import { 
@@ -25,20 +24,26 @@ import {
   DocumentTextIcon,
   StarIcon
 } from "@heroicons/react/24/outline"
+import PageHeader from "@/components/admin/PageHeader"
+import StatsGrid from "@/components/admin/StatsGrid"
+import DataTable from "@/components/admin/DataTable"
+import { BUTTON_STYLES as ADMIN_BUTTON_STYLES } from "@/lib/constants/admin-constants"
+import { TYPOGRAPHY_STYLES } from "@/lib/design/fonts"
 import { formatDate, formatNumber } from "@/lib/utils"
-import { useCourses, useAttendance, useGrades, useMaterials, useAuth } from "@/lib/domains"
+import { useCourses, useAttendance, useGrades, useMaterials, useAuth, useStudentCourses } from "@/lib/domains"
 import { Course, Assignment, Submission, AttendanceSession } from "@/lib/types/shared"
 import { mapSessionStatus, mapAttendanceStatus } from "@/lib/utils/statusMapping"
 
 interface CourseDetailProps {
-  params: {
+  params: Promise<{
     courseId: string
-  }
+  }>
 }
 
 export default function StudentCourseDetailPage({ params }: CourseDetailProps) {
   const router = useRouter()
-  const courseId = params.courseId
+  const resolvedParams = use(params) as { courseId: string }
+  const courseId = resolvedParams.courseId
   
   // Data Context
   const coursesHook = useCourses()
@@ -46,6 +51,7 @@ export default function StudentCourseDetailPage({ params }: CourseDetailProps) {
   const grades = useGrades()
   const materials = useMaterials()
   const auth = useAuth()
+  const studentCourses = useStudentCourses()
   
   // Extract state and methods
   const { state: coursesState, getCoursesByLecturer, getStudentsByCourse } = coursesHook
@@ -53,6 +59,7 @@ export default function StudentCourseDetailPage({ params }: CourseDetailProps) {
   const { getAssignmentsByCourse, getSubmissionsByAssignment, getStudentGradesByCourse, calculateFinalGrade } = grades
   const { state: materialsState } = materials
   const { state: authState } = auth
+  const { data: studentCoursesData, loading: studentCoursesLoading, error: studentCoursesError } = studentCourses
   
   // Create legacy state object for compatibility
   const state = {
@@ -66,17 +73,48 @@ export default function StudentCourseDetailPage({ params }: CourseDetailProps) {
   const [activeTab, setActiveTab] = useState(0)
   const studentId = state.currentUser?.id || "user_1"
 
-  // Get course details
+  // Get course details - prioritize section-filtered data from useStudentCourses
   const course = useMemo(() => {
+    // First try to get from studentCourses (section-filtered with instructor info)
+    const studentCourse = studentCoursesData?.find(c => c.id === courseId)
+    if (studentCourse) {
+      return {
+        ...studentCourse,
+        // Map to expected Course interface
+        lecturer_name: studentCourse.instructor,
+        lecturer_email: 'N/A', // Will be enhanced later
+        department: 'General' // Will be enhanced later
+      }
+    }
+    
+    // Fallback to regular course lookup
     return state.courses.find((c: Course) => c.id === courseId)
-  }, [state.courses, courseId])
+  }, [studentCoursesData, state.courses, courseId])
 
-  // Check if student is enrolled
+  // Check if student is enrolled - prioritize section-filtered data from useStudentCourses
   const isEnrolled = useMemo(() => {
+    console.log('Enrollment check:', {
+      courseId,
+      studentId,
+      studentCoursesDataLength: studentCoursesData?.length,
+      studentCoursesIds: studentCoursesData?.map(c => c.id),
+      hasCourseInStudentData: studentCoursesData?.some(course => course.id === courseId),
+      legacyEnrollmentsLength: state.enrollments.length,
+      legacyHasEnrollment: state.enrollments.some(enrollment => 
+        enrollment.student_id === studentId && enrollment.course_id === courseId
+      )
+    })
+
+    // If we have section-filtered course data, the student is enrolled
+    if (studentCoursesData?.some(course => course.id === courseId)) {
+      return true
+    }
+    
+    // Fallback to legacy enrollment check
     return state.enrollments.some(enrollment => 
       enrollment.student_id === studentId && enrollment.course_id === courseId
     )
-  }, [state.enrollments, studentId, courseId])
+  }, [studentCoursesData, courseId, state.enrollments, studentId])
 
   // Get course assignments
   const assignments = useMemo(() => {
@@ -109,14 +147,31 @@ export default function StudentCourseDetailPage({ params }: CourseDetailProps) {
     return state.materials.filter((material: any) => material.course_id === courseId)
   }, [state.materials, courseId])
 
-  // Calculate stats
+  // Calculate stats - prioritize section-filtered data from useStudentCourses
   const stats = useMemo(() => {
+    // Get section-filtered course data
+    const studentCourse = studentCoursesData?.find(c => c.id === courseId)
+    
+    if (studentCourse) {
+      // Use pre-calculated stats from useStudentCourses
+      return {
+        submittedAssignments: studentCourse.submittedAssignments,
+        totalAssignments: studentCourse.totalAssignments,
+        progress: studentCourse.progress,
+        attendanceRate: studentCourse.attendanceRate,
+        averageGrade: studentCourse.averageGrade,
+        materialsCount: studentCourse.materialsCount,
+        sessionsCount: sessions.length // Keep local calculation for sessions
+      }
+    }
+    
+    // Fallback to manual calculation if section-filtered data not available
     const submittedAssignments = submissions.length
     const totalAssignments = assignments.length
     const progress = totalAssignments > 0 ? Math.round((submittedAssignments / totalAssignments) * 100) : 0
     
     const presentSessions = attendanceRecords.filter(record => {
-      const mappedStatus = mapAttendanceStatus(record.status, 'student')
+      const mappedStatus = record ? mapAttendanceStatus(record.status, 'student') : 'absent'
       return mappedStatus === 'present' || mappedStatus === 'late'
     }).length
     const attendanceRate = sessions.length > 0 ? Math.round((presentSessions / sessions.length) * 100) : 0
@@ -133,7 +188,7 @@ export default function StudentCourseDetailPage({ params }: CourseDetailProps) {
       materialsCount: courseMaterials.length,
       sessionsCount: sessions.length
     }
-  }, [submissions, assignments, attendanceRecords, sessions, getStudentGradesByCourse, calculateFinalGrade, studentId, courseId, courseMaterials])
+  }, [studentCoursesData, courseId, submissions, assignments, attendanceRecords, sessions, getStudentGradesByCourse, calculateFinalGrade, studentId, courseMaterials])
 
   // Handlers
   const handleBack = () => {
@@ -142,6 +197,53 @@ export default function StudentCourseDetailPage({ params }: CourseDetailProps) {
 
   const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
     setActiveTab(newValue)
+  }
+
+  // Loading state
+  if (studentCoursesLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
+          <p className="mt-4 text-gray-600">Loading course details...</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Error state
+  if (studentCoursesError && !course) {
+    return (
+      <Box sx={{ p: { xs: 2, sm: 3 } }}>
+        <Box sx={{ 
+          p: 4, 
+          textAlign: 'center',
+          border: '2px dashed #e5e5e5',
+          borderRadius: 2,
+          backgroundColor: '#f9f9f9'
+        }}>
+          <Typography variant="h6" sx={{ mb: 2, color: '#666' }}>
+            Error Loading Course
+          </Typography>
+          <Typography variant="body2" sx={{ mb: 3, color: '#888' }}>
+            {studentCoursesError}
+          </Typography>
+          <Button
+            variant="contained"
+            onClick={handleBack}
+            sx={{
+              ...ADMIN_BUTTON_STYLES.primary,
+              fontFamily: 'DM Sans, sans-serif',
+              fontWeight: 600,
+              fontSize: '0.875rem',
+              textTransform: 'none'
+            }}
+          >
+            Return to Courses
+          </Button>
+        </Box>
+      </Box>
+    )
   }
 
   // Course not found
@@ -164,10 +266,12 @@ export default function StudentCourseDetailPage({ params }: CourseDetailProps) {
           <Button
             variant="contained"
             onClick={handleBack}
-            sx={{ 
-              backgroundColor: 'hsl(var(--foreground))',
-              color: 'hsl(var(--background))',
-              '&:hover': { backgroundColor: 'hsl(var(--foreground) / 0.9)' }
+            sx={{
+              ...ADMIN_BUTTON_STYLES.primary,
+              fontFamily: 'DM Sans, sans-serif',
+              fontWeight: 600,
+              fontSize: '0.875rem',
+              textTransform: 'none'
             }}
           >
             Return to Courses
@@ -189,21 +293,35 @@ export default function StudentCourseDetailPage({ params }: CourseDetailProps) {
           backgroundColor: '#f9f9f9'
         }}>
           <Typography variant="h6" sx={{ mb: 2, color: '#666' }}>
-            Not Enrolled
+            Course Access Restricted
           </Typography>
           <Typography variant="body2" sx={{ mb: 3, color: '#888' }}>
-            You are not enrolled in this course. Contact your academic advisor for enrollment assistance.
+            You are not enrolled in this course or it's not assigned to your section. 
+            This could be because:
+          </Typography>
+          <Box sx={{ textAlign: 'left', mb: 3, maxWidth: '400px', mx: 'auto' }}>
+            <ul style={{ color: '#888', fontSize: '0.875rem', lineHeight: '1.6' }}>
+              <li>The course hasn't been assigned to your section yet</li>
+              <li>You're not enrolled in the required program/semester</li>
+              <li>Your section enrollment needs to be updated</li>
+              <li>The course is not available for your academic year</li>
+            </ul>
+          </Box>
+          <Typography variant="body2" sx={{ mb: 3, color: '#888' }}>
+            Contact your academic advisor or course coordinator for assistance.
           </Typography>
           <Button
             variant="contained"
             onClick={handleBack}
-            sx={{ 
-              backgroundColor: 'hsl(var(--foreground))',
-              color: 'hsl(var(--background))',
-              '&:hover': { backgroundColor: 'hsl(var(--foreground) / 0.9)' }
+            sx={{
+              ...ADMIN_BUTTON_STYLES.primary,
+              fontFamily: 'DM Sans, sans-serif',
+              fontWeight: 600,
+              fontSize: '0.875rem',
+              textTransform: 'none'
             }}
           >
-            Return to Courses
+            Return to My Courses
           </Button>
         </Box>
       </Box>
@@ -246,94 +364,33 @@ export default function StudentCourseDetailPage({ params }: CourseDetailProps) {
   ]
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-2">
-            <Button
-              variant="outlined"
-              startIcon={<ArrowLeftIcon className="h-4 w-4" />}
-              onClick={handleBack}
-              sx={{ 
-                borderColor: '#000',
-                color: 'hsl(var(--foreground))',
-                '&:hover': { borderColor: '#000', backgroundColor: 'hsl(var(--muted))' }
-              }}
-            >
-              Back
-            </Button>
-          </div>
-          <h1 className="text-2xl sm:text-3xl font-bold font-poppins">
-            {course.course_code} - {course.course_name}
-          </h1>
-          <p className="text-muted-foreground font-dm-sans">
-            {course.credits} Credits • {course.department || 'General'} • {course.semester || 'Current Semester'}
-          </p>
-        </div>
-      </div>
+    <Box sx={{ p: { xs: 2, sm: 3 } }}>
+      <PageHeader
+        title={`${course.course_code} - ${course.course_name}`}
+        subtitle={`${course.credits} Credits • ${(course as any).department || 'General'} • ${(course as any).semesterLabel || 'Current Semester'}`}
+        actions={
+          <Button
+            variant="outlined"
+            startIcon={<ArrowLeftIcon className="h-4 w-4" />}
+            onClick={handleBack}
+            sx={{
+              ...ADMIN_BUTTON_STYLES.outlined,
+              fontFamily: 'DM Sans, sans-serif',
+              fontWeight: 600,
+              fontSize: '0.875rem',
+              textTransform: 'none'
+            }}
+          >
+            Back to Courses
+          </Button>
+        }
+      />
 
-      {/* KPI Grid */}
-      <Box sx={{
-        display: 'grid',
-        gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', lg: 'repeat(4, 1fr)' },
-        gap: { xs: 2, sm: 3 },
-        mb: 1
-      }}>
-        {statsCards.map((card, index) => (
-          <Card key={index} sx={{ 
-            border: '1px solid #000',
-            borderRadius: 3,
-            boxShadow: '0 2px 4px -1px rgba(0, 0, 0, 0.1)',
-            transition: 'all 0.3s ease',
-            '&:hover': {
-              transform: 'translateY(-2px)',
-              boxShadow: '0 8px 25px -5px rgba(0, 0, 0, 0.1)',
-            }
-          }}>
-            <CardContent sx={{ p: 3 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
-                <Box sx={{ 
-                  p: 1.5, 
-                  borderRadius: 2, 
-                  backgroundColor: `${card.color}20`,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}>
-                  <card.icon className="h-5 w-5" style={{ color: card.color }} />
-                </Box>
-                <Box sx={{ flex: 1 }}>
-                  <Typography variant="h4" sx={{ 
-                    fontFamily: 'Poppins, sans-serif', 
-                    fontWeight: 700,
-                    color: card.color,
-                    lineHeight: 1
-                  }}>
-                    {card.value}
-                  </Typography>
-                  <Typography variant="body2" sx={{ 
-                    color: 'hsl(var(--muted-foreground))',
-                    fontSize: '0.75rem',
-                    fontWeight: 500
-                  }}>
-                    {card.subtitle}
-                  </Typography>
-                </Box>
-              </Box>
-              <Typography variant="caption" sx={{ 
-                color: 'hsl(var(--muted-foreground))',
-                fontSize: '0.75rem'
-              }}>
-                {card.change}
-              </Typography>
-            </CardContent>
-          </Card>
-        ))}
-      </Box>
+      <StatsGrid stats={statsCards} />
 
       {/* Course Content */}
       <Card sx={{ 
+        mt: 3,
         border: '1px solid #000',
         borderRadius: 3,
         boxShadow: '0 2px 4px -1px rgba(0, 0, 0, 0.1)'
@@ -367,25 +424,61 @@ export default function StudentCourseDetailPage({ params }: CourseDetailProps) {
                       Description
                     </Typography>
                     <Typography variant="body1" sx={{ mb: 3, lineHeight: 1.6 }}>
-                      {course.description || 'No description available for this course.'}
+                      {(course as any).description || 'No description available for this course.'}
                     </Typography>
                     
                     <Typography variant="body2" sx={{ color: 'hsl(var(--muted-foreground))', mb: 1 }}>
-                      Instructor
+                      Instructor (Section-Specific)
                     </Typography>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
-                      <Avatar sx={{ width: 40, height: 40 }}>
-                        {course.lecturer_name?.charAt(0) || 'I'}
+                      <Avatar sx={{ width: 40, height: 40, backgroundColor: '#000' }}>
+                        {(course as any).instructor?.charAt(0) || course.lecturer_name?.charAt(0) || 'I'}
                       </Avatar>
                       <Box>
                         <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                          {course.lecturer_name || 'Instructor'}
+                          {(course as any).instructor || course.lecturer_name || 'To Be Assigned'}
                         </Typography>
                         <Typography variant="caption" sx={{ color: 'hsl(var(--muted-foreground))' }}>
-                          {course.lecturer_email || 'No email'}
+                          {(course as any).instructor !== 'TBA' ? 'Assigned to your section' : 'No instructor assigned yet'}
                         </Typography>
                       </Box>
                     </Box>
+
+                    {/* Section Information */}
+                    {(course as any).semesterLabel && (
+                      <Box sx={{ mb: 3 }}>
+                        <Typography variant="body2" sx={{ color: 'hsl(var(--muted-foreground))', mb: 1 }}>
+                          Academic Period
+                        </Typography>
+                        <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                          {(course as any).semesterLabel}
+                        </Typography>
+                      </Box>
+                    )}
+
+                    {/* Schedule Information */}
+                    {(course as any).schedule && (
+                      <Box sx={{ mb: 3 }}>
+                        <Typography variant="body2" sx={{ color: 'hsl(var(--muted-foreground))', mb: 1 }}>
+                          Schedule
+                        </Typography>
+                        {(course as any).schedule.days && (
+                          <Typography variant="body2" sx={{ mb: 1 }}>
+                            Days: {(course as any).schedule.days.join(', ')}
+                          </Typography>
+                        )}
+                        {(course as any).schedule.time && (
+                          <Typography variant="body2" sx={{ mb: 1 }}>
+                            Time: {(course as any).schedule.time}
+                          </Typography>
+                        )}
+                        {(course as any).schedule.location && (
+                          <Typography variant="body2">
+                            Location: {(course as any).schedule.location}
+                          </Typography>
+                        )}
+                      </Box>
+                    )}
                   </Box>
                   
                   <Box>
@@ -418,7 +511,39 @@ export default function StudentCourseDetailPage({ params }: CourseDetailProps) {
                           }}
                         />
                       </Box>
+                      {(course as any).year && (
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 1 }}>
+                          <Typography variant="body2">Year:</Typography>
+                          <Typography variant="body2" sx={{ fontWeight: 600 }}>{(course as any).year}</Typography>
+                        </Box>
+                      )}
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 1 }}>
+                        <Typography variant="body2">Materials:</Typography>
+                        <Typography variant="body2" sx={{ fontWeight: 600 }}>{(course as any).materialsCount || 0}</Typography>
+                      </Box>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 1 }}>
+                        <Typography variant="body2">Assignments:</Typography>
+                        <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                          {(course as any).submittedAssignments || 0}/{(course as any).totalAssignments || 0}
+                        </Typography>
+                      </Box>
                     </Box>
+
+                    {/* Next Session */}
+                    {(course as any).nextSession && (
+                      <Box sx={{ mt: 3, p: 2, backgroundColor: 'hsl(var(--muted) / 0.3)', borderRadius: 1 }}>
+                        <Typography variant="body2" sx={{ color: 'hsl(var(--muted-foreground))', mb: 1 }}>
+                          Next Session
+                        </Typography>
+                        <Typography variant="body2" sx={{ fontWeight: 600, mb: 1 }}>
+                          {(course as any).nextSession.title}
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: 'hsl(var(--muted-foreground))' }}>
+                          {(course as any).nextSession.date}
+                          {(course as any).nextSession.time && ` • ${(course as any).nextSession.time}`}
+                        </Typography>
+                      </Box>
+                    )}
                   </Box>
                 </Box>
               </Box>
@@ -447,7 +572,7 @@ export default function StudentCourseDetailPage({ params }: CourseDetailProps) {
                 ) : (
                   <Box sx={{ space: 2 }}>
                     {assignments.map((assignment: Assignment) => {
-                      const submission = submissions.find(sub => sub.assignment_id === assignment.id)
+                      const submission = submissions.find(sub => sub?.assignment_id === assignment.id)
                       return (
                         <Card key={assignment.id} sx={{ 
                           border: '1px solid #e5e5e5',
@@ -545,7 +670,7 @@ export default function StudentCourseDetailPage({ params }: CourseDetailProps) {
                 ) : (
                   <Box sx={{ space: 2 }}>
                     {sessions.map((session: AttendanceSession) => {
-                      const record = attendanceRecords.find(r => r.session_id === session.id)
+                      const record = attendanceRecords.find(r => r?.session_id === session.id)
                       const status = record ? mapAttendanceStatus(record.status, 'student') : 'absent'
                       
                       return (
@@ -648,6 +773,7 @@ export default function StudentCourseDetailPage({ params }: CourseDetailProps) {
           </Box>
         </CardContent>
       </Card>
-    </div>
+    </Box>
   )
 }
+

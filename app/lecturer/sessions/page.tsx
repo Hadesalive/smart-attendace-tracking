@@ -51,7 +51,7 @@ import {
 import { QRCodeCanvas } from 'qrcode.react'
 import { formatDate, formatTime } from "@/lib/utils"
 import { mapSessionStatus } from "@/lib/utils/statusMapping"
-import { useAttendance, useCourses, useAcademicStructure } from "@/lib/domains"
+import { useAttendance, useCourses, useAcademicStructure, useAuth } from "@/lib/domains"
 import { toast } from "sonner"
 
 // ============================================================================
@@ -191,17 +191,20 @@ export default function LecturerSessionsPage() {
   const attendance = useAttendance()
   const courses = useCourses()
   const academic = useAcademicStructure()
+  const auth = useAuth()
   
   // Extract state and methods
   const { state: attendanceState, fetchAttendanceSessions, deleteAttendanceSessionSupabase, updateAttendanceSessionSupabase } = attendance
   const { state: coursesState } = courses
   const { state: academicState } = academic
+  const { state: authState } = auth
   
   // Create legacy state object for compatibility
   const state = {
     ...attendanceState,
     ...coursesState,
-    ...academicState
+    ...academicState,
+    ...authState
   }
   
   // ============================================================================
@@ -218,21 +221,46 @@ export default function LecturerSessionsPage() {
   const [editModalOpen, setEditModalOpen] = useState(false)
   const [editingSession, setEditingSession] = useState<any>(null)
 
-  // Load sessions data on component mount
+  // Load all data on component mount (same pattern as lecturer courses page)
   React.useEffect(() => {
-    console.log('Lecturer Sessions Page: Loading attendance sessions...')
-    fetchAttendanceSessions()
-  }, [fetchAttendanceSessions])
+    const fetchData = async () => {
+      try {
+        console.log('Lecturer Sessions Page: Loading all data...')
+        await Promise.all([
+          auth.loadCurrentUser(), // Load the current user first
+          fetchAttendanceSessions(),
+          courses.fetchCourses(),
+          courses.fetchLecturerAssignments(),
+          academic.fetchLecturerProfiles(),
+          academic.fetchSections(),
+          academic.fetchSectionEnrollments(),
+          academic.fetchSemesters(),
+          academic.fetchAcademicYears(),
+          academic.fetchPrograms(),
+          academic.fetchDepartments()
+        ])
+        console.log('Lecturer Sessions Page: Data loaded successfully')
+      } catch (error) {
+        console.error('Error loading sessions page data:', error)
+      }
+    }
+    
+    fetchData()
+  }, [auth.loadCurrentUser, fetchAttendanceSessions, courses.fetchCourses, courses.fetchLecturerAssignments, academic.fetchLecturerProfiles, academic.fetchSections, academic.fetchSectionEnrollments, academic.fetchSemesters, academic.fetchAcademicYears, academic.fetchPrograms, academic.fetchDepartments])
 
   // Debug: Log current state
   React.useEffect(() => {
     console.log('Lecturer Sessions Page: Current state:', {
+      currentUser: state.currentUser,
+      currentUserId: state.currentUser?.id,
       attendanceSessions: state.attendanceSessions,
       attendanceSessionsCount: state.attendanceSessions.length,
+      coursesCount: state.courses?.length || 0,
+      lecturerAssignmentsCount: state.lecturerAssignments?.length || 0,
       loading: state.loading,
       error: state.error
     })
-  }, [state.attendanceSessions, state.loading, state.error])
+  }, [state.currentUser, state.attendanceSessions, state.courses, state.lecturerAssignments, state.loading, state.error])
 
   // Transform attendance sessions to match the Session interface
   const sessions = React.useMemo(() => {
@@ -962,7 +990,7 @@ export default function LecturerSessionsPage() {
       <CreateSessionModal
         open={showCreateDialog}
         onOpenChange={setShowCreateDialog}
-        lecturerId="d541b573-003d-469c-bef0-fa392dcdbdbd" // Using a more realistic user ID - replace with actual auth
+        lecturerId={state.currentUser?.id || ''}
         onSessionCreated={(sessionId) => {
             setShowCreateDialog(false)
             fetchAttendanceSessions()
@@ -989,7 +1017,7 @@ export default function LecturerSessionsPage() {
         <CreateSessionModal 
           open={editModalOpen}
           onOpenChange={handleEditModalClose}
-          lecturerId="d541b573-003d-469c-bef0-fa392dcdbdbd" // Using a more realistic user ID - replace with actual auth
+          lecturerId={state.currentUser?.id || ''}
           onSessionCreated={() => {}} // Not used in edit mode
           editSession={editingSession}
           onSessionUpdated={() => {

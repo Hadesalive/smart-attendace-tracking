@@ -47,6 +47,8 @@ import DataTable from "@/components/admin/DataTable"
 import ErrorAlert from "@/components/admin/ErrorAlert"
 import FilterBar from "@/components/admin/FilterBar"
 import CourseAssignmentForm from "@/components/admin/forms/CourseAssignmentForm"
+import TeacherAssignmentForm from "@/components/admin/forms/TeacherAssignmentForm"
+import CourseForm from "@/components/admin/forms/CourseForm"
 import { Course } from "@/lib/types/shared"
 
 interface CourseDetailProps {
@@ -76,7 +78,9 @@ export default function CourseDetailPage({ params }: CourseDetailProps) {
     updateCourseAssignment,
     deleteCourseAssignment,
     fetchLecturerAssignments,
-    getLecturersByCourse
+    getLecturersByCourse,
+    createTeacherAssignment,
+    updateTeacherAssignment
   } = courses
   const { 
     state: academicState,
@@ -103,12 +107,13 @@ export default function CourseDetailPage({ params }: CourseDetailProps) {
 
   const [activeTab, setActiveTab] = useState(0)
   const [isEditOpen, setEditOpen] = useState(false)
-  const [isDeleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [isAddAssignmentOpen, setAddAssignmentOpen] = useState(false)
   const [isEditAssignmentOpen, setEditAssignmentOpen] = useState(false)
   const [isAssignLecturerOpen, setAssignLecturerOpen] = useState(false)
   const [selectedAssignment, setSelectedAssignment] = useState<any>(null)
   const [selectedLecturer, setSelectedLecturer] = useState<string>("")
+  const [lecturerAssignmentMode, setLecturerAssignmentMode] = useState<'create' | 'edit'>('create')
+  const [selectedLecturerAssignment, setSelectedLecturerAssignment] = useState<any>(null)
   
   // Filtering state
   const [filters, setFilters] = useState({
@@ -175,7 +180,7 @@ export default function CourseDetailPage({ params }: CourseDetailProps) {
             student_id_number: enrollment.student_id_number || 'N/A',
             program: assignment.programs?.program_name || 'N/A',
             program_code: assignment.programs?.program_code || 'N/A',
-            year: assignment.year,
+            year: assignment.year || enrollment.year,
             semester: assignment.semesters?.semester_name || 'N/A',
             academic_year: assignment.academic_years?.year_name || 'N/A',
             enrollment_date: enrollment.enrollment_date,
@@ -379,7 +384,8 @@ export default function CourseDetailPage({ params }: CourseDetailProps) {
           fetchPrograms(),
           fetchAcademicYears(),
           fetchSemesters(),
-          fetchSections()
+          fetchSections(),
+          auth.fetchUsers()
         ])
       } catch (error) {
         console.error('Error loading course detail data:', error)
@@ -398,18 +404,25 @@ export default function CourseDetailPage({ params }: CourseDetailProps) {
     setEditOpen(true)
   }
 
-  const handleDelete = () => {
-    setDeleteConfirmOpen(true)
+  const handleSaveCourse = async (courseData: any) => {
+    try {
+      await updateCourse(courseId, courseData)
+      setEditOpen(false)
+    } catch (error) {
+      console.error('Error updating course:', error)
+    }
   }
 
-  const confirmDelete = async () => {
+  const handleDelete = async () => {
     if (!course) return
-
-    try {
-      await deleteCourse(course.id)
-      router.push('/admin/courses')
-    } catch (error) {
-      console.error('Error deleting course:', error)
+    
+    if (confirm(`Are you sure you want to delete course "${course.course_code} - ${course.course_name}"? This action cannot be undone.`)) {
+      try {
+        await deleteCourse(course.id)
+        router.push('/admin/courses')
+      } catch (error) {
+        console.error('Error deleting course:', error)
+      }
     }
   }
 
@@ -459,22 +472,45 @@ export default function CourseDetailPage({ params }: CourseDetailProps) {
 
   // Lecturer assignment handlers
   const handleAssignLecturer = () => {
+    setLecturerAssignmentMode('create')
+    setSelectedLecturerAssignment({
+      course_id: courseId,
+      lecturer_id: '',
+      academic_year_id: '',
+      semester_id: '',
+      program_id: '',
+      section_id: '',
+      is_primary: false,
+      teaching_hours_per_week: 0,
+      start_date: '',
+      end_date: ''
+    })
     setAssignLecturerOpen(true)
   }
 
-  const handleSaveLecturerAssignment = async () => {
+  const handleEditLecturerAssignment = (assignment: any) => {
+    setLecturerAssignmentMode('edit')
+    setSelectedLecturerAssignment(assignment)
+    setAssignLecturerOpen(true)
+  }
+
+  const handleSaveLecturerAssignment = async (assignmentData: any) => {
     try {
-      await updateCourse(courseId, { lecturer_id: selectedLecturer })
+      if (lecturerAssignmentMode === 'create') {
+        await createTeacherAssignment(assignmentData)
+      } else {
+        await updateTeacherAssignment(selectedLecturerAssignment.id, assignmentData)
+      }
       setAssignLecturerOpen(false)
-      setSelectedLecturer("")
+      setSelectedLecturerAssignment(null)
     } catch (error) {
-      console.error('Error assigning lecturer:', error)
+      console.error('Error saving lecturer assignment:', error)
     }
   }
 
   const handleCloseLecturerForm = () => {
     setAssignLecturerOpen(false)
-    setSelectedLecturer("")
+    setSelectedLecturerAssignment(null)
   }
 
   // Filter handlers
@@ -789,17 +825,15 @@ export default function CourseDetailPage({ params }: CourseDetailProps) {
           <>
             <Button
               variant="outlined"
-              startIcon={<ArrowLeftIcon className="h-4 w-4" />}
-              onClick={handleBack}
-              sx={BUTTON_STYLES.outlined}
-            >
-              Back
-            </Button>
-            <Button
-              variant="outlined"
               startIcon={<PencilIcon className="h-4 w-4" />}
               onClick={handleEdit}
-              sx={BUTTON_STYLES.outlined}
+              sx={{
+                ...BUTTON_STYLES.outlined,
+                fontFamily: 'DM Sans, sans-serif',
+                fontWeight: 600,
+                fontSize: '0.875rem',
+                textTransform: 'none'
+              }}
             >
               Edit Course
             </Button>
@@ -807,7 +841,15 @@ export default function CourseDetailPage({ params }: CourseDetailProps) {
               variant="contained"
               startIcon={<TrashIcon className="h-4 w-4" />}
               onClick={handleDelete}
-              sx={{ ...BUTTON_STYLES.primary, backgroundColor: '#ef4444', '&:hover': { backgroundColor: '#dc2626' } }}
+              sx={{ 
+                ...BUTTON_STYLES.primary, 
+                backgroundColor: '#ef4444', 
+                fontFamily: 'DM Sans, sans-serif',
+                fontWeight: 600,
+                fontSize: '0.875rem',
+                textTransform: 'none',
+                '&:hover': { backgroundColor: '#dc2626' } 
+              }}
             >
               Delete
             </Button>
@@ -1219,6 +1261,13 @@ export default function CourseDetailPage({ params }: CourseDetailProps) {
                                   {(primaryLecturer as any).sections?.section_code ? ` • Section: ${(primaryLecturer as any).sections.section_code}` : ''}
                                 </Typography>
                               </Box>
+                              <IconButton
+                                size="small"
+                                onClick={() => handleEditLecturerAssignment(primaryLecturer)}
+                                sx={{ color: 'text.secondary' }}
+                              >
+                                <PencilIcon className="h-4 w-4" />
+                              </IconButton>
                             </Box>
                           )}
                           
@@ -1241,6 +1290,13 @@ export default function CourseDetailPage({ params }: CourseDetailProps) {
                                       {(lecturer as any).teaching_hours_per_week ? ` • ${(lecturer as any).teaching_hours_per_week} hours/week` : ''}
                                     </Typography>
                                   </Box>
+                                  <IconButton
+                                    size="small"
+                                    onClick={() => handleEditLecturerAssignment(lecturer)}
+                                    sx={{ color: 'text.secondary' }}
+                                  >
+                                    <PencilIcon className="h-4 w-4" />
+                                  </IconButton>
                                 </Box>
                               ))}
                             </Box>
@@ -1251,55 +1307,20 @@ export default function CourseDetailPage({ params }: CourseDetailProps) {
                   </CardContent>
                 </Card>
 
-                {/* Lecturer Assignment Dialog */}
-                <Dialog 
-                  open={isAssignLecturerOpen} 
-                  onClose={handleCloseLecturerForm}
-                  maxWidth="sm"
-                  PaperProps={{
-                    sx: {
-                      boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)",
-                      border: "1px solid #f3f4f6"
-                    }
-                  }}
-                >
-                  <DialogTitle sx={TYPOGRAPHY_STYLES.dialogTitle}>
-                    Assign Lecturer
-                  </DialogTitle>
-                  <DialogContent>
-                    <Typography variant="body2" sx={{ mb: 2, color: 'text.secondary' }}>
-                      Select a lecturer to assign to this course
-                    </Typography>
-                    <select
-                      value={selectedLecturer}
-                      onChange={(e) => setSelectedLecturer(e.target.value)}
-                      className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white text-gray-900 focus:border-gray-500 focus:ring-2 focus:ring-gray-300 focus:outline-none transition"
-                    >
-                      <option value="">Select Lecturer</option>
-                      {state.lecturerProfiles.map((lecturer: any) => (
-                        <option key={lecturer.id} value={lecturer.user_id}>
-                          {lecturer.full_name} - {lecturer.email}
-                        </option>
-                      ))}
-                    </select>
-                  </DialogContent>
-                  <DialogActions sx={{ p: 3, pt: 0 }}>
-                    <Button 
-                      onClick={handleCloseLecturerForm}
-                      sx={TYPOGRAPHY_STYLES.buttonText}
-                    >
-                      Cancel
-                    </Button>
-                    <Button 
-                      onClick={handleSaveLecturerAssignment}
-                      variant="contained"
-                      disabled={!selectedLecturer}
-                      sx={TYPOGRAPHY_STYLES.buttonText}
-                    >
-                      Assign Lecturer
-                    </Button>
-                  </DialogActions>
-                </Dialog>
+                {/* Teacher Assignment Form */}
+                <TeacherAssignmentForm
+                  open={isAssignLecturerOpen}
+                  onOpenChange={handleCloseLecturerForm}
+                  assignment={selectedLecturerAssignment}
+                  mode={lecturerAssignmentMode}
+                  onSave={handleSaveLecturerAssignment}
+                  lecturers={state.lecturerProfiles}
+                  courses={[course]}
+                  academicYears={academicState.academicYears}
+                  semesters={academicState.semesters}
+                  programs={academicState.programs}
+                  sections={academicState.sections}
+                />
               </Box>
             )}
 
@@ -1618,6 +1639,18 @@ export default function CourseDetailPage({ params }: CourseDetailProps) {
           </Box>
         </CardContent>
       </Card>
+
+      {/* Course Form Dialog */}
+      <CourseForm
+        open={isEditOpen}
+        onOpenChange={setEditOpen}
+        course={course}
+        onSave={handleSaveCourse}
+        mode="edit"
+        departments={academicState.departments}
+        users={auth.state.users}
+      />
+
     </Box>
   )
 }

@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect } from "react"
+import React, { useState, useEffect, useRef } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { motion } from "framer-motion"
 import {
@@ -158,14 +158,66 @@ export default function SessionDetailsPage() {
   const [loading, setLoading] = useState(true)
   const [showQRDialog, setShowQRDialog] = useState(false)
   const [showEditDialog, setShowEditDialog] = useState(false)
+  
+  const loadingRef = useRef(false)
 
   // ============================================================================
   // EFFECTS
   // ============================================================================
 
   useEffect(() => {
-    if (sessionId) {
-      // Find session from shared data
+    const loadSessionData = async () => {
+      if (!sessionId || loadingRef.current) return
+      
+      try {
+        loadingRef.current = true
+        setLoading(true)
+        console.log('🔄 Loading lecturer session details for:', sessionId)
+        
+        // Load all required data first
+        await Promise.all([
+          attendanceHook.fetchAttendanceSessions(),
+          attendanceHook.fetchAttendanceRecords(),
+          courses.fetchCourses(),
+          courses.fetchLecturerAssignments()
+        ])
+        
+        // Wait for state to be updated
+        await new Promise(resolve => setTimeout(resolve, 500))
+        
+        console.log('📊 Loaded data:', {
+          sessionsCount: state.attendanceSessions?.length || 0,
+          recordsCount: state.attendanceRecords?.length || 0
+        })
+        
+        // Find session from shared data
+        const foundSession = state.attendanceSessions.find((s: any) => s.id === sessionId)
+        console.log('🔍 Looking for session:', sessionId, 'Found:', !!foundSession)
+        
+        if (foundSession) {
+          setSession(foundSession)
+          
+          // Get attendance records for this session
+          const records = getAttendanceRecordsBySession(sessionId)
+          setAttendanceRecords(records)
+          console.log('📋 Attendance records found:', records.length)
+        } else {
+          console.warn('⚠️ Session not found:', sessionId)
+        }
+      } catch (error) {
+        console.error('❌ Error loading session data:', error)
+      } finally {
+        setLoading(false)
+        loadingRef.current = false
+      }
+    }
+    
+    loadSessionData()
+  }, [sessionId]) // Only depend on sessionId to prevent infinite loops
+
+  // Separate effect to handle data updates when state changes
+  useEffect(() => {
+    if (state.attendanceSessions.length > 0 && sessionId && !session) {
       const foundSession = state.attendanceSessions.find((s: any) => s.id === sessionId)
       if (foundSession) {
         setSession(foundSession)
@@ -173,10 +225,13 @@ export default function SessionDetailsPage() {
         // Get attendance records for this session
         const records = getAttendanceRecordsBySession(sessionId)
         setAttendanceRecords(records)
+        console.log('📋 Session and records updated:', {
+          session: foundSession.session_name,
+          recordsCount: records.length
+        })
       }
-      setLoading(false)
     }
-  }, [sessionId, state.attendanceSessions]) // Removed function dependency
+  }, [state.attendanceSessions, sessionId, session, getAttendanceRecordsBySession])
 
   // Subscribe to real-time updates
   useEffect(() => {

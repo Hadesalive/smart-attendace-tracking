@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect, useMemo } from "react"
+import React, { useState, useEffect, useMemo, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import { 
   Box, 
@@ -18,8 +18,9 @@ import {
   FormControl,
   InputLabel
 } from "@mui/material"
-import StatCard from "@/components/dashboard/stat-card"
-import { Badge } from "@/components/ui/badge"
+import PageHeader from "@/components/admin/PageHeader"
+import StatsGrid from "@/components/admin/StatsGrid"
+import { BUTTON_STYLES as ADMIN_BUTTON_STYLES } from "@/lib/constants/admin-constants"
 import { 
   AcademicCapIcon,
   BookOpenIcon,
@@ -36,7 +37,6 @@ import { formatDate, formatNumber } from "@/lib/utils"
 import { useCourses, useAttendance, useGrades, useMaterials, useAuth } from "@/lib/domains"
 import { useAcademicStructure } from "@/lib/domains/academic/hooks"
 import { useData } from "@/lib/contexts/DataContext"
-import { useMockData } from "@/lib/hooks/useMockData"
 import { Course, Student, Assignment, Submission, AttendanceSession } from "@/lib/types/shared"
 import { mapSessionStatus, mapAttendanceStatus } from "@/lib/utils/statusMapping"
 import FilterBar from "@/components/admin/FilterBar"
@@ -117,7 +117,12 @@ export default function LecturerCoursesPage() {
   const { state: dataState } = useData()
   
   // Extract state and methods
-  const { state: coursesState, getCoursesByLecturer, getStudentsByCourse } = coursesHook
+  const { 
+    state: coursesState, 
+    getCoursesByLecturer, 
+    getStudentsByCourse,
+    fetchLecturerAssignments
+  } = coursesHook
   const { getAttendanceSessionsByCourse, getAttendanceRecordsBySession } = attendance
   const { getAssignmentsByCourse, getSubmissionsByAssignment, getStudentGradesByCourse, calculateFinalGrade } = grades
   const { state: materialsState } = materials
@@ -125,20 +130,26 @@ export default function LecturerCoursesPage() {
   
   // Create merged state object with academic data
   const state = {
-    ...coursesState,
+    ...dataState,
     ...attendance.state,
     ...grades.state,
     ...academic.state,
-    ...dataState,
+    ...coursesState, // Put coursesState last to ensure courses are not overridden
     materials: materialsState.materials,
-    currentUser: authState.currentUser
+    currentUser: authState.currentUser,
+    lecturerAssignments: coursesState.lecturerAssignments || [],
+    // Ensure academic data is properly accessible
+    semesters: academic.state.semesters,
+    departments: academic.state.departments,
+    academicYears: academic.state.academicYears,
+    programs: academic.state.programs,
+    sectionEnrollments: academic.state.sectionEnrollments || []
   }
-  const { isInitialized } = useMockData()
 
   const router = useRouter()
   const [searchQuery, setSearchQuery] = useState<string>("")
-  const [statusFilter, setStatusFilter] = useState<string>("all")
-  const [semesterFilter, setSemesterFilter] = useState<string>("all")
+  const [isLoading, setIsLoading] = useState(true)
+  const [filtersLoading, setFiltersLoading] = useState(true)
   
   // Advanced filtering state
   const [filters, setFilters] = useState({
@@ -151,18 +162,132 @@ export default function LecturerCoursesPage() {
   // Get lecturer's courses from shared data
   const lecturerId = state.currentUser?.id || "user_2" // Use actual current user ID
   
-  const courses = useMemo(() => {
-    const lecturerCourses = getCoursesByLecturer(lecturerId)
+  // Function to get enrolled students using inheritance logic
+  const getEnrolledStudentsByCourse = useCallback((courseId: string) => {
+    // Early return if data is not loaded
+    if (!state.lecturerAssignments || !state.sectionEnrollments) {
+      return []
+    }
     
-    return lecturerCourses.map(course => {
+    // Get course assignments for this specific course
+    const courseAssignments = state.lecturerAssignments?.filter((assignment: any) => 
+      assignment.course_id === courseId && assignment.lecturer_id === lecturerId
+    ) || []
+    
+    if (courseAssignments.length === 0) {
+      return []
+    }
+    
+    const inheritedStudents = new Map()
+    
+    // For each course assignment, find students enrolled in that program/semester/year
+    courseAssignments.forEach((assignment: any) => {
+      const studentsInProgram = state.sectionEnrollments?.filter((enrollment: any) => 
+        enrollment.program_id === assignment.program_id &&
+        enrollment.semester_id === assignment.semester_id &&
+        enrollment.academic_year_id === assignment.academic_year_id &&
+        (enrollment.year === assignment.year || assignment.year === undefined) && // Handle undefined year
+        enrollment.status === 'active'
+      ) || []
+      
+      // Add each student to the map with their program context
+      studentsInProgram.forEach((enrollment: any) => {
+        const studentKey = `${enrollment.student_id}-${assignment.program_id}-${assignment.semester_id}-${assignment.academic_year_id}`
+        
+        if (!inheritedStudents.has(studentKey)) {
+          inheritedStudents.set(studentKey, {
+            id: enrollment.id,
+            student_id: enrollment.student_id,
+            student_name: enrollment.student_name || 'N/A',
+            student_id_number: enrollment.student_id_number || 'N/A',
+            program: assignment.programs?.program_name || 'N/A',
+            program_code: assignment.programs?.program_code || 'N/A',
+            year: assignment.year,
+            semester: assignment.semesters?.semester_name || 'N/A',
+            academic_year: assignment.academic_years?.year_name || 'N/A',
+            enrollment_date: enrollment.enrollment_date,
+            status: enrollment.status,
+            // Show which sections they're in
+            sections: [enrollment.section_code].filter(Boolean),
+            // Add assignment context
+            assignment_id: assignment.id,
+            is_mandatory: assignment.is_mandatory,
+            max_students: assignment.max_students
+          })
+        } else {
+          // Add section to existing student
+          const existingStudent = inheritedStudents.get(studentKey)
+          if (enrollment.section_code && !existingStudent.sections.includes(enrollment.section_code)) {
+            existingStudent.sections.push(enrollment.section_code)
+          }
+        }
+      })
+    })
+    
+    return Array.from(inheritedStudents.values())
+  }, [state.lecturerAssignments, state.sectionEnrollments, lecturerId])
+  
+  // Fetch data on component mount
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setIsLoading(true)
+        setFiltersLoading(true)
+        await Promise.all([
+          auth.loadCurrentUser(), // Load the current user first
+          coursesHook.fetchCourses(),
+          fetchLecturerAssignments(),
+          attendance.fetchAttendanceSessions(),
+          materials.fetchMaterials(),
+          academic.fetchLecturerProfiles(),
+          academic.fetchSections(),
+          academic.fetchSectionEnrollments(),
+          academic.fetchSemesters(),
+          academic.fetchAcademicYears(),
+          academic.fetchPrograms(),
+          academic.fetchDepartments()
+        ])
+        
+        // Wait for state to be updated
+        await new Promise(resolve => setTimeout(resolve, 1000))
+        
+        // Force state update by triggering a re-render
+        setFiltersLoading(false)
+        
+        
+      } catch (error) {
+        console.error('Error fetching lecturer courses data:', error)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+    
+    fetchData()
+  }, [])
+  
+  const courses = useMemo(() => {
+    
+    // Get lecturer's assigned courses from lecturer_assignments table
+    // Only show courses assigned to the current lecturer - no fallbacks
+    const lecturerAssignments = state.lecturerAssignments?.filter((assignment: any) => 
+      assignment.lecturer_id === lecturerId
+    ) || []
+    
+    
+    
+    const lecturerCourses = lecturerAssignments.map((assignment: any) => {
+      const course = state.courses?.find((c: any) => c.id === assignment.course_id)
+      if (!course) return null
+      
       // Calculate course-specific stats
       const assignments = getAssignmentsByCourse(course.id)
-      const students = getStudentsByCourse(course.id)
+      const students = getEnrolledStudentsByCourse(course.id)
       
       // Calculate attendance rate
+      const courseSessions = getAttendanceSessionsByCourse(course.id)
       let totalSessions = 0
       let presentSessions = 0
-      const courseSessions = getAttendanceSessionsByCourse(course.id)
+      
       courseSessions.forEach(session => {
         const records = getAttendanceRecordsBySession(session.id)
         records.forEach(record => {
@@ -186,20 +311,16 @@ export default function LecturerCoursesPage() {
       
       const nextSession = futureSessions[0]
       
-      // Get year information from course assignments
-      const courseAssignments = state.courseAssignments?.filter((ca: any) => ca.course_id === course.id) || []
-      const sections = courseAssignments.map((ca: any) => 
-        state.sections?.find((s: any) => s.id === ca.section_id)
-      ).filter(Boolean)
+      // Get assignment information
+      const section = state.sections?.find((s: any) => s.id === assignment?.section_id)
+      const semester = state.semesters?.find((s: any) => s.id === assignment?.semester_id)
+      const academicYear = state.academicYears?.find((ay: any) => ay.id === assignment?.academic_year_id)
+      const program = state.programs?.find((p: any) => p.id === assignment?.program_id)
       
-      // Get unique years from sections
-      const years = [...new Set(sections.map((s: any) => s.year).filter(Boolean))]
-      const primaryYear = years.length > 0 ? Math.min(...years) : 1
-      
-      // Get semester and academic year information
-      const section = sections[0] // Use first section for semester/year info
-      const semester = state.semesters?.find((s: any) => s.id === section?.semester_id)
-      const academicYear = state.academicYears?.find((ay: any) => ay.id === section?.academic_year_id)
+      // Get year information from section
+      const year = section?.year || 1
+      const years = [year]
+      const primaryYear = year
       
       return {
         id: course.id,
@@ -214,7 +335,7 @@ export default function LecturerCoursesPage() {
         years: years,
         status: "active" as const,
         enrolled_students: students.length,
-        max_students: (course as any).max_students || 50,
+        max_students: 50, // Default max students
         attendance_rate: attendanceRate,
         average_grade: averageGrade,
         materials_count: state.materials.filter((m: any) => m.course_id === course.id).length,
@@ -222,9 +343,9 @@ export default function LecturerCoursesPage() {
         sessions_count: courseSessions.length,
         description: (course as any).description || "Course description not available",
         schedule: {
-          days: ["Monday", "Wednesday", "Friday"], // Would need to get from course data
-          time: "10:00 - 11:30", // Would need to get from course data
-          location: "Room TBD" // Would need to get from course data
+          days: assignment?.teaching_days || ["TBD"], // Get from assignment data
+          time: assignment?.teaching_time || "TBD", // Get from assignment data
+          location: section?.classroom_id || "TBD" // Get from section data
         },
         next_session: nextSession ? {
           title: nextSession.session_name,
@@ -232,12 +353,86 @@ export default function LecturerCoursesPage() {
           time: `${nextSession.start_time || 'TBD'} - ${nextSession.end_time || 'TBD'}`
         } : undefined
       }
-    })
-  }, [lecturerId, getCoursesByLecturer, getStudentsByCourse, getAssignmentsByCourse, getAttendanceSessionsByCourse, getAttendanceRecordsBySession, getStudentGradesByCourse, calculateFinalGrade, state.materials])
+    }).filter(Boolean)
+    
+    // Fallback: If no lecturer assignments, try to get courses directly assigned to lecturer
+    if (lecturerCourses.length === 0) {
+      const directCourses = state.courses?.filter((course: any) => course.lecturer_id === lecturerId) || []
+      
+      return directCourses.map(course => {
+        if (!course) return null
+        
+        // Calculate course-specific stats for direct courses
+        const assignments = getAssignmentsByCourse(course.id)
+        const students = getEnrolledStudentsByCourse(course.id)
+        
+        // Calculate attendance rate
+        let totalSessions = 0
+        let presentSessions = 0
+        const courseSessions = getAttendanceSessionsByCourse(course.id)
+        courseSessions.forEach(session => {
+          const records = getAttendanceRecordsBySession(session.id)
+          records.forEach(record => {
+            totalSessions++
+            const mappedStatus = mapAttendanceStatus(record.status, 'lecturer')
+            if (mappedStatus === 'present' || mappedStatus === 'late') {
+              presentSessions++
+            }
+          })
+        })
+        const attendanceRate = totalSessions > 0 ? Math.round((presentSessions / totalSessions) * 100) : 0
+        
+        // Calculate average grade
+        const grades = getStudentGradesByCourse(lecturerId, course.id)
+        const averageGrade = grades.length > 0 ? Math.round(calculateFinalGrade(lecturerId, course.id)) : 0
+        
+        // Get next session
+        const futureSessions = courseSessions.filter(session => 
+          new Date(session.session_date || '') >= new Date()
+        ).sort((a, b) => new Date(a.session_date || '').getTime() - new Date(b.session_date || '').getTime())
+        
+        const nextSession = futureSessions[0]
+        
+        return {
+          id: course.id,
+          course_code: course.course_code,
+          course_name: course.course_name,
+          credits: course.credits || 3,
+          department: course.department || 'General',
+          semester: "Current Semester",
+          academic_year: "Current",
+          year: 1,
+          yearLabel: "Year 1",
+          years: [1],
+          status: "active" as const,
+          enrolled_students: students.length,
+          max_students: 50,
+          attendance_rate: attendanceRate,
+          average_grade: averageGrade,
+          materials_count: state.materials.filter((m: any) => m.course_id === course.id).length,
+          assignments_count: assignments.length,
+          sessions_count: courseSessions.length,
+          description: (course as any).description || "Course description not available",
+          schedule: {
+            days: ["TBD"],
+            time: "TBD",
+            location: "TBD"
+          },
+          next_session: nextSession ? {
+            title: nextSession.session_name,
+            date: nextSession.session_date || new Date().toISOString(),
+            time: `${nextSession.start_time || 'TBD'} - ${nextSession.end_time || 'TBD'}`
+          } : undefined
+        }
+      }).filter(Boolean)
+    }
+    
+    return lecturerCourses
+  }, [lecturerId, state.lecturerAssignments, state.courses, state.sections, state.semesters, state.academicYears, state.programs, getStudentsByCourse, getAssignmentsByCourse, getAttendanceSessionsByCourse, getAttendanceRecordsBySession, getStudentGradesByCourse, calculateFinalGrade, state.materials])
 
   // Computed values
   const filteredCourses = useMemo(() => {
-    let filtered = courses
+    let filtered = courses.filter((course): course is NonNullable<typeof course> => course !== null)
 
     // Filter by search term
     if (searchQuery.trim()) {
@@ -245,7 +440,7 @@ export default function LecturerCoursesPage() {
       filtered = filtered.filter(course => 
         course.course_code.toLowerCase().includes(query) ||
         course.course_name.toLowerCase().includes(query) ||
-        course.department.toLowerCase().includes(query)
+        (course as any).department?.toLowerCase().includes(query)
       )
     }
 
@@ -256,36 +451,37 @@ export default function LecturerCoursesPage() {
 
     // Filter by semester
     if (filters.semester !== "all") {
-      filtered = filtered.filter(course => course.semester === filters.semester)
+      filtered = filtered.filter(course => (course as any).semester === filters.semester)
     }
 
     // Filter by year
     if (filters.year !== "all") {
-      filtered = filtered.filter(course => course.year === parseInt(filters.year))
+      filtered = filtered.filter(course => (course as any).year === parseInt(filters.year))
     }
 
     // Filter by department
     if (filters.department !== "all") {
-      filtered = filtered.filter(course => course.department === filters.department)
+      filtered = filtered.filter(course => (course as any).department === filters.department)
     }
 
     return filtered
   }, [courses, searchQuery, filters])
 
   const stats = useMemo(() => {
-    const activeCourses = courses.filter(c => c.status === 'active').length
-    const totalStudents = courses.reduce((sum, c) => sum + c.enrolled_students, 0)
-    const overallAttendanceRate = courses.length > 0 
-      ? courses.reduce((sum, c) => sum + c.attendance_rate, 0) / courses.length : 0
-    const overallGrade = courses.length > 0
-      ? courses.reduce((sum, c) => sum + c.average_grade, 0) / courses.length : 0
+    const validCourses = courses.filter((c): c is NonNullable<typeof c> => c !== null)
+    const activeCourses = validCourses.filter(c => c.status === 'active').length
+    const totalStudents = validCourses.reduce((sum, c) => sum + (c as any).enrolled_students, 0)
+    const overallAttendanceRate = validCourses.length > 0 
+      ? validCourses.reduce((sum, c) => sum + (c as any).attendance_rate, 0) / validCourses.length : 0
+    const overallGrade = validCourses.length > 0
+      ? validCourses.reduce((sum, c) => sum + (c as any).average_grade, 0) / validCourses.length : 0
 
     // Year-based statistics
     const yearStats = {
-      year1: courses.filter(c => c.year === 1).length,
-      year2: courses.filter(c => c.year === 2).length,
-      year3: courses.filter(c => c.year === 3).length,
-      year4: courses.filter(c => c.year === 4).length
+      year1: validCourses.filter(c => (c as any).year === 1).length,
+      year2: validCourses.filter(c => (c as any).year === 2).length,
+      year3: validCourses.filter(c => (c as any).year === 3).length,
+      year4: validCourses.filter(c => (c as any).year === 4).length
     }
 
     return { activeCourses, totalStudents, overallAttendanceRate, overallGrade, yearStats }
@@ -297,6 +493,15 @@ export default function LecturerCoursesPage() {
   }
 
   const handleClearSearch = () => setSearchQuery("")
+
+  const handleClearFilters = () => {
+    setFilters({
+      status: 'all',
+      semester: 'all',
+      year: 'all',
+      department: 'all'
+    })
+  }
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -492,40 +697,67 @@ export default function LecturerCoursesPage() {
     }
   ]
 
+  const statsCards = [
+    { 
+      title: "Active Courses", 
+      value: formatNumber(stats.activeCourses), 
+      icon: BookOpenIcon, 
+      color: "#000000",
+      subtitle: "This semester",
+      change: "Currently teaching"
+    },
+    { 
+      title: "Total Students", 
+      value: formatNumber(stats.totalStudents), 
+      icon: UsersIcon, 
+      color: "#000000",
+      subtitle: "Enrolled",
+      change: "Across all courses"
+    },
+    { 
+      title: "Avg Attendance", 
+      value: `${Math.round(stats.overallAttendanceRate)}%`, 
+      icon: CheckCircleIcon, 
+      color: "#000000",
+      subtitle: "Overall rate",
+      change: "All courses"
+    },
+    { 
+      title: "Avg Grade", 
+      value: `${Math.round(stats.overallGrade)}%`, 
+      icon: ChartBarIcon, 
+      color: "#000000",
+      subtitle: "Overall average",
+      change: "All courses"
+    }
+  ]
+
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div className="flex-1 min-w-0">
-          <h1 className="text-2xl sm:text-3xl font-bold font-poppins">My Courses</h1>
-          <p className="text-muted-foreground font-dm-sans">Manage your assigned courses and track student progress</p>
-        </div>
-        <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+    <Box sx={{ p: { xs: 2, sm: 3 } }}>
+      <PageHeader
+        title="My Courses"
+        subtitle="Manage your assigned courses and track student progress"
+        actions={
           <MUIButton 
             variant="outlined" 
             startIcon={<ChartBarIcon className="h-4 w-4" />}
-            sx={BUTTON_STYLES.outlined}
+            sx={{
+              ...ADMIN_BUTTON_STYLES.outlined,
+              fontFamily: 'DM Sans, sans-serif',
+              fontWeight: 600,
+              fontSize: '0.875rem',
+              textTransform: 'none'
+            }}
           >
             Course Analytics
           </MUIButton>
-        </div>
-      </div>
+        }
+      />
 
-      {/* KPI Grid */}
-      <Box sx={{
-        display: 'grid',
-        gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', lg: 'repeat(4, 1fr)' },
-        gap: { xs: 2, sm: 3 },
-        mb: 1
-      }}>
-        <StatCard title="Active Courses" value={formatNumber(stats.activeCourses)} icon={BookOpenIcon} color="#000000" change="This semester" />
-        <StatCard title="Total Students" value={formatNumber(stats.totalStudents)} icon={UsersIcon} color="#000000" change="Enrolled" />
-        <StatCard title="Avg Attendance" value={`${Math.round(stats.overallAttendanceRate)}%`} icon={CheckCircleIcon} color="#000000" change="Overall" />
-        <StatCard title="Avg Grade" value={`${Math.round(stats.overallGrade)}%`} icon={ChartBarIcon} color="#000000" change="All courses" />
-      </Box>
+      <StatsGrid stats={statsCards} />
 
       {/* Search and Filters */}
-      <MUICard sx={{ ...CARD_SX, '&:hover': {} }}>
+      <MUICard sx={{ mt: 3, ...CARD_SX, '&:hover': {} }}>
         <MUICardContent sx={{ p: { xs: 2, sm: 2.5, md: 3 } }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
             <MagnifyingGlassIcon className="h-5 w-5 text-muted-foreground" />
@@ -580,40 +812,12 @@ export default function LecturerCoursesPage() {
               />
             </Box>
             
-            <FormControl sx={{ minWidth: 120 }}>
-              <InputLabel>Status</InputLabel>
-              <Select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                label="Status"
-                sx={{ '& .MuiOutlinedInput-notchedOutline': { borderColor: 'hsl(var(--border))' } }}
-              >
-                <MenuItem value="all">All Status</MenuItem>
-                <MenuItem value="active">Active</MenuItem>
-                <MenuItem value="completed">Completed</MenuItem>
-                <MenuItem value="upcoming">Upcoming</MenuItem>
-              </Select>
-            </FormControl>
-            
-            <FormControl sx={{ minWidth: 120 }}>
-              <InputLabel>Semester</InputLabel>
-              <Select
-                value={semesterFilter}
-                onChange={(e) => setSemesterFilter(e.target.value)}
-                label="Semester"
-                sx={{ '& .MuiOutlinedInput-notchedOutline': { borderColor: 'hsl(var(--border))' } }}
-              >
-                <MenuItem value="all">All Semesters</MenuItem>
-                <MenuItem value="Fall 2024">Fall 2024</MenuItem>
-                <MenuItem value="Spring 2024">Spring 2024</MenuItem>
-                <MenuItem value="Summer 2024">Summer 2024</MenuItem>
-              </Select>
-            </FormControl>
           </Box>
         </MUICardContent>
       </MUICard>
 
-      {/* Advanced Filters */}
+      {/* Advanced Filters - Only render when data is available */}
+      {!filtersLoading && state.semesters && state.departments && (
       <FilterBar
         fields={[
           { 
@@ -636,9 +840,10 @@ export default function LecturerCoursesPage() {
             onChange: (v) => setFilters(prev => ({ ...prev, semester: v })), 
             options: [
               { value: 'all', label: 'All Semesters' },
-              { value: 'Fall 2024', label: 'Fall 2024' },
-              { value: 'Spring 2024', label: 'Spring 2024' },
-              { value: 'Summer 2024', label: 'Summer 2024' }
+              ...(state.semesters?.map((semester: any) => ({
+                value: semester.semester_name,
+                label: `${state.academicYears?.find((ay: any) => ay.id === semester.academic_year_id)?.year_name || 'Current'} - ${semester.semester_name}`
+              })) || [])
             ], 
             span: 2 
           },
@@ -663,43 +868,85 @@ export default function LecturerCoursesPage() {
             onChange: (v) => setFilters(prev => ({ ...prev, department: v })), 
             options: [
               { value: 'all', label: 'All Departments' },
-              { value: 'Computer Science', label: 'Computer Science' },
-              { value: 'Mathematics', label: 'Mathematics' },
-              { value: 'Engineering', label: 'Engineering' },
-              { value: 'Business', label: 'Business' }
+              ...(state.departments?.map((dept: any) => ({
+                value: dept.department_name,
+                label: dept.department_name
+              })) || [])
             ], 
             span: 2 
+            },
+            { 
+              type: 'clear-button', 
+              label: 'Clear Filters', 
+              onClick: handleClearFilters, 
+              span: 2 
           }
         ]}
       />
+      )}
+
+      {/* Loading state for filters */}
+      {filtersLoading && (
+        <MUICard sx={{ mt: 3, ...CARD_SX, '&:hover': {} }}>
+          <MUICardContent sx={{ p: { xs: 2, sm: 2.5, md: 3 } }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
+              <Typography variant="h6" sx={{ fontFamily: 'Poppins, sans-serif', fontWeight: 600 }}>
+                Loading Filters...
+              </Typography>
+            </Box>
+            <LinearProgress sx={{ mb: 1 }} />
+            <Typography variant="body2" sx={{ color: 'hsl(var(--muted-foreground))' }}>
+              Preparing filter options...
+            </Typography>
+          </MUICardContent>
+        </MUICard>
+      )}
 
       {/* Courses List */}
-        {filteredCourses.length === 0 ? (
-          <MUICard sx={{ ...CARD_SX, '&:hover': {} }}>
-            <MUICardContent sx={{ p: { xs: 4, sm: 6 }, textAlign: 'center' }}>
-              <BookOpenIcon className="h-20 w-20 text-muted-foreground mx-auto mb-4 opacity-50" />
-              <Typography variant="h5" sx={{ fontFamily: 'Poppins, sans-serif', fontWeight: 600, mb: 2 }}>
-                {searchQuery ? 'No Courses Found' : 'No Courses Assigned'}
-              </Typography>
-              <Typography variant="body1" sx={{ color: 'hsl(var(--muted-foreground))', mb: 4, maxWidth: 400, mx: 'auto' }}>
-                {searchQuery 
-                  ? `No courses match "${searchQuery}". Try adjusting your search terms.`
-                  : 'You have not been assigned to any courses yet. Contact your department head for course assignments.'
-                }
-              </Typography>
-              {searchQuery && (
-                <MUIButton 
-                  variant="outlined" 
-                  onClick={handleClearSearch}
-                  sx={BUTTON_STYLES.outlined}
-                  startIcon={<XMarkIcon className="h-4 w-4" />}
-                >
-                  Clear Search
-                </MUIButton>
-              )}
-            </MUICardContent>
-          </MUICard>
-        ) : (
+      {isLoading ? (
+        <MUICard sx={{ mt: 3, ...CARD_SX, '&:hover': {} }}>
+          <MUICardContent sx={{ p: { xs: 4, sm: 6 }, textAlign: 'center' }}>
+            <LinearProgress sx={{ mb: 2 }} />
+            <Typography variant="h6" sx={{ fontFamily: 'Poppins, sans-serif', fontWeight: 600, mb: 2 }}>
+              Loading your courses...
+            </Typography>
+            <Typography variant="body2" sx={{ color: 'hsl(var(--muted-foreground))' }}>
+              Please wait while we fetch your course assignments.
+            </Typography>
+          </MUICardContent>
+        </MUICard>
+      ) : filteredCourses.length === 0 ? (
+        <MUICard sx={{ mt: 3, ...CARD_SX, '&:hover': {} }}>
+          <MUICardContent sx={{ p: { xs: 4, sm: 6 }, textAlign: 'center' }}>
+            <BookOpenIcon className="h-20 w-20 text-muted-foreground mx-auto mb-4 opacity-50" />
+            <Typography variant="h5" sx={{ fontFamily: 'Poppins, sans-serif', fontWeight: 600, mb: 2 }}>
+              {searchQuery ? 'No Courses Found' : 'No Courses Assigned'}
+            </Typography>
+            <Typography variant="body1" sx={{ color: 'hsl(var(--muted-foreground))', mb: 4, maxWidth: 400, mx: 'auto' }}>
+              {searchQuery 
+                ? `No courses match "${searchQuery}". Try adjusting your search terms.`
+                : 'You have not been assigned to any courses yet. Contact your department head for course assignments.'
+              }
+            </Typography>
+            {searchQuery && (
+              <MUIButton 
+                variant="outlined" 
+                onClick={handleClearSearch}
+                sx={{
+                  ...ADMIN_BUTTON_STYLES.outlined,
+                  fontFamily: 'DM Sans, sans-serif',
+                  fontWeight: 600,
+                  fontSize: '0.875rem',
+                  textTransform: 'none'
+                }}
+                startIcon={<XMarkIcon className="h-4 w-4" />}
+              >
+                Clear Search
+              </MUIButton>
+            )}
+          </MUICardContent>
+        </MUICard>
+      ) : (
         <DataTable
           title="My Courses"
           subtitle="Manage your assigned courses and track student progress"
@@ -708,6 +955,6 @@ export default function LecturerCoursesPage() {
           onRowClick={(course) => router.push(`/lecturer/courses/${course.id}`)}
         />
       )}
-    </div>
+    </Box>
   )
 }

@@ -93,6 +93,7 @@ export interface Submission {
 export interface AttendanceSession {
   id: string
   course_id: string
+  section_id?: string // Added section_id for section-based sessions
   lecturer_id?: string // Added to match database schema
   course_code: string
   course_name: string

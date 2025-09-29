@@ -7,6 +7,7 @@ import { z } from "zod"
 // Session Schema
 const sessionSchema = z.object({
   course_id: z.string(),
+  section_id: z.string().min(1, { message: "Section is required." }),
   session_name: z.string(),
   session_date: z.string(),
   start_time: z.string(),
@@ -21,6 +22,7 @@ const sessionSchema = z.object({
 export async function createSession(prevState: any, formData: FormData) {
   const validatedFields = sessionSchema.safeParse({
     course_id: formData.get('course_id'),
+    section_id: formData.get('section_id'),
     session_name: formData.get('session_name'),
     session_date: formData.get('session_date'),
     start_time: formData.get('start_time'),
@@ -59,6 +61,7 @@ export async function createSession(prevState: any, formData: FormData) {
 
   const { error } = await supabase.from('attendance_sessions').insert({
     course_id: validatedFields.data.course_id,
+    section_id: validatedFields.data.section_id,
     session_name: validatedFields.data.session_name,
     session_date: utcStart.date,
     start_time: utcStart.time,

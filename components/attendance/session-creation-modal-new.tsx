@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { toast } from "sonner"
 import { DialogBox } from "@/components/ui/dialog-box"
 import { 
@@ -10,9 +10,12 @@ import {
   UsersIcon, 
   BookOpenIcon, 
   DocumentTextIcon,
-  QrCodeIcon
+  QrCodeIcon,
+  AcademicCapIcon
 } from "@heroicons/react/24/outline"
-import { useAttendance, useCourses, useAcademicStructure } from "@/lib/domains"
+import { useAttendance, useCourses, useAcademicStructure, useAuth } from "@/lib/domains"
+import { useData } from "@/lib/contexts/DataContext"
+import { supabase } from "@/lib/supabase"
 import { AttendanceSession } from "@/lib/types/shared"
 
 interface CreateSessionModalProps {
@@ -32,6 +35,9 @@ export default function CreateSessionModal({
   editSession,
   onSessionUpdated
 }: CreateSessionModalProps) {
+  // Use the same pattern as lecturer courses page
+  const { state: dataState } = useData()
+  const auth = useAuth()
   const attendance = useAttendance()
   const courses = useCourses()
   const academic = useAcademicStructure()
@@ -47,7 +53,8 @@ export default function CreateSessionModal({
   const { 
     state: coursesState,
     getCoursesByLecturer,
-    fetchCourses
+    fetchCourses,
+    fetchLecturerAssignments
   } = courses
   
   const { 
@@ -55,19 +62,30 @@ export default function CreateSessionModal({
     fetchClassrooms
   } = academic
   
-  // Create legacy state object for compatibility
+  // Create merged state object like lecturer courses page - IMPORTANT: coursesState must be last to prevent override
   const state = {
+    ...dataState,
     ...attendanceState,
-    ...coursesState,
-    ...academicState
+    ...academicState,
+    ...coursesState, // Put coursesState last to ensure courses are not overridden
+    lecturerAssignments: coursesState.lecturerAssignments || [],
+    // Ensure academic data is properly accessible
+    semesters: academicState.semesters,
+    departments: academicState.departments,
+    academicYears: academicState.academicYears,
+    programs: academicState.programs,
+    sectionEnrollments: academicState.sectionEnrollments || []
   }
   
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [coursesLoading, setCoursesLoading] = useState(false)
   const [roomsLoading, setRoomsLoading] = useState(false)
+  const [sectionsLoading, setSectionsLoading] = useState(false)
+  const [availableSections, setAvailableSections] = useState<any[]>([])
   const [formData, setFormData] = useState({
     course_id: "",
+    section_id: "", // Added section selection
     session_name: "",
     session_date: new Date().toISOString().split("T")[0],
     start_time: "",
@@ -83,6 +101,7 @@ export default function CreateSessionModal({
     if (editSession) {
       setFormData({
         course_id: editSession.course_id,
+        section_id: editSession.section_id || "", // Added section_id for edit mode
         session_name: editSession.session_name,
         session_date: editSession.session_date,
         start_time: editSession.start_time,
@@ -96,6 +115,7 @@ export default function CreateSessionModal({
       // Reset form for create mode
       setFormData({
         course_id: "",
+        section_id: "", // Added missing section_id field
         session_name: "",
         session_date: new Date().toISOString().split("T")[0],
         start_time: "",
@@ -108,33 +128,144 @@ export default function CreateSessionModal({
     }
   }, [editSession])
 
-  // Get courses for this lecturer
-  const lecturerCourses = getCoursesByLecturer(lecturerId)
-  
-  // Fallback to all courses if no lecturer-specific courses found
-  const availableCourses = lecturerCourses.length > 0 ? lecturerCourses : state.courses
+  // Get lecturer's courses using the same pattern as lecturer courses page
+  const lecturerCourses = useMemo(() => {
+    console.log('🔄 Calculating lecturer courses...', {
+      lecturerId,
+      lecturerAssignmentsCount: state.lecturerAssignments?.length || 0,
+      coursesCount: state.courses?.length || 0
+    })
+    
+    // Get lecturer's assigned courses from lecturer_assignments table
+    // Only show courses assigned to the current lecturer - no fallbacks
+    const lecturerAssignments = state.lecturerAssignments?.filter((assignment: any) => 
+      assignment.lecturer_id === lecturerId
+    ) || []
+    
+    console.log('📋 Lecturer assignments for this lecturer:', lecturerAssignments.length)
+    
+    const courses = lecturerAssignments.map((assignment: any) => {
+      const course = state.courses?.find((c: any) => c.id === assignment.course_id)
+      if (!course) {
+        console.warn('⚠️ Course not found for assignment:', assignment.course_id)
+        return null
+      }
+      
+      console.log('✅ Found course for assignment:', {
+        assignmentId: assignment.id,
+        courseId: course.id,
+        courseCode: course.course_code,
+        courseName: course.course_name
+      })
+      
+      return course
+    }).filter(Boolean)
+    
+    console.log('🎯 Final lecturer courses:', courses)
+    return courses
+  }, [lecturerId, state.lecturerAssignments, state.courses])
 
-  // Fetch courses when modal opens
+  // Only show courses assigned to this lecturer (no fallback to all courses)
+  const availableCourses = lecturerCourses
+
+  // Fetch courses when modal opens - using same pattern as lecturer courses page
   useEffect(() => {
     if (open && lecturerId) {
-      console.log('Modal opened, lecturerId:', lecturerId)
-      console.log('Current courses in state:', state.courses.length)
-      console.log('All courses:', state.courses)
-      console.log('Lecturer courses:', lecturerCourses.length)
-      console.log('Lecturer courses details:', lecturerCourses)
+      console.log('🔄 Modal opened, lecturerId:', lecturerId)
+      console.log('📊 Current state:', {
+        courses: state.courses?.length || 0,
+        lecturerAssignments: state.lecturerAssignments?.length || 0,
+        lecturerCourses: lecturerCourses.length
+      })
       
-      // Always try to fetch courses when modal opens
-      console.log('Fetching courses...')
       setCoursesLoading(true)
-      fetchCourses().finally(() => setCoursesLoading(false))
+      
+      const fetchData = async () => {
+        try {
+          console.log('🚀 Fetching all data like lecturer courses page...')
+          
+          // Fetch all data in parallel like lecturer courses page
+          await Promise.all([
+            auth.loadCurrentUser(), // Load the current user first
+            fetchCourses(),
+            fetchLecturerAssignments(),
+            attendance.fetchAttendanceSessions(),
+            academic.fetchLecturerProfiles(),
+            academic.fetchSections(),
+            academic.fetchSectionEnrollments(),
+            academic.fetchSemesters(),
+            academic.fetchAcademicYears(),
+            academic.fetchPrograms(),
+            academic.fetchDepartments()
+          ])
+          
+          // Wait for state to be updated (same as lecturer courses page)
+          await new Promise(resolve => setTimeout(resolve, 1000))
+          
+          console.log('✅ Data fetching completed')
+          
+        } catch (error) {
+          console.error('❌ Error fetching session creation data:', error)
+        }
+      }
+      
+      fetchData().finally(() => setCoursesLoading(false))
 
       // Also fetch classrooms when modal opens
-      console.log('Fetching classrooms...')
+      console.log('🏫 Fetching classrooms...')
       setRoomsLoading(true)
       fetchClassrooms().finally(() => setRoomsLoading(false))
     }
   }, [open, lecturerId]) // Removed function dependencies
 
+  // Fetch sections when course changes
+  useEffect(() => {
+    if (formData.course_id && lecturerId) {
+      console.log('Course changed, fetching sections for course:', formData.course_id)
+      setSectionsLoading(true)
+      
+      // Fetch sections for this course and lecturer
+      const fetchSectionsForCourse = async () => {
+        try {
+          const { data, error } = await supabase
+            .from('lecturer_assignments')
+            .select(`
+              section_id,
+              sections!inner(
+                id,
+                section_code,
+                program_id,
+                programs!inner(
+                  id,
+                  program_name
+                )
+              )
+            `)
+            .eq('lecturer_id', lecturerId)
+            .eq('course_id', formData.course_id)
+
+          if (error) {
+            console.error('Error fetching sections:', error)
+            setAvailableSections([])
+          } else {
+            console.log('Fetched sections:', data)
+            const sections = data?.map(item => item.sections).filter(Boolean) || []
+            setAvailableSections(sections)
+          }
+        } catch (error) {
+          console.error('Error fetching sections:', error)
+          setAvailableSections([])
+        } finally {
+          setSectionsLoading(false)
+        }
+      }
+
+      fetchSectionsForCourse()
+    } else {
+      setAvailableSections([])
+      setFormData(prev => ({ ...prev, section_id: "" })) // Reset section when course changes
+    }
+  }, [formData.course_id, lecturerId])
 
   const handleInputChange = (field: string, value: string | number) => {
     setFormData(prev => ({ ...prev, [field]: value }))
@@ -146,7 +277,7 @@ export default function CreateSessionModal({
     setError(null)
 
     try {
-      const selectedCourse = availableCourses.find(c => c.id === formData.course_id)
+      const selectedCourse = availableCourses.find(c => c?.id === formData.course_id)
       if (!selectedCourse) {
         throw new Error("Please select a course")
       }
@@ -166,6 +297,9 @@ export default function CreateSessionModal({
       }
       if (!formData.location.trim()) {
         throw new Error("Location is required")
+      }
+      if (!formData.section_id) {
+        throw new Error("Section selection is required")
       }
 
       if (editSession) {
@@ -193,6 +327,7 @@ export default function CreateSessionModal({
 
         const sessionData = {
           course_id: formData.course_id,
+          section_id: formData.section_id, // Added section_id
           lecturer_id: lecturerId,
           course_code: selectedCourse.course_code,
           course_name: selectedCourse.course_name,
@@ -226,6 +361,7 @@ export default function CreateSessionModal({
         // Reset form
         setFormData({
           course_id: "",
+          section_id: "", // Added missing section_id field
           session_name: "",
           session_date: new Date().toISOString().split("T")[0],
           start_time: "",
@@ -246,7 +382,7 @@ export default function CreateSessionModal({
     }
   }
 
-  const selectedCourse = availableCourses.find(c => c.id === formData.course_id)
+  const selectedCourse = availableCourses.find(c => c?.id === formData.course_id)
 
   return (
     <DialogBox
@@ -280,16 +416,50 @@ export default function CreateSessionModal({
             className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-gray-50 text-gray-900 focus:border-gray-500 focus:ring-2 focus:ring-gray-300 focus:outline-none transition"
             required
           >
-            <option value="">Select a course</option>
-            {coursesLoading ? (
-              <option disabled>Loading courses...</option>
-            ) : (
-              availableCourses.map((course) => (
-                <option key={course.id} value={course.id}>
-                  {course.course_code} - {course.course_name}
-                </option>
-              ))
-            )}
+            <option value="">
+              {coursesLoading 
+                ? 'Loading courses...' 
+                : availableCourses.length === 0 
+                  ? `No courses assigned to you (Found ${state.lecturerAssignments?.length || 0} assignments, ${state.courses?.length || 0} courses)` 
+                  : 'Select a course'
+              }
+            </option>
+            {!coursesLoading && availableCourses.map((course) => (
+              <option key={course?.id} value={course?.id}>
+                {course?.course_code} - {course?.course_name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Section Selection */}
+        <div className="space-y-2">
+          <label className="block text-sm font-semibold text-gray-900">
+            <AcademicCapIcon className="inline w-4 h-4 mr-2" />
+            Section
+          </label>
+          <select
+            value={formData.section_id}
+            onChange={(e) => handleInputChange('section_id', e.target.value)}
+            className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-gray-50 text-gray-900 focus:border-gray-500 focus:ring-2 focus:ring-gray-300 focus:outline-none transition"
+            required
+            disabled={!formData.course_id}
+          >
+            <option value="">
+              {!formData.course_id 
+                ? 'Select a course first' 
+                : sectionsLoading 
+                  ? 'Loading sections...' 
+                  : availableSections.length === 0 
+                    ? 'No sections assigned to you for this course' 
+                    : 'Select a section'
+              }
+            </option>
+            {formData.course_id && !sectionsLoading && availableSections.map((section) => (
+              <option key={section.id} value={section.id}>
+                {section.section_code} - {section.programs?.program_name || 'Unknown Program'}
+              </option>
+            ))}
           </select>
         </div>
 

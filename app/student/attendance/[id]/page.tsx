@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect, useMemo } from "react"
+import React, { useState, useEffect, useMemo, useRef } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { 
   Box, 
@@ -87,6 +87,7 @@ export default function StudentAttendanceDetailsPage() {
   const { 
     state: attendanceState,
     fetchAttendanceSessions,
+    fetchStudentAttendanceSessions,
     fetchAttendanceRecords,
     getAttendanceRecordsBySession
   } = attendance
@@ -112,22 +113,50 @@ export default function StudentAttendanceDetailsPage() {
     loading: true,
     error: null
   })
+  
+  const loadingRef = useRef(false)
 
   // Load required data and resolve session + student record
   useEffect(() => {
     const load = async () => {
+      // Prevent multiple simultaneous loads
+      if (loadingRef.current) return
+      
       try {
+        loadingRef.current = true
         setDetails(prev => ({ ...prev, loading: true, error: null }))
         
+        console.log('🔄 Loading student attendance details for session:', sessionId)
+        
+        // Load current user first
+        await auth.loadCurrentUser()
+        
+        // Wait for user to be loaded
+        await new Promise(resolve => setTimeout(resolve, 300))
+        
+        // Load all required data with user ID
         await Promise.all([
           fetchCourses(),
           fetchEnrollments(),
-          fetchAttendanceSessions(),
+          // Use section-based session fetching for students
+          fetchStudentAttendanceSessions(authState.currentUser?.id || ''),
           fetchAttendanceRecords()
         ])
+        
+        // Wait for state to be updated
+        await new Promise(resolve => setTimeout(resolve, 500))
+        
+        console.log('📊 Loaded data:', {
+          currentUser: state.currentUser?.id,
+          sessionsCount: state.attendanceSessions?.length || 0,
+          recordsCount: state.attendanceRecords?.length || 0
+        })
 
         const session = state.attendanceSessions.find((s: any) => s.id === sessionId)
+        console.log('🔍 Looking for session:', sessionId, 'Found:', !!session)
+        
         if (!session) {
+          console.warn('⚠️ Session not found:', sessionId)
           setDetails(prev => ({ 
             ...prev, 
             loading: false, 
@@ -140,6 +169,8 @@ export default function StudentAttendanceDetailsPage() {
         const studentRecord = records.find((r: any) => 
           !!state.currentUser?.id && r.student_id === state.currentUser.id
         )
+        
+        console.log('📋 Student record found:', !!studentRecord)
 
         setDetails({
           session,
@@ -148,17 +179,41 @@ export default function StudentAttendanceDetailsPage() {
           error: null
         })
       } catch (error) {
-        console.error('Error loading attendance details:', error)
+        console.error('❌ Error loading attendance details:', error)
         setDetails(prev => ({ 
           ...prev, 
           loading: false, 
           error: 'Failed to load attendance details' 
         }))
+      } finally {
+        loadingRef.current = false
       }
     }
-    load()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, state.attendanceSessions, state.currentUser?.id])
+    
+    if (sessionId) {
+      load()
+    }
+  }, [sessionId]) // Only depend on sessionId to prevent infinite loops
+
+  // Separate effect to handle data updates when state changes
+  useEffect(() => {
+    if (state.attendanceSessions.length > 0 && sessionId) {
+      const session = state.attendanceSessions.find((s: any) => s.id === sessionId)
+      if (session && session !== details.session) {
+        const records = getAttendanceRecordsBySession(sessionId)
+        const studentRecord = records.find((r: any) => 
+          !!state.currentUser?.id && r.student_id === state.currentUser.id
+        )
+        
+        setDetails({
+          session,
+          studentRecord: studentRecord || null,
+          loading: false,
+          error: null
+        })
+      }
+    }
+  }, [state.attendanceSessions, state.currentUser?.id, sessionId, details.session, getAttendanceRecordsBySession])
 
   const statusInfo = useMemo(() => {
     if (!details.studentRecord) return null

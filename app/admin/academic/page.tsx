@@ -322,6 +322,7 @@ export default function AcademicHubPage() {
           fetchLecturerProfiles(),
           fetchAdminProfiles(),
           fetchCourses(),
+          fetchCourseAssignments(),
           fetchUsers()
         ])
         console.log("✅ All academic data loaded successfully")
@@ -1780,6 +1781,57 @@ export default function AcademicHubPage() {
               Assign Teacher → Course/Section
             </Button>
           </Box>
+          <FilterBar
+            fields={[
+              { 
+                type: 'native-select', 
+                label: 'Program', 
+                value: filters.assignments.program, 
+                onChange: (v) => setFilters(prev => ({ ...prev, assignments: { ...prev.assignments, program: v } })), 
+                options: [
+                  { value: 'all', label: 'All Programs' },
+                  ...academicData.programs.map(program => ({ value: program.id, label: program.program_name }))
+                ], 
+                span: 3 
+              },
+              { 
+                type: 'native-select', 
+                label: 'Year', 
+                value: filters.assignments.year, 
+                onChange: (v) => setFilters(prev => ({ ...prev, assignments: { ...prev.assignments, year: v } })), 
+                options: [
+                  { value: 'all', label: 'All Years' },
+                  { value: '1', label: 'Year 1' },
+                  { value: '2', label: 'Year 2' },
+                  { value: '3', label: 'Year 3' },
+                  { value: '4', label: 'Year 4' }
+                ], 
+                span: 2 
+              },
+              { 
+                type: 'native-select', 
+                label: 'Semester', 
+                value: filters.assignments.semester, 
+                onChange: (v) => setFilters(prev => ({ ...prev, assignments: { ...prev.assignments, semester: v } })), 
+                options: [
+                  { value: 'all', label: 'All Semesters' },
+                  ...academicData.semesters.map(semester => ({ value: semester.id, label: semester.semester_name }))
+                ], 
+                span: 3 
+              },
+              { 
+                type: 'native-select', 
+                label: 'Academic Year', 
+                value: filters.assignments.academicYear, 
+                onChange: (v) => setFilters(prev => ({ ...prev, assignments: { ...prev.assignments, academicYear: v } })), 
+                options: [
+                  { value: 'all', label: 'All Years' },
+                  ...academicData.academicYears.map(year => ({ value: year.id, label: year.year_name }))
+                ], 
+                span: 2 
+              }
+            ]}
+          />
           <SearchFilters
             searchTerm={searchTerm}
             onSearchChange={setSearchTerm}
