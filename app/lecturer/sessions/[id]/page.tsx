@@ -46,7 +46,7 @@ import {
 } from "@heroicons/react/24/outline"
 import { formatDate, formatTime, formatNumber } from "@/lib/utils"
 import { QRCodeCanvas } from 'qrcode.react'
-import { useAttendance, useCourses } from "@/lib/domains"
+import { useAttendance, useCourses, useAcademicStructure } from "@/lib/domains"
 import SessionQrCodeDialog from "@/components/attendance/session-qr-code-dialog-new"
 // Mock data removed - using DataContext
 import { AttendanceSession, AttendanceRecord } from "@/lib/types/shared"
@@ -128,6 +128,7 @@ export default function SessionDetailsPage() {
   
   const attendanceHook = useAttendance()
   const courses = useCourses()
+  const academic = useAcademicStructure()
   
   // Extract state and methods
   const { 
@@ -141,11 +142,13 @@ export default function SessionDetailsPage() {
   } = attendanceHook
   
   const { state: coursesState } = courses
+  const { state: academicState } = academic
   
   // Create legacy state object for compatibility
   const state = {
     ...attendanceState,
-    ...coursesState
+    ...coursesState,
+    ...academicState
   }
   // Mock data removed - using DataContext
 
@@ -179,7 +182,8 @@ export default function SessionDetailsPage() {
           attendanceHook.fetchAttendanceSessions(),
           attendanceHook.fetchAttendanceRecords(),
           courses.fetchCourses(),
-          courses.fetchLecturerAssignments()
+          courses.fetchLecturerAssignments(),
+          academic.fetchSectionEnrollments() // ✅ Load section enrollments for real count
         ])
         
         // Wait for state to be updated
@@ -461,7 +465,11 @@ export default function SessionDetailsPage() {
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                   <UsersIcon className="h-5 w-5 text-gray-500" />
                   <Typography variant="body1">
-                    {attendanceRecords.length} students enrolled
+                    {/* ✅ ENHANCED: Show real enrollment count from section_enrollments */}
+                    {state.sectionEnrollments?.filter((e: any) => 
+                      e.section_id === session.section_id && 
+                      e.status === 'active'
+                    ).length || 0} students enrolled • {attendanceRecords.length} checked in
                   </Typography>
                 </Box>
               </Box>

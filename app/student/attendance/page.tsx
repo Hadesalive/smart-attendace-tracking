@@ -205,6 +205,7 @@ export default function StudentAttendancePage() {
   }, [state.courses, state.sectionEnrollments, state.courseAssignments, state.currentUser?.id])
 
   // Get student's attendance records from shared data
+  // ✅ FIXED: Iterate through sessions directly (already filtered by fetchStudentAttendanceSessions)
   const attendanceRecords = useMemo(() => {
     const studentId = state.currentUser?.id
     const allRecords: any[] = []
@@ -216,42 +217,36 @@ export default function StudentAttendancePage() {
       recordsCount: state.attendanceRecords.length
     })
     
-    // Get all sessions for student's courses (these should already be filtered by section)
-    courses.forEach(course => {
-      if (course) {
-        const sessions = getAttendanceSessionsByCourse(course.id)
-        console.log(`📚 Course ${course.course_code} has ${sessions.length} sessions`)
+    // Iterate through sessions directly instead of through courses
+    // fetchStudentAttendanceSessions already filtered by student's section enrollment
+    state.attendanceSessions.forEach(session => {
+      const records = getAttendanceRecordsBySession(session.id)
+      const studentRecord = records.find(r => !!studentId && r.student_id === studentId)
       
-      sessions.forEach(session => {
-        const records = getAttendanceRecordsBySession(session.id)
-        const studentRecord = records.find(r => !!studentId && r.student_id === studentId)
-        
-        console.log(`🎯 Session ${session.session_name}: ${records.length} records, student record:`, !!studentRecord)
-        
-        // Only include sessions where student has an attendance record
-        // This is correct behavior - students only see their own attendance history
-        if (studentRecord) {
-          allRecords.push({
-            id: studentRecord.id,
-            sessionTitle: session.session_name,
-            courseCode: session.course_code,
-            courseName: session.course_name,
-            date: session.session_date,
-            startTime: session.start_time,
-            endTime: session.end_time,
-            status: studentRecord.status,
-            checkInTime: studentRecord.check_in_time,
-            instructor: session.lecturer_name || "Instructor",
-            location: session.location
-          })
-        }
+      console.log(`🎯 Session ${session.session_name}: ${records.length} records, student record:`, !!studentRecord)
+      
+      // Only include sessions where student has an attendance record
+      // This is correct behavior - students only see their own attendance history
+      if (studentRecord) {
+        allRecords.push({
+          id: studentRecord.id,
+          sessionTitle: session.session_name,
+          courseCode: session.course_code,
+          courseName: session.course_name,
+          date: session.session_date,
+          startTime: session.start_time,
+          endTime: session.end_time,
+          status: studentRecord.status,
+          checkInTime: studentRecord.check_in_time,
+          instructor: session.lecturer_name || "Instructor",
+          location: session.location
         })
       }
     })
     
     console.log('📋 Final attendance records:', allRecords.length)
     return allRecords
-  }, [courses, getAttendanceSessionsByCourse, getAttendanceRecordsBySession, state.currentUser?.id, state.attendanceSessions, state.attendanceRecords])
+  }, [getAttendanceRecordsBySession, state.currentUser?.id, state.attendanceSessions, state.attendanceRecords])
 
   // Computed values
   const filteredRecords = useMemo(() => {

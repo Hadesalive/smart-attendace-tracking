@@ -275,26 +275,36 @@ export default function LecturerSessionsPage() {
       return (s.status as SessionStatus) || 'scheduled'
     }
 
-    return state.attendanceSessions.map(session => ({
-      id: session.id,
-      title: session.session_name,
-      courseCode: session.course_code,
-      courseName: session.course_name,
-      type: (session.type || 'lecture') as SessionType,
-      date: session.session_date,
-      startTime: session.start_time,
-      endTime: session.end_time,
-      location: session.location || 'TBA',
-      capacity: session.capacity || 50,
-      enrolled: session.enrolled || 0,
-      status: deriveStatus(session),
-      description: session.description,
-      materials: [],
-      createdAt: session.created_at,
-      updatedAt: session.created_at,
-      qrCode: session.qr_code
-    }))
-  }, [state.attendanceSessions])
+    return state.attendanceSessions.map(session => {
+      // ✅ ENHANCED: Calculate real enrolled count from section_enrollments
+      const enrolledCount = state.sectionEnrollments?.filter((enrollment: any) => 
+        enrollment.section_id === session.section_id && 
+        enrollment.status === 'active'
+      ).length || 0
+      
+      console.log(`Session ${session.session_name}: ${enrolledCount} students enrolled in section ${session.section_id}`)
+      
+      return {
+        id: session.id,
+        title: session.session_name,
+        courseCode: session.course_code,
+        courseName: session.course_name,
+        type: (session.type || 'lecture') as SessionType,
+        date: session.session_date,
+        startTime: session.start_time,
+        endTime: session.end_time,
+        location: session.location || 'TBA',
+        capacity: session.capacity || 50,
+        enrolled: enrolledCount, // ✅ Real count from section_enrollments
+        status: deriveStatus(session),
+        description: session.description,
+        materials: [],
+        createdAt: session.created_at,
+        updatedAt: session.created_at,
+        qrCode: session.qr_code
+      }
+    })
+  }, [state.attendanceSessions, state.sectionEnrollments])
 
   // Calculate stats from sessions
   const stats: SessionStats = useMemo(() => {

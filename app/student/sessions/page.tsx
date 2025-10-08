@@ -246,25 +246,34 @@ export default function StudentSessionsPage() {
   }, [state.courses, state.sectionEnrollments, state.courseAssignments, state.currentUser?.id])
 
   // Get student's sessions from shared data
+  // ✅ FIXED: Use sessions directly from state (already filtered by fetchStudentAttendanceSessions)
   const sessions = useMemo(() => {
-    const allSessions: AttendanceSession[] = []
-    
     console.log('📊 Student sessions calculation:', {
       coursesCount: courses.length,
       totalSessionsInState: state.attendanceSessions.length
     })
-    
-    courses.forEach(course => {
-      if (course) {
-        const courseSessions = getAttendanceSessionsByCourse(course.id)
-        console.log(`📚 Course ${course.course_code} has ${courseSessions.length} sessions`)
-        allSessions.push(...courseSessions)
+
+    // fetchStudentAttendanceSessions already filters by student's section enrollment
+    // So we can use attendanceSessions directly instead of filtering by courses
+    const studentSessions = state.attendanceSessions.map(session => {
+      // ✅ ENHANCED: Calculate real enrolled count from section_enrollments
+      const enrolledCount = state.sectionEnrollments?.filter((enrollment: any) =>
+        enrollment.section_id === session.section_id &&
+        enrollment.status === 'active'
+      ).length || 0
+
+      console.log(`Session ${session.session_name}: ${enrolledCount} students enrolled in section ${session.section_id}`)
+
+      return {
+        ...session,
+        enrolled: enrolledCount, // ✅ Replace mock data with real count
+        capacity: session.capacity || 50 // Keep capacity as fallback
       }
     })
-    
-    console.log('📋 Final student sessions:', allSessions.length)
-    return allSessions
-  }, [courses, getAttendanceSessionsByCourse, state.attendanceSessions])
+
+    console.log('📋 Final student sessions:', studentSessions.length)
+    return studentSessions
+  }, [state.attendanceSessions, state.sectionEnrollments])
 
   // ============================================================================
   // COMPUTED VALUES

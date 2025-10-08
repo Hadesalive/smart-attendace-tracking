@@ -277,6 +277,7 @@ export function useAttendance() {
         .from('attendance_sessions')
         .insert([{
           course_id: session.course_id,
+          section_id: session.section_id, // ✅ FIXED: Added section_id
           lecturer_id: session.lecturer_id,
           session_name: session.session_name,
           session_date: session.session_date,
@@ -334,6 +335,7 @@ export function useAttendance() {
         .from('attendance_sessions')
         .update({
           session_name: updates.session_name,
+          section_id: updates.section_id, // ✅ FIXED: Added section_id
           session_date: updates.session_date,
           start_time: updates.start_time,
           end_time: updates.end_time,
@@ -423,34 +425,49 @@ export function useAttendance() {
     }
   }, [])
 
-  const markAttendanceSupabase = useCallback(async (sessionId: string, studentId: string, method: 'qr_code' | 'facial_recognition') => {
+  const markAttendanceSupabase = useCallback(async (sessionId: string, studentId: string, method: 'qr_code' | 'facial_recognition', token?: string) => {
     try {
-      console.log('Calling mark-attendance function with:', { sessionId, studentId, method })
+      console.log('Calling mark-attendance function with:', { sessionId, studentId, method, hasToken: !!token })
       
       // Call the edge function to mark attendance
       const { data, error } = await supabase.functions.invoke('mark-attendance', {
         body: {
           session_id: sessionId,
-          student_id: studentId
+          student_id: studentId,
+          token: token // ✅ ENHANCED: Pass rotating QR token for validation
         }
       })
 
       console.log('Function response:', { data, error })
+      console.log('Response data type:', typeof data)
+      console.log('Response data keys:', data ? Object.keys(data) : 'null')
+      console.log('Response error type:', typeof error)
+      console.log('Response error keys:', error ? Object.keys(error) : 'null')
 
       if (error) {
         console.error('Supabase function error:', error)
-        // Try to extract error message from context
-        let errorMessage = error.message
-        if (error.context) {
+        // Try to extract error message from various sources
+        let errorMessage = error.message || 'Unknown error from edge function'
+        
+        // Check if data contains error message (common for 400 responses)
+        if (data && typeof data === 'object' && 'error' in data) {
+          errorMessage = (data as any).error
+          console.log('✅ Found error in data.error:', errorMessage)
+        }
+        // Check error.context
+        else if (error.context) {
           try {
             const context = JSON.parse(error.context)
             if (context.error) {
               errorMessage = context.error
+              console.log('✅ Found error in error.context:', errorMessage)
             }
           } catch (e) {
             // Ignore parsing error, use original message
           }
         }
+        
+        console.log('📤 Final extracted error message:', errorMessage)
         throw new Error(errorMessage)
       }
 

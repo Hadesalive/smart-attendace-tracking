@@ -19,9 +19,12 @@ export default function QrScannerComponent({ onScanSuccess }: QrScannerComponent
     try {
       const url = new URL(result)
       
-      // Extract session ID from URL path (format: /attend/[sessionId])
+      // Extract session ID from URL path (format: /attend/[sessionId]?token=xxx)
       const pathParts = url.pathname.split('/').filter(part => part.length > 0)
       const sessionId = pathParts[pathParts.length - 1] // Last part of path
+      
+      // ✅ Extract token from query params
+      const token = url.searchParams.get('token')
 
       if (!sessionId || sessionId === 'attend') {
         throw new Error("Invalid QR code. Session ID not found in URL path.")
@@ -30,7 +33,8 @@ export default function QrScannerComponent({ onScanSuccess }: QrScannerComponent
       console.log('QR Code scanned:', {
         fullUrl: result,
         pathname: url.pathname,
-        extractedSessionId: sessionId
+        extractedSessionId: sessionId,
+        hasToken: !!token
       })
 
       const { data: userData, error: userError } = await supabase.auth.getUser()
@@ -38,8 +42,13 @@ export default function QrScannerComponent({ onScanSuccess }: QrScannerComponent
         throw new Error("You must be logged in to mark attendance.")
       }
 
+      // ✅ ENHANCED: Pass token for validation
       const { error: functionError } = await supabase.functions.invoke("mark-attendance", {
-        body: { session_id: sessionId, student_id: userData.user.id },
+        body: { 
+          session_id: sessionId, 
+          student_id: userData.user.id,
+          token: token || undefined // Include token if present
+        },
       })
 
       if (functionError) {

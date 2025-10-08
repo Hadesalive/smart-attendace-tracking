@@ -33,7 +33,7 @@ import {
   PresentationChartLineIcon
 } from "@heroicons/react/24/outline"
 import { formatDate, formatNumber } from "@/lib/utils"
-import { useAttendance, useCourses, useAuth } from "@/lib/domains"
+import { useAttendance, useCourses, useAuth, useAcademicStructure } from "@/lib/domains"
 import { AttendanceSession, AttendanceRecord } from "@/lib/types/shared"
 import { mapAttendanceStatus } from "@/lib/utils/statusMapping"
 
@@ -82,28 +82,31 @@ export default function StudentAttendanceDetailsPage() {
   const attendance = useAttendance()
   const courses = useCourses()
   const auth = useAuth()
-  
+  const academic = useAcademicStructure()
+
   // Extract state and methods
-  const { 
+  const {
     state: attendanceState,
     fetchAttendanceSessions,
     fetchStudentAttendanceSessions,
     fetchAttendanceRecords,
     getAttendanceRecordsBySession
   } = attendance
-  
-  const { 
+
+  const {
     state: coursesState,
     fetchCourses,
     fetchEnrollments
   } = courses
-  
+
   const { state: authState } = auth
-  
+  const { state: academicState } = academic
+
   // Create legacy state object for compatibility
   const state = {
     ...attendanceState,
     ...coursesState,
+    ...academicState,
     currentUser: authState.currentUser
   }
 
@@ -166,14 +169,27 @@ export default function StudentAttendanceDetailsPage() {
         }
 
         const records = getAttendanceRecordsBySession(sessionId)
-        const studentRecord = records.find((r: any) => 
+        const studentRecord = records.find((r: any) =>
           !!state.currentUser?.id && r.student_id === state.currentUser.id
         )
-        
+
         console.log('📋 Student record found:', !!studentRecord)
 
+        // ✅ ENHANCED: Calculate real enrolled count from section_enrollments
+        const enrolledCount = state.sectionEnrollments?.filter((enrollment: any) =>
+          enrollment.section_id === session.section_id &&
+          enrollment.status === 'active'
+        ).length || 0
+
+        // Create session with real enrollment data
+        const sessionWithRealData = {
+          ...session,
+          enrolled: enrolledCount, // ✅ Replace mock data with real count
+          capacity: session.capacity || 50
+        }
+
         setDetails({
-          session,
+          session: sessionWithRealData,
           studentRecord: studentRecord || null,
           loading: false,
           error: null

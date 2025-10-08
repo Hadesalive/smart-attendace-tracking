@@ -18,6 +18,15 @@ export default function StudentScanAttendancePage() {
   const searchParams = useSearchParams()
   const sessionIdFromUrl = searchParams.get('sessionId')
   
+  // 🐛 FIX: Ensure user is loaded
+  useEffect(() => {
+    console.log('🔍 Auth state on mount:', {
+      currentUser: authState.currentUser,
+      userId: authState.currentUser?.id,
+      userEmail: authState.currentUser?.email
+    })
+  }, [authState.currentUser])
+  
   const [isScanning, setIsScanning] = useState(false)
   const [scanResult, setScanResult] = useState<{
     success: boolean
@@ -42,16 +51,24 @@ export default function StudentScanAttendancePage() {
     console.log('QR Code scanned:', data)
     setLoading(true)
     
+    // Declare variables outside try block for access in catch
+    let sessionId: string = ''
+    let token: string | undefined = undefined
+    let currentUser: any = null
+    
     try {
-      let sessionId: string
       let sessionData: any = null
       
-      // Handle URL format QR codes (like /attend/session123)
+      // Handle URL format QR codes (like /attend/session123?token=xxx)
       if (data.includes('/attend/')) {
         const url = new URL(data, window.location.origin)
         const pathParts = url.pathname.split('/')
         const sessionIdIndex = pathParts.indexOf('attend') + 1
         sessionId = pathParts[sessionIdIndex]
+        
+        // Extract token from query params
+        token = url.searchParams.get('token') || undefined
+        console.log('🔐 Token extracted from QR code:', token ? 'Present' : 'None')
         
         if (!sessionId) {
           throw new Error('Invalid QR code - session ID not found in URL')
@@ -71,7 +88,9 @@ export default function StudentScanAttendancePage() {
       }
       
       // Fetch session directly from database instead of relying on local state
-      console.log('Fetching session from database:', sessionId)
+      console.log('🔍 Fetching session from database:', sessionId)
+      console.log('🔍 Current user ID:', authState.currentUser?.id)
+      console.log('🔍 Current user email:', authState.currentUser?.email)
       
       const { data: dbSessionData, error: sessionError } = await supabase
         .from('attendance_sessions')
@@ -110,6 +129,19 @@ export default function StudentScanAttendancePage() {
         throw new Error('This session is not assigned to any section. Please contact your lecturer.')
       }
 
+      // ✅ FIX: Get current user from Supabase directly instead of auth hook
+      const { data: { user } } = await supabase.auth.getUser()
+      currentUser = user // Assign to outer scope variable
+      
+      if (!currentUser) {
+        throw new Error('You must be logged in to mark attendance')
+      }
+      
+      console.log('✅ Current user from Supabase:', {
+        id: currentUser.id,
+        email: currentUser.email
+      })
+      
       const { data: enrollment, error: enrollmentError } = await supabase
         .from('section_enrollments')
         .select(`
@@ -122,35 +154,64 @@ export default function StudentScanAttendancePage() {
             program_id
           )
         `)
-        .eq('student_id', authState.currentUser?.id)
+        .eq('student_id', currentUser.id)  // ✅ Use Supabase user ID
         .eq('section_id', dbSessionData.section_id)
         .eq('status', 'active')
-        .single()
+        .maybeSingle()
 
-      console.log('Section enrollment check:', { 
+      console.log('🔍 Section enrollment check:', { 
         courseId: dbSessionData.course_id,
         sectionId: dbSessionData.section_id,
         userId: authState.currentUser?.id, 
         enrollment,
-        enrollmentError
+        enrollmentError,
+        hasEnrollment: !!enrollment
       })
       
       if (enrollmentError || !enrollment) {
-        throw new Error('You are not enrolled in this section or the session is not for your section')
+        // Fetch ALL student enrollments to see what sections they're in
+        const { data: allEnrollments } = await supabase
+          .from('section_enrollments')
+          .select('section_id, status, sections(section_code, program_id)')
+          .eq('student_id', currentUser.id)  // ✅ Use Supabase user
+        
+        console.error('❌ Enrollment check failed:', {
+          error: enrollmentError,
+          studentId: currentUser.id,  // ✅ Use Supabase user
+          studentEmail: currentUser.email,
+          sessionSectionId: dbSessionData.section_id,
+          enrollmentFound: !!enrollment,
+          allStudentEnrollments: allEnrollments,
+          enrollmentCount: allEnrollments?.length || 0
+        })
+        
+        // 🐛 TEMP DEBUG: Show on screen
+        alert(`DEBUG INFO:
+Student ID: ${currentUser.id}
+Student Email: ${currentUser.email}
+Session Section: ${dbSessionData.section_id}
+Enrollments Found: ${allEnrollments?.length || 0}
+Enrollments: ${JSON.stringify(allEnrollments, null, 2)}
+Error: ${enrollmentError?.message || 'None'}`)
+        
+        throw new Error(
+          `You are not enrolled in this section.\n` +
+          `Session requires section: ${dbSessionData.section_id}\n` +
+          `You are enrolled in ${allEnrollments?.length || 0} section(s).\n` +
+          `Check console for details.`
+        )
       }
       
       // Mark attendance using Supabase
-      if (!authState.currentUser?.id) {
-        throw new Error('User not authenticated')
-      }
-      
       console.log('About to call markAttendanceSupabase with:', {
         sessionId,
-        studentId: authState.currentUser.id,
-        method: 'qr_code'
+        studentId: currentUser.id,  // ✅ Use Supabase user
+        method: 'qr_code',
+        hasToken: !!token
       })
       
-      await markAttendanceSupabase(sessionId, authState.currentUser.id, 'qr_code')
+      // ✅ ENHANCED: Pass token for validation
+      await markAttendanceSupabase(sessionId, currentUser.id, 'qr_code', token)
       
       setScanResult({
         success: true,
@@ -183,6 +244,25 @@ export default function StudentScanAttendancePage() {
           errorMessage = errorObj.message
         }
       }
+      
+      // 🐛 TEMP DEBUG: Show detailed error on screen for mobile testing
+      // Log full error details to console
+      console.log('Full error object:', error)
+      console.log('Error type:', typeof error)
+      console.log('Error keys:', error ? Object.keys(error) : 'null')
+      
+      alert(`❌ ATTENDANCE MARK FAILED:
+
+Error: ${errorMessage}
+
+Session ID: ${sessionId}
+Student ID: ${currentUser?.id}
+Token: ${token ? 'Present' : 'None'}
+
+Error Type: ${typeof error}
+Error Constructor: ${error?.constructor?.name}
+
+Check browser console for full details!`)
       
       setScanResult({
         success: false,

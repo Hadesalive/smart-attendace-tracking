@@ -18,17 +18,49 @@ interface SessionQrCodeDialogProps {
 
 export default function SessionQrCodeDialog({ isOpen, onOpenChange, session }: SessionQrCodeDialogProps) {
   const [qrValue, setQrValue] = useState('');
+  const [rotationCounter, setRotationCounter] = useState(0);
+  const [secondsUntilRotation, setSecondsUntilRotation] = useState(60);
   const attendance = useAttendance();
   const { getSessionTimeStatus } = attendance;
 
+  // Rotate QR code every 60 seconds to prevent sharing
   useEffect(() => {
-    if (session) {
-      // Generate URL that redirects to attendance page
+    if (!session || !isOpen) return;
+
+    const generateQrCode = () => {
       const baseUrl = typeof window !== 'undefined' ? window.location.origin : '';
-      const attendanceUrl = `${baseUrl}/attend/${session.id}`;
+      // Generate time-based token (changes every 60 seconds)
+      const timestamp = Math.floor(Date.now() / 60000); // 60 seconds
+      const token = btoa(`${session.id}:${timestamp}`); // Base64 encode
+      const attendanceUrl = `${baseUrl}/attend/${session.id}?token=${token}`;
       setQrValue(attendanceUrl);
-    }
-  }, [session]);
+      setRotationCounter(prev => prev + 1);
+      console.log('🔄 QR Code rotated:', { timestamp, rotation: rotationCounter + 1 });
+    };
+
+    // Generate immediately
+    generateQrCode();
+
+    // Rotate every 60 seconds
+    const interval = setInterval(generateQrCode, 60000);
+
+    return () => clearInterval(interval);
+  }, [session, isOpen]);
+
+  // Countdown timer for visual feedback
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const timer = setInterval(() => {
+      const now = Date.now();
+      const currentMinute = Math.floor(now / 60000);
+      const nextMinute = (currentMinute + 1) * 60000;
+      const secondsLeft = Math.ceil((nextMinute - now) / 1000);
+      setSecondsUntilRotation(secondsLeft);
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [isOpen]);
 
   // Check if session is currently active
   const isSessionActive = session ? getSessionTimeStatus(session as any) === 'active' : false;
@@ -67,6 +99,13 @@ export default function SessionQrCodeDialog({ isOpen, onOpenChange, session }: S
                 <div className="text-white font-semibold text-lg">
                   {getSessionTimeStatus(session as any) === 'upcoming' ? 'Session Not Started' : 'Session Ended'}
                 </div>
+              </div>
+            )}
+            {/* ✅ NEW: Rotation Countdown Indicator */}
+            {isSessionActive && (
+              <div className="absolute bottom-2 right-2 bg-black bg-opacity-75 text-white px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-2">
+                <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+                Refreshes in {secondsUntilRotation}s
               </div>
             )}
           </div>

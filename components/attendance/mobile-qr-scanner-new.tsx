@@ -34,8 +34,13 @@ export default function MobileQrScanner({
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const isSecure = window.location.protocol === 'https:' || window.location.hostname === 'localhost'
-      setIsHttps(isSecure)
+      // ⚠️ DEV MODE: HTTPS check disabled for local testing
+      // TODO: Re-enable for production
+      setIsHttps(true) // Always allow camera access in dev
+      
+      // Production check (commented out for dev):
+      // const isSecure = window.location.protocol === 'https:' || window.location.hostname === 'localhost'
+      // setIsHttps(isSecure)
     }
   }, [])
 

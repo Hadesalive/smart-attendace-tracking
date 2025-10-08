@@ -36,7 +36,7 @@ import {
   AcademicCapIcon
 } from "@heroicons/react/24/outline"
 import { formatDate, formatFileSize } from "@/lib/utils"
-import { useAttendance, useCourses, useAuth } from "@/lib/domains"
+import { useAttendance, useCourses, useAuth, useAcademicStructure } from "@/lib/domains"
 import { AttendanceSession } from "@/lib/types/shared"
 import { mapSessionStatus } from "@/lib/utils/statusMapping"
 
@@ -109,28 +109,31 @@ export default function StudentSessionDetailsPage() {
   const attendance = useAttendance()
   const courses = useCourses()
   const auth = useAuth()
-  
+  const academic = useAcademicStructure()
+
   // Extract state and methods
-  const { 
+  const {
     state: attendanceState,
     fetchAttendanceSessions,
     fetchStudentAttendanceSessions,
     fetchAttendanceRecords,
     getAttendanceRecordsBySession
   } = attendance
-  
-  const { 
+
+  const {
     state: coursesState,
     fetchCourses,
     fetchEnrollments
   } = courses
-  
+
   const { state: authState } = auth
-  
+  const { state: academicState } = academic
+
   // Create legacy state object for compatibility
   const state = {
     ...attendanceState,
     ...coursesState,
+    ...academicState,
     currentUser: authState.currentUser
   }
 
@@ -202,6 +205,12 @@ export default function StudentSessionDetailsPage() {
     const records = getAttendanceRecordsBySession(source.id)
     const studentRecord = records.find((r: any) => !!state.currentUser?.id && r.student_id === state.currentUser.id)
 
+    // ✅ ENHANCED: Calculate real enrolled count from section_enrollments
+    const enrolledCount = state.sectionEnrollments?.filter((enrollment: any) =>
+      enrollment.section_id === source.section_id &&
+      enrollment.status === 'active'
+    ).length || 0
+
     const view: StudentSession = {
       id: source.id,
       title: source.session_name,
@@ -214,7 +223,7 @@ export default function StudentSessionDetailsPage() {
       endTime: source.end_time,
       location: (source as any).location || 'TBA',
       capacity: source.capacity || 50,
-      enrolled: source.enrolled || 0,
+      enrolled: enrolledCount, // ✅ Replace mock data with real count
       status: studentStatus,
       description: source.description || '',
       materials: [],

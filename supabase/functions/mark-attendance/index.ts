@@ -9,6 +9,7 @@ const corsHeaders = {
 interface RequestBody {
   session_id: string;
   student_id: string;
+  token?: string; // Optional rotating token for QR code validation
 }
 
 Deno.serve(async (req: Request) => {
@@ -25,10 +26,71 @@ Deno.serve(async (req: Request) => {
       { global: { headers: { Authorization: req.headers.get('Authorization')! } } }
     )
 
-    const { session_id, student_id }: RequestBody = await req.json()
+    const { session_id, student_id, token }: RequestBody = await req.json()
 
     if (!session_id || !student_id) {
       throw new Error('Missing session_id or student_id in the request body.')
+    }
+
+    // ✅ ENHANCED: Validate rotating QR token if provided
+    if (token) {
+      try {
+        console.log('🔍 Validating QR token:', token);
+
+        // Decode the token (format: base64(sessionId:timestamp))
+        const decoded = atob(token);
+        console.log('🔓 Decoded token:', decoded);
+
+        const [tokenSessionId, tokenTimestamp] = decoded.split(':');
+
+        if (!tokenSessionId || !tokenTimestamp) {
+          throw new Error('Invalid QR code format - missing session ID or timestamp');
+        }
+
+        console.log('📋 Token contents:', { tokenSessionId, tokenTimestamp });
+
+        // Verify session ID matches
+        if (tokenSessionId !== session_id) {
+          console.error('❌ Session ID mismatch:', {
+            tokenSessionId,
+            expectedSessionId: session_id
+          });
+          throw new Error('Invalid QR code - session mismatch');
+        }
+
+        // Verify token is recent (within 10 minutes for more tolerance)
+        const now = Date.now();
+        const tokenTime = parseInt(tokenTimestamp) * 60000; // Convert back to milliseconds
+        const tokenAge = now - tokenTime;
+        const maxAge = 10 * 60 * 1000; // 10 minutes (increased from 2)
+
+        console.log('⏱️ Token timing:', {
+          now,
+          tokenTime,
+          tokenAge: Math.floor(tokenAge / 1000) + 's',
+          maxAge: Math.floor(maxAge / 1000) + 's'
+        });
+
+        if (tokenAge > maxAge || tokenAge < -300000) { // Allow 5 minutes future tolerance for clock skew
+          console.log('❌ Token expired:', {
+            tokenAge: Math.floor(tokenAge / 1000) + 's',
+            maxAge: Math.floor(maxAge / 1000) + 's',
+            now,
+            tokenTime
+          });
+          throw new Error(`QR code expired (${Math.floor(tokenAge / 1000)}s old). Please scan the current QR code from the lecturer screen.`);
+        }
+
+        console.log('✅ Token validated successfully:', { tokenAge: Math.floor(tokenAge / 1000) + 's' });
+      } catch (e) {
+        if (e instanceof Error && e.message.includes('QR code')) {
+          throw e; // Re-throw our custom errors
+        }
+        console.error('❌ Token validation error:', e);
+        throw new Error('Invalid QR code format: ' + e.message);
+      }
+    } else {
+      console.log('⚠️ No token provided - proceeding without QR validation');
     }
 
     // 1. Check if the session is valid and active (triggering deployment)

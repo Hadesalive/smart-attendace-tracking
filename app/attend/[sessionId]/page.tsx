@@ -1,7 +1,7 @@
 "use client"
 
 import React, { useState, useEffect } from "react"
-import { useParams, useRouter } from "next/navigation"
+import { useParams, useRouter, useSearchParams } from "next/navigation"
 import { Box, Typography, Card, CardContent, Button, Alert, Chip } from "@mui/material"
 import { QrCodeIcon, CheckCircleIcon, XCircleIcon, ClockIcon } from "@heroicons/react/24/outline"
 import { motion } from "framer-motion"
@@ -19,9 +19,11 @@ interface AttendanceResult {
 export default function AttendSessionPage() {
   const params = useParams()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const attendance = useAttendance()
   const { markAttendanceSupabase, state, getSessionTimeStatus } = attendance
   const sessionId = params.sessionId as string
+  const token = searchParams.get('token') // ✅ Extract token from URL
   
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<AttendanceResult | null>(null)
@@ -71,6 +73,7 @@ export default function AttendSessionPage() {
         const transformedSession = {
           id: sessionData.id,
           course_id: sessionData.course_id,
+          section_id: sessionData.section_id, // ✅ FIXED: Include section_id
           course_code: courseData?.course_code || 'Unknown',
           course_name: courseData?.course_name || 'Unknown Course',
           session_name: sessionData.session_name,
@@ -137,58 +140,14 @@ export default function AttendSessionPage() {
         throw new Error('You must be logged in to mark attendance. Please log in and try again.')
       }
 
-      // Check if user is enrolled in the section for this session
-      if (!session.section_id) {
-        throw new Error('This session is not assigned to any section. Please contact your lecturer.')
-      }
-
-      const { data: enrollment, error: enrollmentError } = await supabase
-        .from('section_enrollments')
-        .select(`
-          id,
-          section_id,
-          status,
-          sections!inner(
-            id,
-            section_code,
-            program_id
-          )
-        `)
-        .eq('student_id', user.id)
-        .eq('section_id', session.section_id)
-        .eq('status', 'active')
-        .single()
-
-      if (enrollmentError || !enrollment) {
-        throw new Error('You are not enrolled in this section or the session is not for your section')
-      }
-
-      // Check if attendance already marked
-      const { data: existingAttendance, error: existingError } = await supabase
-        .from('attendance_records')
-        .select('id')
-        .eq('session_id', sessionId)
-        .eq('student_id', user.id)
-        .single()
-
-      if (existingAttendance) {
-        throw new Error('Attendance has already been marked for this session')
-      }
-
-      // Mark attendance
-      const { error: insertError } = await supabase
-        .from('attendance_records')
-        .insert({
-          session_id: sessionId,
-          student_id: user.id,
-          status: 'present',
-          marked_at: new Date().toISOString(),
-          method_used: 'qr_code'
-        })
-
-      if (insertError) {
-        throw new Error(`Failed to mark attendance: ${insertError.message}`)
-      }
+      // ✅ IMPROVED: Use edge function for consistent validation (includes token validation)
+      console.log('Marking attendance via edge function:', { 
+        sessionId, 
+        userId: user.id, 
+        hasToken: !!token 
+      })
+      
+      await markAttendanceSupabase(sessionId, user.id, 'qr_code', token || undefined)
       
       setResult({
         success: true,
@@ -201,11 +160,24 @@ export default function AttendSessionPage() {
       
     } catch (error: any) {
       console.error('Error marking attendance:', error)
+      
+      // Extract error message from various formats
+      let errorMessage = 'Failed to mark attendance'
+      if (error instanceof Error) {
+        errorMessage = error.message
+      } else if (typeof error === 'object' && error !== null) {
+        if (error.error) {
+          errorMessage = error.error
+        } else if (error.message) {
+          errorMessage = error.message
+        }
+      }
+      
       setResult({
         success: false,
-        message: error.message || 'Failed to mark attendance'
+        message: errorMessage
       })
-      toast.error(error.message || 'Failed to mark attendance')
+      toast.error(errorMessage)
     } finally {
       setLoading(false)
     }
