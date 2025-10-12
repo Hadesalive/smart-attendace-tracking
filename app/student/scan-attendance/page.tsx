@@ -6,17 +6,32 @@ import { QrCodeIcon, CheckCircleIcon, XCircleIcon } from "@heroicons/react/24/ou
 import { motion } from "framer-motion"
 import { toast } from "sonner"
 import MobileQrScanner from "@/components/attendance/mobile-qr-scanner-new"
-import { useAttendance, useAuth } from "@/lib/domains"
+import { useAttendance, useAuth, useAcademicStructure } from "@/lib/domains"
+import {
+  AttendanceValidator,
+  AttendanceEdgeCaseHandler,
+  AttendanceErrorRecovery
+} from "@/lib/validation/attendance-validation"
 import { useSearchParams } from "next/navigation"
 import { supabase } from "@/lib/supabase"
 
 export default function StudentScanAttendancePage() {
   const attendance = useAttendance()
   const auth = useAuth()
+  const academic = useAcademicStructure()
+
   const { markAttendanceSupabase, state } = attendance
   const { state: authState } = auth
+  const { state: academicState } = academic
   const searchParams = useSearchParams()
   const sessionIdFromUrl = searchParams.get('sessionId')
+
+  // Combine states for comprehensive validation
+  const combinedState = {
+    ...state,
+    ...academicState,
+    currentUser: authState.currentUser
+  }
   
   // 🐛 FIX: Ensure user is loaded
   useEffect(() => {
@@ -33,6 +48,7 @@ export default function StudentScanAttendancePage() {
     message: string
     sessionId?: string
     courseName?: string
+    retryable?: boolean
   } | null>(null)
   const [isMobile, setIsMobile] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -132,15 +148,48 @@ export default function StudentScanAttendancePage() {
       // ✅ FIX: Get current user from Supabase directly instead of auth hook
       const { data: { user } } = await supabase.auth.getUser()
       currentUser = user // Assign to outer scope variable
-      
+
       if (!currentUser) {
         throw new Error('You must be logged in to mark attendance')
       }
-      
+
       console.log('✅ Current user from Supabase:', {
         id: currentUser.id,
         email: currentUser.email
       })
+
+      // 🔍 COMPREHENSIVE VALIDATION: Validate attendance data
+      const attendanceValidation = AttendanceValidator.validateAttendance({
+        session_id: sessionId,
+        student_id: currentUser.id,
+        method: 'qr_code',
+        token: token
+      })
+
+      if (!attendanceValidation.isValid) {
+        console.error('❌ Attendance validation failed:', attendanceValidation.errors)
+        throw new Error(`Validation failed: ${attendanceValidation.errors.join(', ')}`)
+      }
+
+      // Show warnings if any
+      if (attendanceValidation.warnings.length > 0) {
+        console.warn('⚠️ Attendance validation warnings:', attendanceValidation.warnings)
+      }
+
+      // 🔍 EDGE CASE HANDLING: Check for potential issues
+      const edgeCaseCheck = await AttendanceEdgeCaseHandler.handleAttendanceEdgeCases({
+        session_id: sessionId,
+        student_id: currentUser.id,
+        method: 'qr_code',
+        token: token
+      })
+
+      if (!edgeCaseCheck.shouldProceed) {
+        console.warn('⚠️ Edge case detected:', edgeCaseCheck.reason)
+        if (edgeCaseCheck.suggestedAction) {
+          console.log('💡 Suggested action:', edgeCaseCheck.suggestedAction)
+        }
+      }
       
       const { data: enrollment, error: enrollmentError } = await supabase
         .from('section_enrollments')
@@ -229,14 +278,13 @@ Error: ${enrollmentError?.message || 'None'}`)
       
     } catch (error) {
       console.error('Error marking attendance:', error)
-      
-      // Extract more detailed error message
+
+      // Extract error message
       let errorMessage = 'Failed to mark attendance. Please try again.'
-      
+
       if (error instanceof Error) {
         errorMessage = error.message
       } else if (typeof error === 'object' && error !== null) {
-        // Handle Supabase function errors
         const errorObj = error as any
         if (errorObj.error) {
           errorMessage = errorObj.error
@@ -244,31 +292,42 @@ Error: ${enrollmentError?.message || 'None'}`)
           errorMessage = errorObj.message
         }
       }
-      
-      // 🐛 TEMP DEBUG: Show detailed error on screen for mobile testing
-      // Log full error details to console
-      console.log('Full error object:', error)
-      console.log('Error type:', typeof error)
-      console.log('Error keys:', error ? Object.keys(error) : 'null')
-      
-      alert(`❌ ATTENDANCE MARK FAILED:
 
-Error: ${errorMessage}
+      // 🔧 ENHANCED ERROR RECOVERY: Get user-friendly error info
+      const friendlyError = AttendanceErrorRecovery.getUserFriendlyError(errorMessage)
+      const isRetryable = AttendanceErrorRecovery.isRetryableError(errorMessage)
+
+      // Log detailed error for debugging
+      console.log('📊 Error analysis:', {
+        originalError: errorMessage,
+        friendlyTitle: friendlyError.title,
+        friendlyMessage: friendlyError.message,
+        retryable: isRetryable,
+        sessionId,
+        studentId: currentUser?.id,
+        hasToken: !!token
+      })
+
+      // Show user-friendly error popup
+      alert(`❌ ${friendlyError.title}
+
+${friendlyError.message}
+
+${friendlyError.action ? `💡 Action: ${friendlyError.action}` : ''}
 
 Session ID: ${sessionId}
-Student ID: ${currentUser?.id}
+${currentUser?.id ? `Student ID: ${currentUser.id}` : ''}
 Token: ${token ? 'Present' : 'None'}
 
-Error Type: ${typeof error}
-Error Constructor: ${error?.constructor?.name}
+${isRetryable ? '🔄 This error is retryable' : '❌ Please contact support if this persists'}`)
 
-Check browser console for full details!`)
-      
       setScanResult({
         success: false,
-        message: errorMessage
+        message: friendlyError.message,
+        retryable: isRetryable
       })
-      toast.error(errorMessage)
+
+      toast.error(friendlyError.message)
     } finally {
       setLoading(false)
     }
@@ -416,9 +475,9 @@ Check browser console for full details!`)
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.3 }}
           >
-            <Alert 
+            <Alert
               severity={scanResult.success ? "success" : "error"}
-              sx={{ 
+              sx={{
                 borderRadius: 3,
                 '& .MuiAlert-message': {
                   fontFamily: 'DM Sans, sans-serif',
@@ -426,20 +485,40 @@ Check browser console for full details!`)
                 }
               }}
               icon={scanResult.success ? <CheckCircleIcon style={{ width: 20, height: 20 }} /> : <XCircleIcon style={{ width: 20, height: 20 }} />}
+              action={scanResult.retryable && !scanResult.success ? (
+                <Button
+                  color="inherit"
+                  size="small"
+                  onClick={() => {
+                    setScanResult(null)
+                    setIsScanning(true)
+                  }}
+                  sx={{
+                    fontFamily: 'DM Sans, sans-serif',
+                    fontWeight: 600,
+                    textTransform: 'none',
+                    '&:hover': {
+                      backgroundColor: 'rgba(255, 255, 255, 0.1)'
+                    }
+                  }}
+                >
+                  🔄 Retry
+                </Button>
+              ) : null}
             >
               {scanResult.message}
               {scanResult.courseName && (
                 <Box sx={{ mt: 1 }}>
-                  <Chip 
-                    label={scanResult.courseName} 
-                    size="small" 
-                    sx={{ 
+                  <Chip
+                    label={scanResult.courseName}
+                    size="small"
+                    sx={{
                       bgcolor: scanResult.success ? '#000000' : '#666666',
                       color: 'white',
                       fontFamily: 'DM Sans, sans-serif',
                       fontWeight: 500,
                       border: '1px solid #000000'
-                    }} 
+                    }}
                   />
                 </Box>
               )}

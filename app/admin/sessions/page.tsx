@@ -176,19 +176,11 @@ export default function SessionsPage() {
   
   const router = useRouter()
   
-  // Data Context
+  // Data Context - Access state directly without merging
   const attendance = useAttendance()
   const courses = useCourses()
   const auth = useAuth()
   const academic = useAcademicStructure()
-  
-  // Create unified state object
-  const state = {
-    ...attendance.state,
-    ...courses.state,
-    ...academic.state,
-    users: auth.state.users
-  }
   
   // Filtering state
   const [filters, setFilters] = useState({
@@ -222,32 +214,48 @@ export default function SessionsPage() {
   // COMPUTED DATA
   // ============================================================================
 
-  // Get sessions from DataContext
+  // Get sessions from DataContext - Safe access with proper checks
   const sessions = useMemo(() => {
-    return state.attendanceSessions.map(session => {
-      const course = state.courses.find(c => c.id === session.course_id)
-      
-      return {
-        id: session.id,
-        session_name: session.session_name,
-        session_date: session.session_date,
-        start_time: session.start_time,
-        end_time: session.end_time,
-        attendance_method: session.attendance_method || 'qr_code',
-        status: (session.status as 'scheduled' | 'active' | 'completed' | 'cancelled') || 'scheduled',
-        is_active: session.is_active || false,
-        courses: course ? {
-          course_code: course.course_code,
-          course_name: course.course_name,
-          department: course.department || 'Computer Science'
-        } : undefined,
-        users: {
-          full_name: session.lecturer_name || 'Unknown Lecturer',
-          email: 'N/A'
+    // Safety check: Ensure data exists before processing
+    if (!attendance.state.attendanceSessions || !Array.isArray(attendance.state.attendanceSessions)) {
+      console.warn('Admin Sessions: No attendance sessions available')
+      return []
+    }
+
+    if (!courses.state.courses || !Array.isArray(courses.state.courses)) {
+      console.warn('Admin Sessions: No courses available')
+      return []
+    }
+
+    try {
+      return attendance.state.attendanceSessions.map(session => {
+        const course = courses.state.courses.find((c: any) => c.id === session.course_id)
+        
+        return {
+          id: session.id,
+          session_name: session.session_name,
+          session_date: session.session_date,
+          start_time: session.start_time,
+          end_time: session.end_time,
+          attendance_method: session.attendance_method || 'qr_code',
+          status: (session.status as 'scheduled' | 'active' | 'completed' | 'cancelled') || 'scheduled',
+          is_active: session.is_active || false,
+          courses: course ? {
+            course_code: course.course_code,
+            course_name: course.course_name,
+            department: course.department || 'Computer Science'
+          } : undefined,
+          users: {
+            full_name: session.lecturer_name || 'Unknown Lecturer',
+            email: 'N/A'
+          }
         }
-      }
-    })
-  }, [state.attendanceSessions, state.courses])
+      })
+    } catch (error) {
+      console.error('Admin Sessions: Error processing sessions:', error)
+      return []
+    }
+  }, [attendance.state.attendanceSessions, courses.state.courses])
 
   // Calculate stats from DataContext
   const stats = useMemo(() => {

@@ -25,6 +25,8 @@ interface LecturerDetails {
   yearsExperience: number
   position: string
   hireDate: string
+  officeLocation?: string
+  officeHours?: string
   researchInterests: string
   qualifications: string
   totalCourses: number
@@ -54,6 +56,9 @@ interface LecturerDetails {
       section: string
       enrollmentDate: string
       status: string
+      attendanceRate?: number
+      sessionsAttended?: number
+      totalSessions?: number
     }>
   }>
   recentSessions: Array<{
@@ -250,6 +255,16 @@ export default function LecturerTabs({ details, state }: LecturerTabsProps) {
                 icon: CalendarDaysIcon
               },
               {
+                label: "Office Location",
+                value: details.officeLocation || "Not assigned",
+                icon: BuildingOfficeIcon
+              },
+              {
+                label: "Office Hours",
+                value: details.officeHours || "Not set",
+                icon: ClockIcon
+              },
+              {
                 label: "Research Interests",
                 value: details.researchInterests || "Not specified",
                 icon: BookOpenIcon
@@ -356,6 +371,20 @@ export default function LecturerTabs({ details, state }: LecturerTabsProps) {
                             <Typography variant="body2">
                               {student.email}
                             </Typography>
+                          )
+                        },
+                        {
+                          key: 'attendance',
+                          label: 'Attendance',
+                          render: (value: any, student: any) => (
+                            <Box>
+                              <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                                {student.attendanceRate !== undefined ? `${student.attendanceRate}%` : 'N/A'}
+                              </Typography>
+                              <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                                {student.sessionsAttended || 0}/{student.totalSessions || 0} sessions
+                              </Typography>
+                            </Box>
                           )
                         },
                         {
@@ -486,41 +515,47 @@ export default function LecturerTabs({ details, state }: LecturerTabsProps) {
                 label: "Date",
                 render: (session: any) => (
                   <Typography variant="body2">
-                    {new Date(session.date).toLocaleDateString()}
+                    {session.date}
                   </Typography>
                 )
               },
               {
                 key: "attendance",
                 label: "Attendance",
-                render: (session: any) => (
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <Typography variant="body2">
-                      {session.attendance}/{session.totalStudents}
-                    </Typography>
-                    <Box
-                      sx={{
-                        width: 40,
-                        height: 8,
-                        bgcolor: '#e0e0e0',
-                        borderRadius: 4,
-                        overflow: 'hidden'
-                      }}
-                    >
+                render: (session: any) => {
+                  const attendance = session.attendance || 0
+                  const totalStudents = session.totalStudents || 0
+                  const percentage = totalStudents > 0 ? (attendance / totalStudents) * 100 : 0
+                  
+                  return (
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <Typography variant="body2">
+                        {attendance}/{totalStudents}
+                      </Typography>
                       <Box
                         sx={{
-                          width: `${(session.attendance / session.totalStudents) * 100}%`,
-                          height: '100%',
-                          bgcolor: session.attendance / session.totalStudents > 0.8 ? '#4caf50' : 
-                                   session.attendance / session.totalStudents > 0.6 ? '#ff9800' : '#f44336'
+                          width: 40,
+                          height: 8,
+                          bgcolor: '#e0e0e0',
+                          borderRadius: 4,
+                          overflow: 'hidden'
                         }}
-                      />
+                      >
+                        <Box
+                          sx={{
+                            width: `${percentage}%`,
+                            height: '100%',
+                            bgcolor: percentage > 80 ? '#4caf50' : 
+                                     percentage > 60 ? '#ff9800' : '#f44336'
+                          }}
+                        />
+                      </Box>
                     </Box>
-                  </Box>
-                )
+                  )
+                }
               }
             ]}
-            data={details.recentSessions || []}
+            data={getRecentSessions()}
           />
         </Box>
       )

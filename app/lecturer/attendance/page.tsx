@@ -1009,7 +1009,7 @@ export default function LecturerAttendancePage() {
       <CreateSessionModal 
         open={editModalOpen}
         onOpenChange={handleEditModalClose}
-        lecturerId={state.currentUser?.id || ''}
+        lecturerId={state.currentUser?.id || 'guest'}
         onSessionCreated={() => {}} // Not used in edit mode
         editSession={editingSession}
         onSessionUpdated={handleSessionUpdated}

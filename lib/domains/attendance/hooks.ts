@@ -10,7 +10,8 @@ export function useAttendance() {
     attendanceSessions: [],
     attendanceRecords: [],
     loading: false,
-    error: null
+    error: null,
+    currentUser: null
   })
 
   const fetchAttendanceSessions = useCallback(async (studentId?: string) => {
@@ -59,7 +60,13 @@ export function useAttendance() {
 
         if (sectionIds.length === 0) {
           console.log('DataContext: No active section enrollments found, returning empty sessions')
-          setState(prev => ({ ...prev, attendanceSessions: [], loading: false }))
+          setState(prev => ({
+            ...prev,
+            attendanceSessions: [],
+            loading: false,
+            attendanceRecords: prev.attendanceRecords,
+            currentUser: prev.currentUser
+          }))
           return
         }
 
@@ -114,10 +121,12 @@ export function useAttendance() {
       setState(prev => ({ ...prev, attendanceSessions: transformedSessions, loading: false }))
     } catch (error) {
       console.error('Error fetching attendance sessions:', error)
-      setState(prev => ({ 
-        ...prev, 
-        error: 'Failed to fetch attendance sessions', 
-        loading: false 
+      setState(prev => ({
+        ...prev,
+        error: 'Failed to fetch attendance sessions',
+        loading: false,
+        attendanceSessions: prev.attendanceSessions,
+        attendanceRecords: prev.attendanceRecords
       }))
     }
   }, [])
@@ -126,8 +135,22 @@ export function useAttendance() {
   const fetchStudentAttendanceSessions = useCallback(async (studentId: string) => {
     try {
       console.log('DataContext: Fetching student attendance sessions for:', studentId)
+
+      // Validate studentId
+      if (!studentId || studentId.trim() === '') {
+        console.log('DataContext: No valid student ID provided, skipping session fetch')
+        setState(prev => ({
+          ...prev,
+          attendanceSessions: [],
+          loading: false,
+          attendanceRecords: prev.attendanceRecords,
+          currentUser: prev.currentUser
+        }))
+        return
+      }
+
       setState(prev => ({ ...prev, loading: true }))
-      
+
       // Get student's section enrollments first
       const { data: sectionEnrollments, error: enrollmentError } = await supabase
         .from('section_enrollments')
@@ -156,7 +179,13 @@ export function useAttendance() {
 
       if (sectionIds.length === 0) {
         console.log('DataContext: No active section enrollments found')
-        setState(prev => ({ ...prev, attendanceSessions: [], loading: false }))
+        setState(prev => ({
+          ...prev,
+          attendanceSessions: [],
+          loading: false,
+          attendanceRecords: prev.attendanceRecords,
+          currentUser: prev.currentUser
+        }))
         return []
       }
 
@@ -238,6 +267,111 @@ export function useAttendance() {
     }
   }, [])
 
+  // Fetch a specific session by ID and verify student access
+  const fetchSessionById = useCallback(async (sessionId: string) => {
+    try {
+      console.log('DataContext: Fetching specific session:', sessionId)
+
+      // Fetch the session with all related data
+      const { data: session, error: sessionError } = await supabase
+        .from('attendance_sessions')
+        .select(`
+          *,
+          courses!attendance_sessions_course_id_fkey(course_code, course_name),
+          users!attendance_sessions_lecturer_id_fkey(full_name),
+          sections!attendance_sessions_section_id_fkey(
+            id,
+            section_code,
+            program_id,
+            programs!inner(
+              id,
+              program_name
+            )
+          )
+        `)
+        .eq('id', sessionId)
+        .single()
+
+      if (sessionError || !session) {
+        console.error('DataContext: Session not found:', sessionError)
+        setState(prev => ({
+          ...prev,
+          error: 'Session not found',
+          loading: false,
+          attendanceSessions: prev.attendanceSessions,
+          attendanceRecords: prev.attendanceRecords
+        }))
+        return null
+      }
+
+      console.log('DataContext: Session fetched successfully:', session)
+
+      // Check if current user is enrolled in this session's section
+      const currentUser = state.currentUser
+      if (currentUser?.id) {
+        const { data: enrollment, error: enrollmentError } = await supabase
+          .from('section_enrollments')
+          .select('id, status')
+          .eq('student_id', currentUser.id)
+          .eq('section_id', session.section_id)
+          .eq('status', 'active')
+          .maybeSingle()
+
+        if (enrollmentError || !enrollment) {
+          console.error('DataContext: Student not enrolled in session section:', enrollmentError)
+          setState(prev => ({
+            ...prev,
+            error: 'You are not enrolled in this session\'s section',
+            loading: false,
+            attendanceSessions: prev.attendanceSessions,
+            attendanceRecords: prev.attendanceRecords
+          }))
+          return null
+        }
+      }
+
+      // Transform the session data
+      const transformedSession = {
+        ...session,
+        course_code: session.courses?.course_code || `COURSE_${session.course_id}`,
+        course_name: session.courses?.course_name || `Course ${session.course_id}`,
+        class_id: `class_${session.course_id}`,
+        class_name: session.courses?.course_name || `Class ${session.course_id}`,
+        lecturer_name: session.users?.full_name || `Lecturer ${session.lecturer_id}`,
+        section_code: session.sections?.section_code || 'Unknown Section',
+        section_id: session.section_id,
+        program_name: session.sections?.programs?.program_name || 'Unknown Program',
+        type: 'lecture' as const,
+        capacity: 50,
+        enrolled: 25,
+        description: `Attendance session for ${session.courses?.course_name || 'course'}`,
+        status: 'scheduled',
+        is_active: false
+      }
+
+      console.log('DataContext: Session transformed and validated:', transformedSession)
+
+      // Add to attendance sessions if not already present
+      setState(prev => ({
+        ...prev,
+        attendanceSessions: [...prev.attendanceSessions.filter(s => s.id !== sessionId), transformedSession],
+        error: null
+      }))
+
+      return transformedSession
+    } catch (error) {
+      console.error('DataContext: Error fetching session by ID:', error)
+      setState(prev => ({
+        ...prev,
+        error: 'Failed to load session details',
+        loading: false,
+        attendanceSessions: prev.attendanceSessions,
+        attendanceRecords: prev.attendanceRecords
+      }))
+      return null
+    }
+  }, [state.currentUser])
+
   const fetchAttendanceRecords = useCallback(async () => {
     try {
       setState(prev => ({ ...prev, loading: true }))
@@ -263,10 +397,12 @@ export function useAttendance() {
       setState(prev => ({ ...prev, attendanceRecords: transformedRecords, loading: false }))
     } catch (error) {
       console.error('Error fetching attendance records:', error)
-      setState(prev => ({ 
-        ...prev, 
-        error: 'Failed to fetch attendance records', 
-        loading: false 
+      setState(prev => ({
+        ...prev,
+        error: 'Failed to fetch attendance records',
+        loading: false,
+        attendanceSessions: prev.attendanceSessions,
+        attendanceRecords: prev.attendanceRecords
       }))
     }
   }, [])
@@ -322,7 +458,13 @@ export function useAttendance() {
       return newSession
     } catch (error) {
       console.error('Error creating attendance session:', error)
-      setState(prev => ({ ...prev, error: 'Failed to create attendance session' }))
+      setState(prev => ({
+        ...prev,
+        error: 'Failed to create attendance session',
+        loading: false,
+        attendanceSessions: prev.attendanceSessions,
+        attendanceRecords: prev.attendanceRecords
+      }))
       throw error
     }
   }, [])
@@ -375,7 +517,13 @@ export function useAttendance() {
       }
     } catch (error) {
       console.error('DataContext: Error updating attendance session:', error)
-      setState(prev => ({ ...prev, error: 'Failed to update attendance session' }))
+      setState(prev => ({
+        ...prev,
+        error: 'Failed to update attendance session',
+        loading: false,
+        attendanceSessions: prev.attendanceSessions,
+        attendanceRecords: prev.attendanceRecords
+      }))
       throw error
     }
   }, [state.attendanceSessions])
@@ -420,7 +568,13 @@ export function useAttendance() {
       
     } catch (error) {
       console.error('DataContext: Error deleting attendance session:', error)
-      setState(prev => ({ ...prev, error: 'Failed to delete attendance session' }))
+      setState(prev => ({
+        ...prev,
+        error: 'Failed to delete attendance session',
+        loading: false,
+        attendanceSessions: prev.attendanceSessions,
+        attendanceRecords: prev.attendanceRecords
+      }))
       throw error
     }
   }, [])
@@ -475,7 +629,13 @@ export function useAttendance() {
       await fetchAttendanceRecords()
     } catch (error) {
       console.error('Error marking attendance:', error)
-      setState(prev => ({ ...prev, error: 'Failed to mark attendance' }))
+      setState(prev => ({
+        ...prev,
+        error: 'Failed to mark attendance',
+        loading: false,
+        attendanceSessions: prev.attendanceSessions,
+        attendanceRecords: prev.attendanceRecords
+      }))
       throw error
     }
   }, [fetchAttendanceRecords])
@@ -648,6 +808,7 @@ export function useAttendance() {
     subscribeToAttendanceRecords,
     unsubscribeAll,
     getAttendanceSessionsByCourse,
-    getAttendanceRecordsBySession
+    getAttendanceRecordsBySession,
+    fetchSessionById
   }
 }

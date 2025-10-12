@@ -21,11 +21,24 @@ interface StudentDetails {
   studentId: string
   sectionDisplay: string
   
+  // Emergency Contact Information
+  emergencyContactName: string
+  emergencyContactPhone: string
+  emergencyContactRelationship: string
+  
   // Academic Information
   year: number
   major: string
+  program?: string
+  programCode?: string
+  degreeType?: string
+  academicStatus?: string
+  enrollmentDate?: string
+  expectedGraduation?: string
   gpa: number
   totalCredits: number
+  creditsCompleted?: number
+  creditsRequired?: number
   completedCourses: number
   attendanceRate: number
   assignmentsSubmitted: number
@@ -204,18 +217,85 @@ export default function StudentTabs({ details }: StudentTabsProps) {
                 icon: AcademicCapIcon
               },
               {
-                label: "Total Credits",
+                label: "Program Code",
+                value: details.programCode || "N/A",
+                icon: BookOpenIcon
+              },
+              {
+                label: "Degree Type",
+                value: details.degreeType || "N/A",
+                icon: AcademicCapIcon
+              },
+              {
+                label: "Academic Status",
                 value: (
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <Box component="span" sx={{ fontWeight: 700, color: '#059669', fontSize: '1.25rem' }}>
-                      {details.totalCredits}
+                    <Box
+                      sx={{
+                        px: 1.5,
+                        py: 0.5,
+                        borderRadius: 2,
+                        bgcolor: details.academicStatus === 'active' ? '#dcfce7' : '#fee2e2',
+                        color: details.academicStatus === 'active' ? '#166534' : '#991b1b',
+                        fontSize: '0.75rem',
+                        fontWeight: 600,
+                        textTransform: 'capitalize'
+                      }}
+                    >
+                      {details.academicStatus || 'active'}
+                    </Box>
+                  </Box>
+                ),
+                icon: CheckCircleIcon
+              },
+              {
+                label: "Enrollment Date",
+                value: details.enrollmentDate || "N/A",
+                icon: CalendarDaysIcon
+              },
+              {
+                label: "Expected Graduation",
+                value: details.expectedGraduation || "N/A",
+                icon: CalendarDaysIcon
+              },
+              {
+                label: "Credits Progress",
+                value: (
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Box component="span" sx={{ fontWeight: 700, color: '#059669', fontSize: '1.125rem' }}>
+                      {details.creditsCompleted || 0}
                     </Box>
                     <Box component="span" sx={{ color: '#6b7280', fontSize: '0.875rem' }}>
-                      credits
+                      / {details.creditsRequired || 0} credits
                     </Box>
                   </Box>
                 ),
                 icon: BookOpenIcon
+              }
+            ]}
+            columns={2}
+            showDivider={false}
+          />
+
+          {/* Emergency Contact Section */}
+          <InfoCard
+            title="Emergency Contact"
+            subtitle="Emergency contact information on file"
+            items={[
+              {
+                label: "Contact Name",
+                value: details.emergencyContactName || "N/A",
+                icon: UserIcon
+              },
+              {
+                label: "Contact Phone",
+                value: details.emergencyContactPhone || "N/A",
+                icon: DevicePhoneMobileIcon
+              },
+              {
+                label: "Relationship",
+                value: details.emergencyContactRelationship || "N/A",
+                icon: UserIcon
               }
             ]}
             columns={2}

@@ -156,21 +156,13 @@ interface AttendanceStats {
 // ============================================================================
 
 export default function AttendancePage() {
-  // Data Context
+  // Data Context - Access state directly without merging
   const attendance = useAttendance()
   const courses = useCourses()
   const auth = useAuth()
   const academic = useAcademicStructure()
-  
-  // Create unified state object
-  const state = {
-    ...attendance.state,
-    ...courses.state,
-    ...academic.state,
-    users: auth.state.users
-  }
 
-  // Data fetching
+  // Data fetching - Enhanced error handling
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -180,8 +172,8 @@ export default function AttendancePage() {
           courses.fetchCourses(),
           academic.fetchLecturerProfiles()
         ])
-      } catch (error) {
-        console.error('Error fetching attendance data:', error)
+      } catch (error: any) {
+        console.error('❌ Error fetching attendance data:', error)
       }
     }
     
@@ -210,25 +202,55 @@ export default function AttendancePage() {
   // COMPUTED DATA
   // ============================================================================
 
-  // Get all attendance sessions from shared data
+  // Get all attendance sessions from shared data - Safe access with proper checks
   const sessions = useMemo(() => {
-    return state.attendanceSessions
-  }, [state.attendanceSessions])
-
-  // Compute stats from shared data
-  const stats = useMemo(() => {
-    const totalSessions = sessions.length
-    const activeSessions = sessions.filter((s: AttendanceSession) => s.status === 'active').length
-    const totalAttendance = state.attendanceRecords.length
-    const absentStudents = state.attendanceRecords.filter((r: AttendanceRecord) => r.status === 'absent').length
-
-    return {
-      totalSessions,
-      activeSessions,
-      totalAttendance,
-      absentStudents
+    if (!attendance.state.attendanceSessions || !Array.isArray(attendance.state.attendanceSessions)) {
+      console.warn('Admin Attendance: No attendance sessions available')
+      return []
     }
-  }, [sessions, state.attendanceRecords])
+    
+    try {
+      return attendance.state.attendanceSessions
+    } catch (error) {
+      console.error('Admin Attendance: Error accessing sessions:', error)
+      return []
+    }
+  }, [attendance.state.attendanceSessions])
+
+  // Compute stats from shared data - Safe access with proper checks
+  const stats = useMemo(() => {
+    if (!attendance.state.attendanceRecords || !Array.isArray(attendance.state.attendanceRecords)) {
+      console.warn('Admin Attendance: No attendance records available')
+      return {
+        totalSessions: sessions.length,
+        activeSessions: 0,
+        totalAttendance: 0,
+        absentStudents: 0
+      }
+    }
+
+    try {
+      const totalSessions = sessions.length
+      const activeSessions = sessions.filter((s: AttendanceSession) => s.status === 'active').length
+      const totalAttendance = attendance.state.attendanceRecords.length
+      const absentStudents = attendance.state.attendanceRecords.filter((r: AttendanceRecord) => r.status === 'absent').length
+
+      return {
+        totalSessions,
+        activeSessions,
+        totalAttendance,
+        absentStudents
+      }
+    } catch (error) {
+      console.error('Admin Attendance: Error calculating stats:', error)
+      return {
+        totalSessions: sessions.length,
+        activeSessions: 0,
+        totalAttendance: 0,
+        absentStudents: 0
+      }
+    }
+  }, [sessions, attendance.state.attendanceRecords])
 
   // ============================================================================
   // EVENT HANDLERS
@@ -402,7 +424,7 @@ export default function AttendancePage() {
     {
       key: 'course',
       label: 'Course',
-      render: (value: string, row: AttendanceSession) => (
+      render: (_value: string, row: AttendanceSession) => (
         <Box>
           <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
             {row.course_code}
@@ -416,7 +438,7 @@ export default function AttendancePage() {
     {
       key: 'lecturer',
       label: 'Lecturer',
-      render: (value: string, row: AttendanceSession) => (
+      render: (_value: string, row: AttendanceSession) => (
         <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
           Lecturer
         </Typography>
@@ -425,7 +447,7 @@ export default function AttendancePage() {
     {
       key: 'datetime',
       label: 'Date & Time',
-      render: (value: string, row: AttendanceSession) => (
+      render: (_value: string, row: AttendanceSession) => (
         <Box>
           <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
             {formatDate(row.session_date)}
@@ -439,8 +461,8 @@ export default function AttendancePage() {
     {
       key: 'attendance',
       label: 'Attendance',
-      render: (value: string, row: AttendanceSession) => {
-        const records = state.attendanceRecords.filter((r: AttendanceRecord) => r.session_id === row.id)
+      render: (_value: string, row: AttendanceSession) => {
+        const records = attendance.state.attendanceRecords?.filter((r: AttendanceRecord) => r.session_id === row.id) || []
         const presentCount = records.filter((r: AttendanceRecord) => r.status === 'present' || r.status === 'late').length
         const totalCount = records.length
         return (
@@ -456,8 +478,8 @@ export default function AttendancePage() {
     {
       key: 'rate',
       label: 'Rate',
-      render: (value: string, row: AttendanceSession) => {
-        const records = state.attendanceRecords.filter((r: AttendanceRecord) => r.session_id === row.id)
+      render: (_value: string, row: AttendanceSession) => {
+        const records = attendance.state.attendanceRecords?.filter((r: AttendanceRecord) => r.session_id === row.id) || []
         const presentCount = records.filter((r: AttendanceRecord) => r.status === 'present' || r.status === 'late').length
         const totalCount = records.length
         const rate = totalCount > 0 ? Math.round((presentCount / totalCount) * 100) : 0
@@ -471,7 +493,7 @@ export default function AttendancePage() {
     {
       key: 'status',
       label: 'Status',
-      render: (value: string, row: AttendanceSession) => {
+      render: (_value: string, row: AttendanceSession) => {
         const displayStatus = row.is_active ? 'active' : mapSessionStatus(row.status, 'admin')
         const statusColor = getStatusColor(displayStatus)
         const label = displayStatus.charAt(0).toUpperCase() + displayStatus.slice(1)
@@ -493,7 +515,7 @@ export default function AttendancePage() {
     {
       key: 'actions',
       label: 'Actions',
-      render: (value: string, row: AttendanceSession) => (
+      render: (_value: string, row: AttendanceSession) => (
         <IconButton
           size="small"
           onClick={(e) => handleMenuOpen(e, row)}

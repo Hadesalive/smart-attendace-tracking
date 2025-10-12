@@ -119,8 +119,14 @@ export interface LecturerProfile {
   user_id: string
   employee_id: string
   department_id: string
-  specialization?: string
+  position?: string
   hire_date: string
+  office_location?: string
+  office_hours?: string
+  research_interests?: string[]
+  qualifications?: string[]
+  bio?: string
+  specialization?: string
   status: string
   created_at: string
   updated_at: string

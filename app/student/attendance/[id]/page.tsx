@@ -141,8 +141,8 @@ export default function StudentAttendanceDetailsPage() {
         await Promise.all([
           fetchCourses(),
           fetchEnrollments(),
-          // Use section-based session fetching for students
-          fetchStudentAttendanceSessions(authState.currentUser?.id || ''),
+          // Use section-based session fetching for students (only if user is logged in)
+          authState.currentUser?.id ? fetchStudentAttendanceSessions(authState.currentUser.id) : Promise.resolve(),
           fetchAttendanceRecords()
         ])
         

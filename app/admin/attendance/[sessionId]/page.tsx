@@ -114,6 +114,7 @@ import { formatDate, formatTime, formatNumber } from "@/lib/utils"
 import { TYPOGRAPHY_STYLES } from "@/lib/design/fonts"
 import { CARD_SX, ANIMATION_CONFIG, BUTTON_STYLES } from "@/lib/constants/admin-constants"
 import { supabase } from "@/lib/supabase"
+import { useAttendance, useCourses, useAuth, useAcademicStructure } from "@/lib/domains"
 import DetailHeader from "@/components/admin/DetailHeader"
 import InfoCard from "@/components/admin/InfoCard"
 import StatsGrid from "@/components/admin/StatsGrid"
@@ -183,6 +184,12 @@ export default function AttendanceSessionDetailsPage() {
   const router = useRouter()
   const params = useParams()
   const sessionId = params.sessionId as string
+
+  // Data Context - Access state directly without merging
+  const attendance = useAttendance()
+  const courses = useCourses()
+  const auth = useAuth()
+  const academic = useAcademicStructure()
   
   const [session, setSession] = useState<AttendanceSession | null>(null)
   const [students, setStudents] = useState<StudentAttendance[]>([])
@@ -204,95 +211,131 @@ export default function AttendanceSessionDetailsPage() {
   // DATA FETCHING
   // ============================================================================
 
+  // Data fetching with domain hooks
   useEffect(() => {
+    const fetchData = async () => {
+      try {
+        await Promise.all([
+          attendance.fetchAttendanceSessions(),
+          attendance.fetchAttendanceRecords(),
+          courses.fetchCourses(),
+          academic.fetchStudentProfiles()
+        ])
+      } catch (error: any) {
+        console.error('❌ Error loading attendance session data:', error)
+        setError(`Failed to load session data: ${error?.message || 'Unknown error'}`)
+      }
+    }
+
     if (sessionId) {
-      fetchSessionData()
+      fetchData()
     }
   }, [sessionId])
 
-  const fetchSessionData = useCallback(async () => {
+  // Get session data from context - Safe access with proper checks
+  const sessionData = useMemo(() => {
+    if (!attendance.state.attendanceSessions || !Array.isArray(attendance.state.attendanceSessions)) {
+      console.warn('Admin Attendance Details: No attendance sessions available')
+      return null
+    }
+    return attendance.state.attendanceSessions.find(s => s.id === sessionId)
+  }, [attendance.state.attendanceSessions, sessionId])
+
+  // Get attendance records for this session - Safe access with proper checks
+  const sessionAttendanceRecords = useMemo(() => {
+    if (!attendance.state.attendanceRecords || !Array.isArray(attendance.state.attendanceRecords)) {
+      console.warn('Admin Attendance Details: No attendance records available')
+      return []
+    }
+    return attendance.state.attendanceRecords.filter(record => record.session_id === sessionId)
+  }, [attendance.state.attendanceRecords, sessionId])
+
+  // Transform session data - Use real data from domain hooks
+  useEffect(() => {
     try {
-      setLoading(true)
-      setError(null)
+      if (!sessionData) {
+        console.warn('Admin Attendance Details: Session not found')
+        setLoading(false)
+        return
+      }
 
-      // Fetch session details
-      const { data: sessionData, error: sessionError } = await supabase
-        .from("attendance_sessions")
-        .select(`
-          *,
-          courses(course_code, course_name),
-          users(full_name, email)
-        `)
-        .eq("id", sessionId)
-        .single()
+      if (!courses.state.courses || !Array.isArray(courses.state.courses)) {
+        console.warn('Admin Attendance Details: No courses available')
+        setLoading(false)
+        return
+      }
 
-      if (sessionError) throw sessionError
+      const course = courses.state.courses.find((c: any) => c.id === sessionData.course_id)
+      const presentCount = sessionAttendanceRecords.filter((r: any) => r.status === 'present').length
+      const totalStudents = sessionAttendanceRecords.length
 
-      // Transform session data
       const transformedSession: AttendanceSession = {
         id: sessionData.id,
         session_name: sessionData.session_name,
-        course_code: sessionData.courses?.course_code || "N/A",
-        course_name: sessionData.courses?.course_name || "N/A",
-        lecturer_name: sessionData.users?.full_name || "N/A",
-        lecturer_email: sessionData.users?.email || "N/A",
+        course_code: course?.course_code || sessionData.course_code || "N/A",
+        course_name: course?.course_name || sessionData.course_name || "N/A",
+        lecturer_name: sessionData.lecturer_name || "N/A",
+        lecturer_email: "N/A",
         session_date: sessionData.session_date,
         start_time: sessionData.start_time,
         end_time: sessionData.end_time,
         attendance_method: sessionData.attendance_method || "QR_CODE",
         location: sessionData.location || "TBD",
         description: sessionData.description || "",
-        total_students: Math.floor(Math.random() * 50) + 20, // Mock data
-        present_students: Math.floor(Math.random() * 40) + 15, // Mock data
-        absent_students: Math.floor(Math.random() * 10) + 5, // Mock data
-        attendance_rate: Math.floor(Math.random() * 30) + 70, // Mock data
+        total_students: totalStudents,
+        present_students: presentCount,
+        absent_students: totalStudents - presentCount,
+        attendance_rate: totalStudents > 0 ? Math.round((presentCount / totalStudents) * 100) : 0,
         status: sessionData.status || 'scheduled',
         is_active: sessionData.is_active || false,
         created_at: sessionData.created_at,
-        updated_at: sessionData.updated_at
+        updated_at: sessionData.created_at
       }
 
       setSession(transformedSession)
 
-      // Mock student attendance data
-      const mockStudents: StudentAttendance[] = Array.from({ length: transformedSession.total_students }, (_, i) => ({
-        id: `student-${i + 1}`,
-        student_id: `STU${String(i + 1).padStart(4, '0')}`,
-        student_name: `Student ${i + 1}`,
-        student_email: `student${i + 1}@university.edu`,
-        student_id_number: `2024${String(i + 1).padStart(4, '0')}`,
-        attendance_status: i < transformedSession.present_students ? 'present' : 'absent',
-        check_in_time: i < transformedSession.present_students ? new Date(Date.now() - Math.random() * 3600000).toISOString() : null,
-        check_out_time: i < transformedSession.present_students && Math.random() > 0.3 ? new Date(Date.now() - Math.random() * 1800000).toISOString() : null,
-        notes: Math.random() > 0.8 ? "Late arrival" : null,
-        created_at: new Date().toISOString()
-      }))
-
-      setStudents(mockStudents)
-
-      // Calculate stats
-      const presentCount = mockStudents.filter(s => s.attendance_status === 'present').length
-      const absentCount = mockStudents.filter(s => s.attendance_status === 'absent').length
-      const lateCount = mockStudents.filter(s => s.notes?.includes('Late')).length
-      const excusedCount = mockStudents.filter(s => s.attendance_status === 'excused').length
-
-      setStats({
-        totalStudents: mockStudents.length,
-        presentStudents: presentCount,
-        absentStudents: absentCount,
-        lateStudents: lateCount,
-        excusedStudents: excusedCount,
-        attendanceRate: Math.round((presentCount / mockStudents.length) * 100),
-        averageCheckInTime: presentCount > 0 ? "09:15 AM" : null
+      // Transform real student attendance data
+      const transformedStudents: StudentAttendance[] = sessionAttendanceRecords.map((record: any) => {
+        const student = academic.state.studentProfiles?.find((s: any) => s.user_id === record.student_id)
+        return {
+          id: record.id,
+          student_id: record.student_id,
+          student_name: record.student_name || student?.users?.full_name || 'Unknown Student',
+          student_email: record.student_email || student?.users?.email || 'N/A',
+          student_id_number: student?.student_id || 'N/A',
+          attendance_status: record.status as 'present' | 'absent' | 'late' | 'excused',
+          check_in_time: record.marked_at,
+          check_out_time: null,
+          notes: null,
+          created_at: record.marked_at
+        }
       })
 
-    } catch (error) {
-      console.error("Error fetching session data:", error)
-      setError("Failed to load session data. Please try again.")
-    } finally {
+      setStudents(transformedStudents)
+
+      // Calculate real stats from actual data
+      const presentStudents = transformedStudents.filter(s => s.attendance_status === 'present').length
+      const absentStudents = transformedStudents.filter(s => s.attendance_status === 'absent').length
+      const lateStudents = transformedStudents.filter(s => s.attendance_status === 'late').length
+      const excusedStudents = transformedStudents.filter(s => s.attendance_status === 'excused').length
+
+      setStats({
+        totalStudents: transformedStudents.length,
+        presentStudents,
+        absentStudents,
+        lateStudents,
+        excusedStudents,
+        attendanceRate: transformedStudents.length > 0 ? Math.round((presentStudents / transformedStudents.length) * 100) : 0,
+        averageCheckInTime: presentStudents > 0 ? "09:15 AM" : null
+      })
+
+      setLoading(false)
+    } catch (error: any) {
+      console.error("❌ Error processing session data:", error)
+      setError(`Failed to process session data: ${error?.message || 'Unknown error'}`)
       setLoading(false)
     }
-  }, [sessionId])
+  }, [sessionData, sessionAttendanceRecords, courses.state.courses, academic.state.studentProfiles])
 
   // ============================================================================
   // MEMOIZED VALUES
@@ -393,17 +436,26 @@ export default function AttendanceSessionDetailsPage() {
     return (
       <Box sx={{ p: { xs: 2, sm: 3 } }}>
         <Alert severity="error" sx={{ mb: 3 }}>
-          <AlertTitle>Error</AlertTitle>
-          {error || "Session not found"}
+          <AlertTitle>Session Not Found</AlertTitle>
+          {error || "The attendance session you're looking for could not be found. It may have been deleted or you may not have access to it."}
         </Alert>
-        <Button
-          variant="contained"
-          startIcon={<ArrowLeftIcon className="h-4 w-4" />}
-          onClick={() => router.push("/admin/attendance")}
-          sx={BUTTON_STYLES.contained}
-        >
-          Back to Attendance
-        </Button>
+        <Box sx={{ display: 'flex', gap: 2 }}>
+          <Button
+            variant="contained"
+            startIcon={<ArrowLeftIcon className="h-4 w-4" />}
+            onClick={() => router.push("/admin/attendance")}
+            sx={BUTTON_STYLES.contained}
+          >
+            Back to Attendance
+          </Button>
+          <Button
+            variant="outlined"
+            onClick={() => window.location.reload()}
+            sx={BUTTON_STYLES.outlined}
+          >
+            Retry
+          </Button>
+        </Box>
       </Box>
     )
   }
@@ -413,7 +465,7 @@ export default function AttendanceSessionDetailsPage() {
     {
       key: 'student',
       label: 'Student',
-      render: (value: string, row: StudentAttendance) => (
+      render: (_value: string, row: StudentAttendance) => (
         <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
           <Avatar sx={{ 
             bgcolor: "#f5f5f5",
@@ -440,7 +492,7 @@ export default function AttendanceSessionDetailsPage() {
     {
       key: 'id_number',
       label: 'ID Number',
-      render: (value: string, row: StudentAttendance) => (
+      render: (_value: string, row: StudentAttendance) => (
         <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
           {row.student_id_number}
         </Typography>
@@ -449,7 +501,7 @@ export default function AttendanceSessionDetailsPage() {
     {
       key: 'status',
       label: 'Status',
-      render: (value: string, row: StudentAttendance) => {
+      render: (_value: string, row: StudentAttendance) => {
         const StatusIcon = getStatusIcon(row.attendance_status)
         const statusColor = getStatusColor(row.attendance_status)
         return (
@@ -471,7 +523,7 @@ export default function AttendanceSessionDetailsPage() {
     {
       key: 'check_in',
       label: 'Check In',
-      render: (value: string, row: StudentAttendance) => (
+      render: (_value: string, row: StudentAttendance) => (
         <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
           {row.check_in_time ? formatTime(row.check_in_time) : "—"}
         </Typography>
@@ -480,7 +532,7 @@ export default function AttendanceSessionDetailsPage() {
     {
       key: 'check_out',
       label: 'Check Out',
-      render: (value: string, row: StudentAttendance) => (
+      render: (_value: string, row: StudentAttendance) => (
         <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
           {row.check_out_time ? formatTime(row.check_out_time) : "—"}
         </Typography>
@@ -489,7 +541,7 @@ export default function AttendanceSessionDetailsPage() {
     {
       key: 'notes',
       label: 'Notes',
-      render: (value: string, row: StudentAttendance) => (
+      render: (_value: string, row: StudentAttendance) => (
         <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
           {row.notes || "—"}
         </Typography>

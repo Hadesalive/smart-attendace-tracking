@@ -180,19 +180,11 @@ export default function SessionDetailsPage() {
   const params = useParams()
   const sessionId = params.sessionId as string
   
-  // Data Context
+  // Data Context - Access state directly without merging
   const attendance = useAttendance()
   const courses = useCourses()
   const auth = useAuth()
   const academic = useAcademicStructure()
-  
-  // Create unified state object
-  const state = {
-    ...attendance.state,
-    ...courses.state,
-    ...academic.state,
-    users: auth.state.users
-  }
   
   const [session, setSession] = useState<SessionDetails | null>(null)
   const [students, setStudents] = useState<StudentAttendance[]>([])
@@ -227,8 +219,6 @@ export default function SessionDetailsPage() {
         setLoading(true)
         setError(null)
         
-        console.log('🔄 Loading admin session details for:', sessionId)
-        
         await Promise.all([
           attendance.fetchAttendanceSessions(),
           attendance.fetchAttendanceRecords(),
@@ -238,14 +228,9 @@ export default function SessionDetailsPage() {
         
         // Wait for state to be updated
         await new Promise(resolve => setTimeout(resolve, 500))
-        
-        console.log('📊 Admin session data loaded:', {
-          sessionsCount: state.attendanceSessions?.length || 0,
-          recordsCount: state.attendanceRecords?.length || 0
-        })
-      } catch (error) {
+      } catch (error: any) {
         console.error('❌ Error fetching session data:', error)
-        setError('Failed to load session data. Please try again.')
+        setError(`Failed to load session data: ${error?.message || 'Unknown error'}. Please try again.`)
       } finally {
         setLoading(false)
       }
@@ -256,21 +241,34 @@ export default function SessionDetailsPage() {
     }
   }, [sessionId]) // Only depend on sessionId to prevent infinite loops
 
-  // Get session data from context
+  // Get session data from context - Safe access with proper checks
   const sessionData = useMemo(() => {
-    return state.attendanceSessions.find(s => s.id === sessionId)
-  }, [state.attendanceSessions, sessionId])
+    if (!attendance.state.attendanceSessions || !Array.isArray(attendance.state.attendanceSessions)) {
+      console.warn('Admin Session Details: No attendance sessions available')
+      return null
+    }
+    return attendance.state.attendanceSessions.find(s => s.id === sessionId)
+  }, [attendance.state.attendanceSessions, sessionId])
 
-  // Get attendance records for this session
+  // Get attendance records for this session - Safe access with proper checks
   const sessionAttendanceRecords = useMemo(() => {
-    return state.attendanceRecords.filter(record => record.session_id === sessionId)
-  }, [state.attendanceRecords, sessionId])
+    if (!attendance.state.attendanceRecords || !Array.isArray(attendance.state.attendanceRecords)) {
+      console.warn('Admin Session Details: No attendance records available')
+      return []
+    }
+    return attendance.state.attendanceRecords.filter(record => record.session_id === sessionId)
+  }, [attendance.state.attendanceRecords, sessionId])
 
-  // Transform session data
+  // Transform session data - Safe access with proper checks
   const transformedSession = useMemo(() => {
     if (!sessionData) return null
 
-    const course = state.courses.find(c => c.id === sessionData.course_id)
+    if (!courses.state.courses || !Array.isArray(courses.state.courses)) {
+      console.warn('Admin Session Details: No courses available')
+      return null
+    }
+
+    const course = courses.state.courses.find((c: any) => c.id === sessionData.course_id)
     const presentCount = sessionAttendanceRecords.filter(r => r.status === 'present').length
     const totalStudents = sessionAttendanceRecords.length || 0
 
@@ -296,26 +294,31 @@ export default function SessionDetailsPage() {
       created_at: sessionData.created_at,
       updated_at: sessionData.created_at
     }
-  }, [sessionData, state.courses, sessionAttendanceRecords])
+  }, [sessionData, courses.state.courses, sessionAttendanceRecords])
 
-  // Transform student attendance data
+  // Transform student attendance data - Safe access with proper checks
   const transformedStudents = useMemo(() => {
-    return sessionAttendanceRecords.map(record => {
-      const student = state.studentProfiles?.find(s => s.user_id === record.student_id)
-      return {
-        id: record.id,
-        student_id: record.student_id,
-        student_name: record.student_name || 'Unknown Student',
-        student_email: record.student_email || 'N/A',
-        student_id_number: student?.student_id || 'N/A',
-        attendance_status: record.status as 'present' | 'absent' | 'late' | 'excused',
-        check_in_time: record.marked_at,
-        check_out_time: null,
-        notes: null,
-        created_at: record.marked_at
-      }
-    })
-  }, [sessionAttendanceRecords, state.studentProfiles])
+    try {
+      return sessionAttendanceRecords.map(record => {
+        const student = academic.state.studentProfiles?.find((s: any) => s.user_id === record.student_id)
+        return {
+          id: record.id,
+          student_id: record.student_id,
+          student_name: record.student_name || 'Unknown Student',
+          student_email: record.student_email || 'N/A',
+          student_id_number: student?.student_id || 'N/A',
+          attendance_status: record.status as 'present' | 'absent' | 'late' | 'excused',
+          check_in_time: record.marked_at,
+          check_out_time: null,
+          notes: null,
+          created_at: record.marked_at
+        }
+      })
+    } catch (error) {
+      console.error('Admin Session Details: Error transforming student data:', error)
+      return []
+    }
+  }, [sessionAttendanceRecords, academic.state.studentProfiles])
 
   // Update session and students when data changes
   useEffect(() => {
@@ -325,23 +328,32 @@ export default function SessionDetailsPage() {
     setStudents(transformedStudents)
   }, [transformedSession, transformedStudents])
 
-  // Calculate stats
+  // Calculate stats - Safe computation with proper checks
   useEffect(() => {
-    if (transformedStudents.length > 0) {
-      const presentCount = transformedStudents.filter(s => s.attendance_status === 'present').length
-      const absentCount = transformedStudents.filter(s => s.attendance_status === 'absent').length
-      const lateCount = transformedStudents.filter(s => s.attendance_status === 'late').length
-      const excusedCount = transformedStudents.filter(s => s.attendance_status === 'excused').length
+    try {
+      if (!transformedStudents || !Array.isArray(transformedStudents)) {
+        console.warn('Admin Session Details: Invalid student data for stats calculation')
+        return
+      }
 
-      setStats({
-        totalStudents: transformedStudents.length,
-        presentStudents: presentCount,
-        absentStudents: absentCount,
-        lateStudents: lateCount,
-        excusedStudents: excusedCount,
-        attendanceRate: transformedStudents.length > 0 ? Math.round((presentCount / transformedStudents.length) * 100) : 0,
-        averageCheckInTime: presentCount > 0 ? "09:15 AM" : null
-      })
+      if (transformedStudents.length > 0) {
+        const presentCount = transformedStudents.filter(s => s.attendance_status === 'present').length
+        const absentCount = transformedStudents.filter(s => s.attendance_status === 'absent').length
+        const lateCount = transformedStudents.filter(s => s.attendance_status === 'late').length
+        const excusedCount = transformedStudents.filter(s => s.attendance_status === 'excused').length
+
+        setStats({
+          totalStudents: transformedStudents.length,
+          presentStudents: presentCount,
+          absentStudents: absentCount,
+          lateStudents: lateCount,
+          excusedStudents: excusedCount,
+          attendanceRate: transformedStudents.length > 0 ? Math.round((presentCount / transformedStudents.length) * 100) : 0,
+          averageCheckInTime: presentCount > 0 ? "09:15 AM" : null
+        })
+      }
+    } catch (error) {
+      console.error('Admin Session Details: Error calculating stats:', error)
     }
   }, [transformedStudents])
 
@@ -460,16 +472,25 @@ export default function SessionDetailsPage() {
     return (
       <Box sx={{ p: { xs: 2, sm: 3 } }}>
         <Alert severity="error" sx={{ mb: 3 }}>
-          <AlertTitle>Error</AlertTitle>
-          {error || "Session not found"}
+          <AlertTitle>Session Not Found</AlertTitle>
+          {error || "The session you're looking for could not be found. It may have been deleted or you may not have access to it."}
         </Alert>
-        <Button
-          variant="contained"
-          onClick={() => router.push("/admin/sessions")}
-          sx={BUTTON_STYLES.contained}
-        >
-          Back to Sessions
-        </Button>
+        <Box sx={{ display: 'flex', gap: 2 }}>
+          <Button
+            variant="contained"
+            onClick={() => router.push("/admin/sessions")}
+            sx={BUTTON_STYLES.contained}
+          >
+            Back to Sessions
+          </Button>
+          <Button
+            variant="outlined"
+            onClick={() => window.location.reload()}
+            sx={BUTTON_STYLES.outlined}
+          >
+            Retry
+          </Button>
+        </Box>
       </Box>
     )
   }
@@ -479,7 +500,7 @@ export default function SessionDetailsPage() {
     {
       key: 'student',
       label: 'Student',
-      render: (value: any, row: StudentAttendance) => (
+      render: (_value: string, row: StudentAttendance) => (
         <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
           <Avatar sx={{ 
             bgcolor: "#f5f5f5",
@@ -506,7 +527,7 @@ export default function SessionDetailsPage() {
     {
       key: 'id_number',
       label: 'ID Number',
-      render: (value: any, row: StudentAttendance) => (
+      render: (_value: string, row: StudentAttendance) => (
         <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
           {row.student_id_number}
         </Typography>
@@ -515,7 +536,7 @@ export default function SessionDetailsPage() {
     {
       key: 'status',
       label: 'Status',
-      render: (value: any, row: StudentAttendance) => {
+      render: (_value: string, row: StudentAttendance) => {
         const StatusIcon = getStatusIcon(row.attendance_status)
         const statusColor = getStatusColor(row.attendance_status)
         return (
@@ -537,7 +558,7 @@ export default function SessionDetailsPage() {
     {
       key: 'check_in',
       label: 'Check In',
-      render: (value: any, row: StudentAttendance) => (
+      render: (_value: string, row: StudentAttendance) => (
         <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
           {row.check_in_time ? formatTime(row.check_in_time) : "—"}
         </Typography>
@@ -546,7 +567,7 @@ export default function SessionDetailsPage() {
     {
       key: 'check_out',
       label: 'Check Out',
-      render: (value: any, row: StudentAttendance) => (
+      render: (_value: string, row: StudentAttendance) => (
         <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
           {row.check_out_time ? formatTime(row.check_out_time) : "—"}
         </Typography>
@@ -555,7 +576,7 @@ export default function SessionDetailsPage() {
     {
       key: 'notes',
       label: 'Notes',
-      render: (value: any, row: StudentAttendance) => (
+      render: (_value: string, row: StudentAttendance) => (
         <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
           {row.notes || "—"}
         </Typography>

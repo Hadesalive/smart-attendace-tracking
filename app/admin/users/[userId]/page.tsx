@@ -67,14 +67,24 @@ interface StudentDetails {
   studentId: string
   sectionDisplay: string
   
+  // Emergency Contact Information
+  emergencyContactName: string
+  emergencyContactPhone: string
+  emergencyContactRelationship: string
+  
   // Academic Information
   year: number
   major: string
   program: string
   programCode: string
   degreeType: string
+  academicStatus: string
+  enrollmentDate: string
+  expectedGraduation: string
   gpa: number
   totalCredits: number
+  creditsCompleted: number
+  creditsRequired: number
   completedCourses: number
   attendanceRate: number
   assignmentsSubmitted: number
@@ -124,6 +134,8 @@ interface LecturerDetails {
   yearsExperience: number
   position: string
   hireDate: string
+  officeLocation: string
+  officeHours: string
   researchInterests: string
   qualifications: string
   totalCourses: number
@@ -214,22 +226,11 @@ export default function UserDetailsPage() {
   const params = useParams()
   const userId = params.userId as string
 
-  // Data Context
+  // Data Context - Access state directly without merging
   const auth = useAuth()
   const academic = useAcademicStructure()
-  const courses = useCourses()
+  const coursesHook = useCourses()
   const attendance = useAttendance()
-  
-  // Create unified state object
-  const state = {
-    ...auth.state,
-    ...academic.state,
-    ...courses.state,
-    ...attendance.state,
-    courseAssignments: courses.state.courseAssignments || [],
-    lecturerAssignments: courses.state.lecturerAssignments || [],
-    sectionEnrollments: academic.state.sectionEnrollments || []
-  }
 
   const [user, setUser] = useState<User | null>(null)
   const [studentDetails, setStudentDetails] = useState<StudentDetails | null>(null)
@@ -261,9 +262,9 @@ export default function UserDetailsPage() {
           academic.fetchSections(),
           academic.fetchSemesters(),
           academic.fetchSectionEnrollments(),
-          courses.fetchCourses(),
-          courses.fetchCourseAssignments(),
-          courses.fetchLecturerAssignments(),
+          coursesHook.fetchCourses(),
+          coursesHook.fetchCourseAssignments(),
+          coursesHook.fetchLecturerAssignments(),
           attendance.fetchAttendanceSessions(),
           attendance.fetchAttendanceRecords()
         ])
@@ -278,14 +279,61 @@ export default function UserDetailsPage() {
     fetchData()
   }, [])
 
-  // Get user data from context
+  // Get user data from context - Safe access
   const userData = useMemo(() => {
-    return state.users.find(u => u.id === userId)
-  }, [state.users, userId])
+    if (!auth.state.users || !Array.isArray(auth.state.users)) {
+      console.warn('Admin User Details: No users available')
+      return null
+    }
+    return auth.state.users.find((u: any) => u.id === userId)
+  }, [auth.state.users, userId])
 
   // Transform user data
   const transformedUser = useMemo(() => {
     if (!userData) return null
+
+    // Get role-specific profile info for base user data
+    let phone = 'N/A'
+    let department = userData.department || 'N/A'
+    let studentId = userData.student_id || 'N/A'
+    let employeeId = 'N/A'
+    let bio = 'No bio available'
+
+    // Get from student profile
+    if (userData.role === 'student') {
+      const studentProfile = academic.state.studentProfiles?.find((sp: any) => sp.user_id === userData.id)
+      if (studentProfile) {
+        studentId = studentProfile.student_id || studentId
+        phone = studentProfile.emergency_contact_phone || phone
+        // Get department from program
+        const program = academic.state.programs?.find((p: any) => p.id === studentProfile.program_id)
+        if (program) {
+          const dept = academic.state.departments?.find((d: any) => d.id === program.department_id)
+          department = dept?.department_name || department
+        }
+      }
+    }
+    // Get from lecturer profile
+    else if (userData.role === 'lecturer') {
+      const lecturerProfile = academic.state.lecturerProfiles?.find((lp: any) => lp.user_id === userData.id)
+      if (lecturerProfile) {
+        employeeId = lecturerProfile.employee_id || employeeId
+        bio = lecturerProfile.bio || bio
+        // Get department from profile
+        const dept = academic.state.departments?.find((d: any) => d.id === lecturerProfile.department_id)
+        department = dept?.department_name || department
+      }
+    }
+    // Get from admin profile
+    else if (userData.role === 'admin') {
+      const adminProfile = academic.state.adminProfiles?.find((ap: any) => ap.user_id === userData.id)
+      if (adminProfile) {
+        employeeId = adminProfile.employee_id || employeeId
+        // Get department from profile
+        const dept = academic.state.departments?.find((d: any) => d.id === adminProfile.department_id)
+        department = dept?.department_name || department
+      }
+    }
 
     return {
       id: userData.id,
@@ -293,16 +341,16 @@ export default function UserDetailsPage() {
       email: userData.email,
       role: (userData.role as 'admin' | 'lecturer' | 'student') || 'student',
       status: 'active' as 'active' | 'inactive' | 'pending',
-      phone: 'N/A', // Default phone
-      department: 'Computer Science', // Default department
-      studentId: 'N/A', // Default student ID
-      employeeId: 'N/A', // Default employee ID
+      phone,
+      department,
+      studentId,
+      employeeId,
       joinDate: userData.created_at,
-      lastLogin: new Date().toISOString(),
-      bio: 'No bio available', // Default bio
+      lastLogin: userData.updated_at || userData.created_at, // Use updated_at as proxy for last activity
+      bio,
       avatar: userData.profile_image_url
     }
-  }, [userData])
+  }, [userData, academic.state.studentProfiles, academic.state.lecturerProfiles, academic.state.adminProfiles, academic.state.programs, academic.state.departments])
 
   // Get role-specific data
   const roleSpecificData = useMemo(() => {
@@ -312,10 +360,10 @@ export default function UserDetailsPage() {
 
     if (userRole === 'student') {
       // Get student profile
-      const studentProfile = state.studentProfiles.find(sp => sp.user_id === userData.id)
+      const studentProfile = academic.state.studentProfiles.find(sp => sp.user_id === userData.id)
       
       // Get student enrollments
-      const studentEnrollments = state.sectionEnrollments.filter(se => se.student_id === userData.id)
+      const studentEnrollments = academic.state.sectionEnrollments.filter(se => se.student_id === userData.id)
       
       // Get all courses for the student's program, academic year, and semester
       const studentProgramId = studentProfile?.program_id
@@ -324,7 +372,7 @@ export default function UserDetailsPage() {
       
       
       // Get all course assignments for this student's program and academic year
-      const programCourseAssignments = (state.courseAssignments as any[])?.filter(ca => 
+      const programCourseAssignments = (coursesHook.state.courseAssignments as any[])?.filter(ca => 
         ca.program_id === studentProgramId && 
         ca.academic_year_id === studentAcademicYearId
       ) || []
@@ -332,13 +380,13 @@ export default function UserDetailsPage() {
       
       // Get the actual courses from these assignments
       const studentCourses = programCourseAssignments.map(assignment => {
-        const course = state.courses.find(c => c.id === assignment.course_id)
+        const course = coursesHook.state.courses.find(c => c.id === assignment.course_id)
         // Try to get semester from assignment first, then from section
-        let semester = state.semesters.find(s => s.id === assignment.semester_id)
+        let semester = academic.state.semesters.find(s => s.id === assignment.semester_id)
         if (!semester && studentProfile?.section_id) {
-          const section = state.sections.find(s => s.id === studentProfile.section_id)
+          const section = academic.state.sections.find(s => s.id === studentProfile.section_id)
           if (section?.semester_id) {
-            semester = state.semesters.find(s => s.id === section.semester_id)
+            semester = academic.state.semesters.find(s => s.id === section.semester_id)
           }
         }
         
@@ -353,10 +401,10 @@ export default function UserDetailsPage() {
         }
       })
 
-      // Get attendance records for this student
-      const studentAttendance = state.attendanceRecords.filter(ar => 
-        studentCourses.some(course => course.id === ar.session_id) // Use session_id instead
-      )
+      // Get attendance records for this student - Filter by student_id instead of course matching
+      const studentAttendance = attendance.state.attendanceRecords?.filter((ar: any) => 
+        ar.student_id === userData.id
+      ) || []
 
       // Calculate attendance rate
       const totalSessions = studentAttendance.length
@@ -377,12 +425,17 @@ export default function UserDetailsPage() {
         // User Information
         role: userData.role || 'student',
         department: departmentName,
-        lastLogin: (userData as any).last_login_at ? new Date((userData as any).last_login_at).toLocaleDateString() : 'N/A',
-        joinedDate: (userData as any).created_at ? new Date((userData as any).created_at).toLocaleDateString() : 'N/A',
-        bio: (userData as any).bio || 'No bio provided',
-        phone: (userData as any).phone || 'Not provided',
+        lastLogin: userData.updated_at ? new Date(userData.updated_at).toLocaleDateString() : new Date(userData.created_at).toLocaleDateString(),
+        joinedDate: new Date(userData.created_at).toLocaleDateString(),
+        bio: 'No bio provided', // Students don't have bio field in database
+        phone: studentProfile?.emergency_contact_phone || 'Not provided',
         studentId: studentProfile?.student_id || 'N/A',
         sectionDisplay: `${programCode || 'N/A'} ${studentProfile?.sections?.section_code || 'N/A'}`,
+        
+        // Emergency Contact Information
+        emergencyContactName: studentProfile?.emergency_contact_name || 'N/A',
+        emergencyContactPhone: studentProfile?.emergency_contact_phone || 'N/A',
+        emergencyContactRelationship: studentProfile?.emergency_contact_relationship || 'N/A',
         
         // Academic Information
         year: year,
@@ -390,8 +443,13 @@ export default function UserDetailsPage() {
         program: programName,
         programCode: programCode,
         degreeType: degreeType,
+        academicStatus: studentProfile?.academic_status || 'active',
+        enrollmentDate: studentProfile?.enrollment_date ? new Date(studentProfile.enrollment_date).toLocaleDateString() : 'N/A',
+        expectedGraduation: studentProfile?.expected_graduation ? new Date(studentProfile.expected_graduation).toLocaleDateString() : 'N/A',
         gpa: studentProfile?.gpa || 0,
         totalCredits: totalCredits,
+        creditsCompleted: studentProfile?.credits_completed || 0,
+        creditsRequired: studentProfile?.credits_required || 0,
         completedCourses: studentCourses.filter(c => c.status === 'completed').length,
         attendanceRate: Math.round(attendanceRate * 10) / 10,
         assignmentsSubmitted: 0, // TODO: Calculate from assignments
@@ -399,45 +457,67 @@ export default function UserDetailsPage() {
         courses: studentCourses,
         recentGrades: [], // TODO: Implement grades
         upcomingAssignments: [], // TODO: Implement assignments
-        attendanceHistory: studentAttendance.map(ar => ({
-          course: 'Unknown Course', // Default course name
-          session: ar.session_id,
-          date: ar.marked_at,
-          status: ar.status as 'present' | 'absent' | 'late'
-        }))
+        attendanceHistory: studentAttendance.map(ar => {
+          // Get session to find course
+          const session = attendance.state.attendanceSessions?.find((s: any) => s.id === ar.session_id)
+          const courseName = session?.course_name || session?.course_code || 'Unknown Course'
+          
+          return {
+            course: courseName,
+            session: session?.session_name || ar.session_id,
+            date: ar.marked_at,
+            status: ar.status as 'present' | 'absent' | 'late'
+          }
+        })
       }
     } else if (userRole === 'lecturer') {
       // Get lecturer profile
-      const lecturerProfile = state.lecturerProfiles.find(lp => lp.user_id === userData.id)
+      const lecturerProfile = academic.state.lecturerProfiles.find(lp => lp.user_id === userData.id)
           
           // Get lecturer assignments (from lecturer_assignments table)
-          const lecturerAssignments = (state.lecturerAssignments as any[])?.filter(la => 
+          const lecturerAssignments = (coursesHook.state.lecturerAssignments as any[])?.filter(la => 
             la.lecturer_id === userData.id
           ) || []
 
           console.log('🔍 Lecturer Data Debug:', {
             lecturerProfile,
             lecturerAssignments: lecturerAssignments.length,
-            allLecturerAssignments: state.lecturerAssignments?.length || 0,
+            allLecturerAssignments: coursesHook.state.lecturerAssignments?.length || 0,
             userId: userData.id,
             lecturerAssignmentsData: lecturerAssignments,
-            allLecturerAssignmentsData: state.lecturerAssignments,
-            sectionEnrollments: state.sectionEnrollments?.length || 0,
-            allSectionEnrollments: state.sectionEnrollments
+            allLecturerAssignmentsData: coursesHook.state.lecturerAssignments,
+            sectionEnrollments: academic.state.sectionEnrollments?.length || 0,
+            allSectionEnrollments: academic.state.sectionEnrollments
           })
       
-      // Get lecturer sessions
-      const lecturerSessions = state.attendanceSessions.filter(session => 
+      // Get lecturer sessions - try multiple approaches
+      let lecturerSessions = attendance.state.attendanceSessions?.filter(session => 
         session.lecturer_id === userData.id
-      )
+      ) || []
+
+      // If no sessions found by lecturer_id, try to get sessions through lecturer's courses
+      if (lecturerSessions.length === 0) {
+        const lecturerCourseIds = lecturerAssignments.map(la => la.course_id)
+        lecturerSessions = attendance.state.attendanceSessions?.filter(session => 
+          lecturerCourseIds.includes(session.course_id)
+        ) || []
+      }
+
+      console.log('🔍 Lecturer Sessions Filtering:', {
+        totalSessions: attendance.state.attendanceSessions?.length || 0,
+        filteredSessions: lecturerSessions.length,
+        lecturerId: userData.id,
+        lecturerAssignments: lecturerAssignments.length,
+        lecturerCourseIds: lecturerAssignments.map(la => la.course_id)
+      })
 
           // Get lecturer courses from lecturer assignments
           const lecturerCourses = lecturerAssignments.map(assignment => {
-            const course = state.courses.find(c => c.id === assignment.course_id)
-            const section = state.sections.find(s => s.id === assignment.section_id)
-            const semester = state.semesters.find(s => s.id === assignment.semester_id)
-            const academicYear = state.academicYears.find(ay => ay.id === assignment.academic_year_id)
-            const program = state.programs.find(p => p.id === assignment.program_id)
+            const course = coursesHook.state.courses.find(c => c.id === assignment.course_id)
+            const section = academic.state.sections.find(s => s.id === assignment.section_id)
+            const semester = academic.state.semesters.find(s => s.id === assignment.semester_id)
+            const academicYear = academic.state.academicYears.find(ay => ay.id === assignment.academic_year_id)
+            const program = academic.state.programs.find(p => p.id === assignment.program_id)
             
         return {
           id: course?.id || '',
@@ -491,7 +571,7 @@ export default function UserDetailsPage() {
 
           // Get lecturer's assigned sections and their program/semester info
           const lecturerSections = lecturerAssignments.map(assignment => {
-            const section = state.sections.find(s => s.id === assignment.section_id)
+            const section = academic.state.sections.find(s => s.id === assignment.section_id)
             return {
               ...assignment,
               section: section,
@@ -513,7 +593,7 @@ export default function UserDetailsPage() {
           })
 
           // Get students enrolled in the same program/semester as lecturer's sections
-          const programSemesterStudents = state.studentProfiles.filter(student => {
+          const programSemesterStudents = academic.state.studentProfiles.filter(student => {
             // Check if student is in same program/semester as any of lecturer's sections
             return lecturerSections.some(ls => 
               student.program_id === ls.programId && 
@@ -558,8 +638,8 @@ export default function UserDetailsPage() {
               )
               
               const studentDetails = sectionStudents.map(student => {
-                const user = state.users.find(u => u.id === student.user_id)
-                const section = state.sections.find(s => s.id === student.section_id)
+                const user = auth.state.users.find(u => u.id === student.user_id)
+                const section = academic.state.sections.find(s => s.id === student.section_id)
       return {
                   id: student.user_id,
                   name: user?.full_name || 'Unknown Student',
@@ -591,16 +671,34 @@ export default function UserDetailsPage() {
                 )
                 
                 const studentDetails = sectionStudents.map(student => {
-                  const user = state.users.find(u => u.id === student.user_id)
-                  const section = state.sections.find(s => s.id === student.section_id)
+                  const user = auth.state.users.find(u => u.id === student.user_id)
+                  const section = academic.state.sections.find(s => s.id === student.section_id)
+                  
+                  // Get attendance records for this student in this course
+                  const courseSessions = attendance.state.attendanceSessions?.filter((s: any) => 
+                    s.course_id === course.id && s.section_id === assignment.section_id
+                  ) || []
+                  
+                  const studentAttendanceRecords = attendance.state.attendanceRecords?.filter((ar: any) => 
+                    ar.student_id === student.user_id && 
+                    courseSessions.some((s: any) => s.id === ar.session_id)
+                  ) || []
+                  
+                  const totalSessions = courseSessions.length
+                  const attendedSessions = studentAttendanceRecords.filter((ar: any) => ar.status === 'present').length
+                  const attendanceRate = totalSessions > 0 ? Math.round((attendedSessions / totalSessions) * 100) : 0
+                  
                   return {
                     id: student.user_id,
                     name: user?.full_name || 'Unknown Student',
                     email: user?.email || 'No email',
                     studentId: student.student_id || 'N/A',
                     section: section?.section_code || 'N/A',
-                    enrollmentDate: student.enrollment_date || 'N/A',
-                    status: student.academic_status || 'active'
+                    enrollmentDate: student.enrollment_date ? new Date(student.enrollment_date).toLocaleDateString() : 'N/A',
+                    status: student.academic_status || 'active',
+                    attendanceRate: attendanceRate,
+                    sessionsAttended: attendedSessions,
+                    totalSessions: totalSessions
                   }
                 })
                 return [...students, ...studentDetails]
@@ -613,39 +711,114 @@ export default function UserDetailsPage() {
             }
           })
 
-          console.log('🔍 Final Courses Data:', {
-            finalCourses: finalCourses.length,
-            coursesWithStudents: coursesWithStudents.length,
-            totalStudents
-          })
+      console.log('🔍 Final Courses Data:', {
+        finalCourses: finalCourses.length,
+        coursesWithStudents: coursesWithStudents.length,
+        totalStudents
+      })
+
+      console.log('🔍 Lecturer Sessions Debug:', {
+        lecturerSessions: lecturerSessions.length,
+        sessionsData: lecturerSessions.map(s => ({
+          id: s.id,
+          session_date: s.session_date,
+          session_name: s.session_name,
+          course_id: s.course_id,
+          lecturer_id: s.lecturer_id
+        }))
+      })
 
       // Get recent sessions with proper course names
       const recentSessions = lecturerSessions.slice(0, 5).map(session => {
-        const course = state.courses.find(c => c.id === session.course_id)
-        const attendanceRecords = state.attendanceRecords.filter(ar => ar.session_id === session.id)
-        const presentCount = attendanceRecords.filter(ar => ar.status === 'present').length
+        const course = coursesHook.state.courses.find(c => c.id === session.course_id)
+        const attendanceRecords = attendance.state.attendanceRecords?.filter((ar: any) => ar.session_id === session.id) || []
+        const presentCount = attendanceRecords.filter((ar: any) => ar.status === 'present').length
+        
+        // Safe date handling
+        const sessionDate = session.session_date || session.created_at
+        const formattedDate = sessionDate ? new Date(sessionDate).toLocaleDateString() : 'N/A'
         
         return {
           id: session.id,
           course: course?.course_name || 'Unknown Course',
-          title: (session as any).title || 'Session',
-          date: new Date(session.session_date).toLocaleDateString(),
+          title: session.session_name || (session as any).title || 'Session',
+          date: formattedDate,
           attendance: presentCount,
           totalStudents: attendanceRecords.length
         }
       })
 
+      console.log('🔍 Recent Sessions Debug:', {
+        recentSessionsCount: recentSessions.length,
+        recentSessionsData: recentSessions,
+        lecturerSessionsCount: lecturerSessions.length,
+        attendanceSessionsTotal: attendance.state.attendanceSessions?.length || 0,
+        attendanceRecordsTotal: attendance.state.attendanceRecords?.length || 0
+      })
+
+      // Debug the actual session data structure
+      if (recentSessions.length > 0) {
+        console.log('🔍 First Recent Session Structure:', {
+          id: recentSessions[0].id,
+          course: recentSessions[0].course,
+          title: recentSessions[0].title,
+          date: recentSessions[0].date,
+          attendance: recentSessions[0].attendance,
+          totalStudents: recentSessions[0].totalStudents,
+          fullObject: recentSessions[0]
+        })
+      }
+
+      if (lecturerSessions.length > 0) {
+        console.log('🔍 First Lecturer Session Structure:', {
+          id: lecturerSessions[0].id,
+          session_date: lecturerSessions[0].session_date,
+          session_name: lecturerSessions[0].session_name,
+          course_id: lecturerSessions[0].course_id,
+          lecturer_id: lecturerSessions[0].lecturer_id,
+          allFields: Object.keys(lecturerSessions[0])
+        })
+      }
+
+      // If still no sessions, create a placeholder to show what data we have
+      if (recentSessions.length === 0 && lecturerSessions.length > 0) {
+        console.log('🔍 No recent sessions but found lecturer sessions:', lecturerSessions)
+      } else if (recentSessions.length === 0) {
+        console.log('🔍 No sessions found at all for this lecturer')
+        console.log('🔍 All attendance sessions:', attendance.state.attendanceSessions)
+        console.log('🔍 Lecturer assignments:', lecturerAssignments)
+        
+        // Create a fallback session to show what we have
+        if (attendance.state.attendanceSessions && attendance.state.attendanceSessions.length > 0) {
+          const firstSession = attendance.state.attendanceSessions[0]
+          console.log('🔍 First session structure:', {
+            id: firstSession.id,
+            session_date: firstSession.session_date,
+            session_name: firstSession.session_name,
+            course_id: firstSession.course_id,
+            lecturer_id: firstSession.lecturer_id,
+            allFields: Object.keys(firstSession)
+          })
+        }
+      }
+
       // Get upcoming sessions
       const upcomingSessions = lecturerSessions
-          .filter(session => new Date(session.session_date) > new Date())
+          .filter(session => {
+            const sessionDate = session.session_date || session.created_at
+            return sessionDate && new Date(sessionDate) > new Date()
+          })
           .slice(0, 5)
         .map(session => {
-          const course = state.courses.find(c => c.id === session.course_id)
+          const course = coursesHook.state.courses.find(c => c.id === session.course_id)
+          const sessionDate = session.session_date || session.created_at
+          const formattedDate = sessionDate ? new Date(sessionDate).toLocaleDateString() : 'N/A'
+          
           return {
             id: session.id,
             course: course?.course_name || 'Unknown Course',
-            title: (session as any).title || 'Session',
-            date: new Date(session.session_date).toLocaleDateString(),
+            title: session.session_name || (session as any).title || 'Session',
+            date: formattedDate,
             type: 'lecture' as 'lecture' | 'lab' | 'tutorial'
           }
         })
@@ -663,10 +836,10 @@ export default function UserDetailsPage() {
         // User Information
         role: userData.role || 'lecturer',
         department: (lecturerProfile as any)?.departments?.department_name || 'N/A',
-        lastLogin: (userData as any).last_login_at ? new Date((userData as any).last_login_at).toLocaleDateString() : 'N/A',
-        joinedDate: (userData as any).created_at ? new Date((userData as any).created_at).toLocaleDateString() : 'N/A',
-        bio: (lecturerProfile as any)?.bio || (userData as any).bio || 'No bio provided',
-        phone: (userData as any).phone || 'Not provided',
+        lastLogin: userData.updated_at ? new Date(userData.updated_at).toLocaleDateString() : new Date(userData.created_at).toLocaleDateString(),
+        joinedDate: new Date(userData.created_at).toLocaleDateString(),
+        bio: (lecturerProfile as any)?.bio || 'No bio provided',
+        phone: 'Not provided', // Lecturers don't have phone in database schema
         employeeId: lecturerProfile?.employee_id || 'N/A',
         
         // Professional Information
@@ -674,6 +847,8 @@ export default function UserDetailsPage() {
         yearsExperience: (lecturerProfile as any)?.years_experience || 0,
         position: (lecturerProfile as any)?.position || 'Lecturer',
         hireDate: (lecturerProfile as any)?.hire_date ? new Date((lecturerProfile as any).hire_date).toLocaleDateString() : 'N/A',
+        officeLocation: (lecturerProfile as any)?.office_location || 'Not assigned',
+        officeHours: (lecturerProfile as any)?.office_hours || 'Not set',
         researchInterests: researchInterests,
         qualifications: qualifications,
         totalCourses: finalCourses.length,
@@ -686,7 +861,7 @@ export default function UserDetailsPage() {
       }
     } else if (userRole === 'admin') {
       // Get admin profile
-      const adminProfile = state.adminProfiles.find(ap => ap.user_id === userData.id)
+      const adminProfile = academic.state.adminProfiles.find(ap => ap.user_id === userData.id)
       
       // Admin-specific data
       return {
@@ -703,15 +878,15 @@ export default function UserDetailsPage() {
         permissions: ['user_management', 'course_management', 'system_settings'],
         systemAccess: ['admin_panel', 'reports', 'analytics'],
         lastSystemUpdate: new Date().toISOString(),
-        totalUsersManaged: state.users.length,
-        totalCoursesManaged: state.courses.length,
+        totalUsersManaged: auth.state.users.length,
+        totalCoursesManaged: coursesHook.state.courses.length,
         systemHealth: 'excellent' as 'excellent' | 'good' | 'warning' | 'critical',
         recentActivities: [] // TODO: Implement activity tracking
       }
     }
 
     return null
-  }, [userData, state.studentProfiles, state.sectionEnrollments, state.sections, state.courses, state.attendanceRecords, state.lecturerProfiles, state.attendanceSessions, state.users, state.lecturerAssignments, state.semesters, state.academicYears, state.programs])
+  }, [userData, academic.state.studentProfiles, academic.state.sectionEnrollments, academic.state.sections, coursesHook.state.courses, attendance.state.attendanceRecords, academic.state.lecturerProfiles, attendance.state.attendanceSessions, auth.state.users, coursesHook.state.lecturerAssignments, academic.state.semesters, academic.state.academicYears, academic.state.programs])
 
   // Update user when data changes
   useEffect(() => {
@@ -780,7 +955,21 @@ export default function UserDetailsPage() {
       const { tabs } = StudentTabs({ details: studentDetails })
       return [...baseTabs, ...tabs]
     } else if (user.role === 'lecturer' && lecturerDetails) {
-      const { tabs } = LecturerTabs({ details: lecturerDetails, state })
+      const { tabs } = LecturerTabs({ 
+        details: lecturerDetails, 
+        state: {
+          users: auth.state.users,
+          studentProfiles: academic.state.studentProfiles,
+          sectionEnrollments: academic.state.sectionEnrollments,
+          sections: academic.state.sections,
+          courses: coursesHook.state.courses,
+          attendanceRecords: attendance.state.attendanceRecords,
+          lecturerAssignments: coursesHook.state.lecturerAssignments,
+          semesters: academic.state.semesters,
+          academicYears: academic.state.academicYears,
+          programs: academic.state.programs
+        }
+      })
       return [...baseTabs, ...tabs]
     } else if (user.role === 'admin' && adminDetails) {
       const { tabs } = AdminTabs({ details: adminDetails })
@@ -1017,11 +1206,11 @@ export default function UserDetailsPage() {
         onOpenChange={setEditModalOpen}
         user={user}
         onSave={handleSaveUser}
-        departments={state.departments || []}
-        programs={state.programs || []}
-        academicYears={state.academicYears || []}
-        semesters={state.semesters || []}
-        sections={state.sections || []}
+        departments={academic.state.departments || []}
+        programs={academic.state.programs || []}
+        academicYears={academic.state.academicYears || []}
+        semesters={academic.state.semesters || []}
+        sections={academic.state.sections || []}
         profileData={roleSpecificData}
       />
     </Box>

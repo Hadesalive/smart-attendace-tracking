@@ -14,6 +14,11 @@ import {
   AcademicCapIcon
 } from "@heroicons/react/24/outline"
 import { useAttendance, useCourses, useAcademicStructure, useAuth } from "@/lib/domains"
+import {
+  AttendanceValidator,
+  AttendanceEdgeCaseHandler,
+  AttendanceErrorRecovery
+} from "@/lib/validation/attendance-validation"
 import { useData } from "@/lib/contexts/DataContext"
 import { supabase } from "@/lib/supabase"
 import { AttendanceSession } from "@/lib/types/shared"
@@ -282,24 +287,46 @@ export default function CreateSessionModal({
         throw new Error("Please select a course")
       }
 
-      // Validate required fields
-      if (!formData.session_name.trim()) {
-        throw new Error("Session name is required")
+      // 🔍 COMPREHENSIVE VALIDATION: Validate session data
+      const sessionValidation = AttendanceValidator.validateSession({
+        course_id: formData.course_id,
+        section_id: formData.section_id,
+        session_name: formData.session_name,
+        session_date: formData.session_date,
+        start_time: formData.start_time,
+        end_time: formData.end_time,
+        location: formData.location,
+        capacity: formData.capacity
+      })
+
+      if (!sessionValidation.isValid) {
+        const errorMessage = `Validation failed: ${sessionValidation.errors.join(', ')}`
+        console.error('❌ Session validation failed:', sessionValidation.errors)
+        throw new Error(errorMessage)
       }
-      if (!formData.session_date) {
-        throw new Error("Session date is required")
+
+      // Show warnings if any
+      if (sessionValidation.warnings.length > 0) {
+        console.warn('⚠️ Session validation warnings:', sessionValidation.warnings)
       }
-      if (!formData.start_time) {
-        throw new Error("Start time is required")
-      }
-      if (!formData.end_time) {
-        throw new Error("End time is required")
-      }
-      if (!formData.location.trim()) {
-        throw new Error("Location is required")
-      }
-      if (!formData.section_id) {
-        throw new Error("Section selection is required")
+
+      // 🔍 EDGE CASE HANDLING: Check for potential issues
+      const edgeCaseCheck = await AttendanceEdgeCaseHandler.handleSessionEdgeCases({
+        course_id: formData.course_id,
+        section_id: formData.section_id,
+        session_name: formData.session_name,
+        session_date: formData.session_date,
+        start_time: formData.start_time,
+        end_time: formData.end_time,
+        location: formData.location,
+        capacity: formData.capacity
+      })
+
+      if (!edgeCaseCheck.shouldProceed) {
+        console.warn('⚠️ Session edge case detected:', edgeCaseCheck.reason)
+        if (edgeCaseCheck.suggestedAction) {
+          console.log('💡 Suggested action:', edgeCaseCheck.suggestedAction)
+        }
       }
 
       if (editSession) {
@@ -375,8 +402,23 @@ export default function CreateSessionModal({
       
     } catch (error: any) {
       console.error('Error with session operation:', error)
-      setError(error.message || 'Failed to process session')
-      toast.error(error.message || 'Failed to process session')
+
+      // Extract error message
+      const errorMessage = error.message || 'Failed to process session'
+
+      // 🔧 ENHANCED ERROR RECOVERY: Get user-friendly error info
+      const friendlyError = AttendanceErrorRecovery.getUserFriendlyError(errorMessage)
+      const isRetryable = AttendanceErrorRecovery.isRetryableError(errorMessage)
+
+      console.log('📊 Session error analysis:', {
+        originalError: errorMessage,
+        friendlyTitle: friendlyError.title,
+        friendlyMessage: friendlyError.message,
+        retryable: isRetryable
+      })
+
+      setError(friendlyError.message)
+      toast.error(friendlyError.message)
     } finally {
       setLoading(false)
     }

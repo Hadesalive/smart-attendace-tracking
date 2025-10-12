@@ -61,7 +61,7 @@ export default function CourseDetailPage({ params }: CourseDetailProps) {
   const router = useRouter()
   const { courseId } = use(params)
   
-  // Data Context
+  // Data Context - Access state directly without merging
   const courses = useCourses()
   const academic = useAcademicStructure()
   const auth = useAuth()
@@ -85,6 +85,7 @@ export default function CourseDetailPage({ params }: CourseDetailProps) {
   const { 
     state: academicState,
     fetchLecturerProfiles,
+    fetchStudentProfiles,
     fetchSectionEnrollments,
     fetchPrograms,
     fetchAcademicYears,
@@ -92,18 +93,14 @@ export default function CourseDetailPage({ params }: CourseDetailProps) {
     fetchSections
   } = academic
   
-  // Create legacy state object for compatibility
-  const state = {
-    ...coursesState,
-    lecturerProfiles: academicState.lecturerProfiles,
-    lecturerAssignments: coursesState.lecturerAssignments,
-    users: auth.state.users,
-    academicYears: academicState.academicYears,
-    semesters: academicState.semesters,
-    programs: academicState.programs,
-    sections: academicState.sections,
-    sectionEnrollments: academicState.sectionEnrollments
-  } as any
+  // Academic data for forms - Safe access
+  const academicData = useMemo(() => ({
+    academicYears: academicState.academicYears || [],
+    semesters: academicState.semesters || [],
+    programs: academicState.programs || [],
+    sections: academicState.sections || [],
+    sectionEnrollments: academicState.sectionEnrollments || []
+  }), [academicState.academicYears, academicState.semesters, academicState.programs, academicState.sections, academicState.sectionEnrollments])
 
   const [activeTab, setActiveTab] = useState(0)
   const [isEditOpen, setEditOpen] = useState(false)
@@ -127,19 +124,26 @@ export default function CourseDetailPage({ params }: CourseDetailProps) {
 
   // Get course details
   const course = useMemo(() => {
-    return state.courses.find((c: Course) => c.id === courseId)
-  }, [state.courses, courseId])
+    if (!coursesState.courses || !Array.isArray(coursesState.courses)) {
+      return null
+    }
+    return coursesState.courses.find((c: Course) => c.id === courseId)
+  }, [coursesState.courses, courseId])
 
-  // Get course assignments with enriched data
+  // Get course assignments with enriched data - Safe access
   const courseAssignments = useMemo(() => {
-    const assignments = state.courseAssignments.filter((assignment: any) => assignment.course_id === courseId)
+    if (!coursesState.courseAssignments || !Array.isArray(coursesState.courseAssignments)) {
+      return []
+    }
+    
+    const assignments = coursesState.courseAssignments.filter((assignment: any) => assignment.course_id === courseId)
     
     return assignments.map((assignment: any) => {
       // The data should already be joined from the database query
       // But we'll also check if we need to enrich it further
-      const program = assignment.programs || state.programs?.find((p: any) => p.id === assignment.program_id)
-      const academicYear = assignment.academic_years || state.academicYears?.find((ay: any) => ay.id === assignment.academic_year_id)
-      const semester = assignment.semesters || state.semesters?.find((s: any) => s.id === assignment.semester_id)
+      const program = assignment.programs || academicState.programs?.find((p: any) => p.id === assignment.program_id)
+      const academicYear = assignment.academic_years || academicState.academicYears?.find((ay: any) => ay.id === assignment.academic_year_id)
+      const semester = assignment.semesters || academicState.semesters?.find((s: any) => s.id === assignment.semester_id)
       
       return {
         ...assignment,
@@ -148,7 +152,7 @@ export default function CourseDetailPage({ params }: CourseDetailProps) {
         semesters: semester
       }
     })
-  }, [state.courseAssignments, state.programs, state.academicYears, state.semesters, courseId])
+  }, [coursesState.courseAssignments, academicState.programs, academicState.academicYears, academicState.semesters, courseId])
 
   // Get enrolled students using inheritance-based system
   const enrolledStudents = useMemo(() => {
@@ -160,7 +164,7 @@ export default function CourseDetailPage({ params }: CourseDetailProps) {
     
     // For each course assignment, find students enrolled in that program/semester/year
     courseAssignments.forEach((assignment: any) => {
-      const studentsInProgram = state.sectionEnrollments?.filter((enrollment: any) => 
+      const studentsInProgram = academicState.sectionEnrollments?.filter((enrollment: any) => 
         enrollment.program_id === assignment.program_id &&
         enrollment.semester_id === assignment.semester_id &&
         enrollment.academic_year_id === assignment.academic_year_id &&
@@ -169,15 +173,18 @@ export default function CourseDetailPage({ params }: CourseDetailProps) {
       ) || []
       
       // Add each student to the map with their program context
-      studentsInProgram.forEach((enrollment: any) => {
+      studentsInProgram.forEach((enrollment: any, index: number) => {
         const studentKey = `${enrollment.student_id}-${assignment.program_id}-${assignment.semester_id}-${assignment.academic_year_id}`
         
         if (!inheritedStudents.has(studentKey)) {
+          // Get student profile to get their student_id
+          const studentProfile = academicState.studentProfiles?.find((sp: any) => sp.user_id === enrollment.student_id)
+          
           inheritedStudents.set(studentKey, {
             id: enrollment.id,
             student_id: enrollment.student_id,
-            student_name: enrollment.student_name || 'N/A',
-            student_id_number: enrollment.student_id_number || 'N/A',
+            student_name: enrollment.users?.full_name || enrollment.student_name || 'N/A',
+            student_id_number: studentProfile?.student_id || enrollment.users?.student_id || enrollment.student_id_number || 'N/A',
             program: assignment.programs?.program_name || 'N/A',
             program_code: assignment.programs?.program_code || 'N/A',
             year: assignment.year || enrollment.year,
@@ -185,8 +192,11 @@ export default function CourseDetailPage({ params }: CourseDetailProps) {
             academic_year: assignment.academic_years?.year_name || 'N/A',
             enrollment_date: enrollment.enrollment_date,
             status: enrollment.status,
-            // Show which sections they're in
-            sections: [enrollment.section_code].filter(Boolean),
+            // Show which sections they're in with program code
+            sections: [{ 
+              code: enrollment.section_code, 
+              programCode: assignment.programs?.program_code || ''
+            }].filter(s => s.code),
             // Add assignment context
             assignment_id: assignment.id,
             is_mandatory: assignment.is_mandatory,
@@ -195,15 +205,19 @@ export default function CourseDetailPage({ params }: CourseDetailProps) {
         } else {
           // Add section to existing student
           const existingStudent = inheritedStudents.get(studentKey)
-          if (enrollment.section_code && !existingStudent.sections.includes(enrollment.section_code)) {
-            existingStudent.sections.push(enrollment.section_code)
+          const sectionObj = { 
+            code: enrollment.section_code, 
+            programCode: assignment.programs?.program_code || '' 
+          }
+          if (enrollment.section_code && !existingStudent.sections.find((s: any) => s.code === enrollment.section_code)) {
+            existingStudent.sections.push(sectionObj)
           }
         }
       })
     })
     
     return Array.from(inheritedStudents.values())
-  }, [courseAssignments, state.sectionEnrollments])
+  }, [courseAssignments, academicState.sectionEnrollments, academicState.studentProfiles])
 
   // Filtered assignments
   const filteredAssignments = useMemo(() => {
@@ -378,6 +392,7 @@ export default function CourseDetailPage({ params }: CourseDetailProps) {
         await Promise.all([
           fetchCourses(),
           fetchLecturerProfiles(),
+          fetchStudentProfiles(),
           fetchCourseAssignments(),
           fetchLecturerAssignments(),
           fetchSectionEnrollments(),
@@ -534,7 +549,7 @@ export default function CourseDetailPage({ params }: CourseDetailProps) {
   }
 
   // Loading state
-  if (state.loading) {
+  if (coursesState.loading || academicState.loading) {
     return (
       <Box sx={{ p: { xs: 2, sm: 3 } }}>
         <PageHeader
@@ -550,7 +565,7 @@ export default function CourseDetailPage({ params }: CourseDetailProps) {
   }
 
   // Error state
-  if (state.error) {
+  if (coursesState.error || academicState.error) {
     return (
       <Box sx={{ p: { xs: 2, sm: 3 } }}>
         <PageHeader
@@ -558,7 +573,7 @@ export default function CourseDetailPage({ params }: CourseDetailProps) {
           subtitle="Error loading course information"
           actions={null}
         />
-        <ErrorAlert error={state.error} />
+        <ErrorAlert error={coursesState.error || academicState.error || 'Unknown error'} />
       </Box>
     )
   }
@@ -611,7 +626,7 @@ export default function CourseDetailPage({ params }: CourseDetailProps) {
     {
       key: 'program',
       label: 'Program',
-      render: (value: any, row: any) => (
+      render: (_value: string, row: any) => (
           <Box>
             <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
             {row.programs?.program_name || 'N/A'}
@@ -625,7 +640,7 @@ export default function CourseDetailPage({ params }: CourseDetailProps) {
     {
       key: 'academic_year',
       label: 'Academic Year',
-      render: (value: any, row: any) => (
+      render: (_value: string, row: any) => (
         <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
           {row.academic_years?.year_name || 'N/A'}
         </Typography>
@@ -634,7 +649,7 @@ export default function CourseDetailPage({ params }: CourseDetailProps) {
     {
       key: 'semester',
       label: 'Semester',
-      render: (value: any, row: any) => (
+      render: (_value: string, row: any) => (
         <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
           {row.semesters?.semester_name || 'N/A'}
         </Typography>
@@ -643,7 +658,7 @@ export default function CourseDetailPage({ params }: CourseDetailProps) {
     {
       key: 'status',
       label: 'Type',
-      render: (value: any, row: any) => (
+      render: (_value: string, row: any) => (
         <Chip 
           label={row.is_mandatory ? "Mandatory" : "Optional"} 
           size="small"
@@ -659,7 +674,7 @@ export default function CourseDetailPage({ params }: CourseDetailProps) {
     {
       key: 'capacity',
       label: 'Max Students',
-      render: (value: any, row: any) => (
+      render: (_value: string, row: any) => (
         <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
           {row.max_students || row.sections?.max_capacity || 'N/A'}
         </Typography>
@@ -668,7 +683,7 @@ export default function CourseDetailPage({ params }: CourseDetailProps) {
     {
       key: 'created',
       label: 'Created',
-      render: (value: any, row: any) => (
+      render: (_value: string, row: any) => (
         <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
           {formatDate(row.created_at)}
         </Typography>
@@ -677,7 +692,7 @@ export default function CourseDetailPage({ params }: CourseDetailProps) {
     {
       key: 'actions',
       label: 'Actions',
-      render: (value: any, row: any) => (
+      render: (_value: string, row: any) => (
         <Box sx={{ display: 'flex', gap: 1 }}>
           <IconButton
             size="small"
@@ -703,7 +718,7 @@ export default function CourseDetailPage({ params }: CourseDetailProps) {
     {
       key: 'student',
       label: 'Student',
-      render: (value: any, row: any) => (
+      render: (_value: string, row: any) => (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
           <Avatar sx={{ width: 32, height: 32 }}>
             {row.student_name?.charAt(0) || 'S'}
@@ -722,7 +737,7 @@ export default function CourseDetailPage({ params }: CourseDetailProps) {
     {
       key: 'program',
       label: 'Program',
-      render: (value: any, row: any) => (
+      render: (_value: string, row: any) => (
         <Box>
           <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
             {row.program || 'N/A'}
@@ -736,7 +751,7 @@ export default function CourseDetailPage({ params }: CourseDetailProps) {
     {
       key: 'year_semester',
       label: 'Year & Semester',
-      render: (value: any, row: any) => (
+      render: (_value: string, row: any) => (
         <Box>
           <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
             Year {row.year || 'N/A'}
@@ -750,7 +765,7 @@ export default function CourseDetailPage({ params }: CourseDetailProps) {
     {
       key: 'academic_year',
       label: 'Academic Year',
-      render: (value: any, row: any) => (
+      render: (_value: string, row: any) => (
         <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
           {row.academic_year || 'N/A'}
         </Typography>
@@ -759,7 +774,7 @@ export default function CourseDetailPage({ params }: CourseDetailProps) {
     {
       key: 'sections',
       label: 'Sections',
-      render: (value: any, row: any) => {
+      render: (_value: string, row: any) => {
         const sections = row.sections || []
         if (sections.length === 0) {
           return (
@@ -769,16 +784,22 @@ export default function CourseDetailPage({ params }: CourseDetailProps) {
           )
         }
         
+        // Format section display as "PROGRAM_CODE SECTION_CODE"
+        const formatSection = (section: any) => {
+          if (typeof section === 'string') return section
+          return `${section.programCode || ''} ${section.code || ''}`.trim()
+        }
+        
         return (
           <Box>
             {sections.length === 1 ? (
               <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
-                {sections[0]}
+                {formatSection(sections[0])}
               </Typography>
             ) : (
               <Box>
                 <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
-                  {sections[0]}
+                  {formatSection(sections[0])}
                 </Typography>
                 <Typography variant="caption" sx={TYPOGRAPHY_STYLES.tableCaption}>
                   +{sections.length - 1} more
@@ -792,7 +813,7 @@ export default function CourseDetailPage({ params }: CourseDetailProps) {
     {
       key: 'enrollment_date',
       label: 'Enrolled',
-      render: (value: any, row: any) => (
+      render: (_value: string, row: any) => (
         <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
           {formatDate(row.enrollment_date || row.created_at)}
         </Typography>
@@ -801,7 +822,7 @@ export default function CourseDetailPage({ params }: CourseDetailProps) {
     {
       key: 'status',
       label: 'Status',
-      render: (value: any, row: any) => (
+      render: (_value: string, row: any) => (
         <Chip 
           label={row.status || 'Active'} 
           size="small"
@@ -984,7 +1005,7 @@ export default function CourseDetailPage({ params }: CourseDetailProps) {
                       fontFamily: 'DM Sans, sans-serif',
                       color: '#333333'
                     }}>
-                      {course.description || 'No description available for this course.'}
+                      {(course as any)?.description || 'No description available for this course.'}
                     </Typography>
                     
                     <Typography variant="body2" sx={{ 
@@ -996,45 +1017,127 @@ export default function CourseDetailPage({ params }: CourseDetailProps) {
                       letterSpacing: '0.5px',
                       fontSize: '0.75rem'
                     }}>
-                      Lecturer
+                      Assigned Lecturers
                     </Typography>
-                    <Box sx={{ 
-                      display: 'flex', 
-                      alignItems: 'center', 
-                      gap: 2, 
-                      mb: 3,
-                      p: 2,
-                      backgroundColor: '#f9f9f9',
-                      borderRadius: 2,
-                      border: '1px solid #f0f0f0'
-                    }}>
-                      <Avatar sx={{ 
-                        width: { xs: 36, sm: 40 }, 
-                        height: { xs: 36, sm: 40 },
-                        backgroundColor: '#000000',
-                        color: '#ffffff',
-                        fontFamily: 'DM Sans, sans-serif',
-                        fontWeight: 600
-                      }}>
-                        {course.lecturer_name?.charAt(0) || 'L'}
-                      </Avatar>
-                      <Box sx={{ flex: 1, minWidth: 0 }}>
-                        <Typography variant="body2" sx={{ 
-                          fontWeight: 600,
-                          fontFamily: 'DM Sans, sans-serif',
-                          color: '#000000',
-                          mb: 0.5
-                        }}>
-                          {course.lecturer_name || 'Not Assigned'}
-                        </Typography>
-                        <Typography variant="caption" sx={{ 
-                          color: '#666666',
-                          fontFamily: 'DM Sans, sans-serif'
-                        }}>
-                          {course.lecturer_email || 'No email'}
-                        </Typography>
-                      </Box>
-                    </Box>
+                    {(() => {
+                      // Get assigned lecturers for this course
+                      const assignedLecturers = getLecturersByCourse(courseId)
+                      
+                      
+                      if (assignedLecturers.length === 0) {
+                        return (
+                          <Box sx={{ 
+                            p: 2,
+                            mb: 3,
+                            backgroundColor: '#f9f9f9',
+                            borderRadius: 2,
+                            border: '1px solid #f0f0f0',
+                            textAlign: 'center'
+                          }}>
+                            <Typography variant="body2" sx={{ color: '#666666', fontFamily: 'DM Sans, sans-serif' }}>
+                              No lecturers assigned to this course
+                            </Typography>
+                          </Box>
+                        )
+                      }
+                      
+                      const primaryLecturer = assignedLecturers.find(l => (l as any).is_primary)
+                      const otherLecturers = assignedLecturers.filter(l => !(l as any).is_primary)
+                      
+                      return (
+                        <Box sx={{ mb: 3 }}>
+                          {primaryLecturer && (
+                            <Box sx={{ 
+                              display: 'flex', 
+                              alignItems: 'center', 
+                              gap: 2,
+                              p: 2,
+                              mb: otherLecturers.length > 0 ? 1.5 : 0,
+                              backgroundColor: '#f9f9f9',
+                              borderRadius: 2,
+                              border: '1px solid #f0f0f0'
+                            }}>
+                              <Avatar sx={{ 
+                                width: { xs: 36, sm: 40 }, 
+                                height: { xs: 36, sm: 40 },
+                                backgroundColor: '#000000',
+                                color: '#ffffff',
+                                fontFamily: 'DM Sans, sans-serif',
+                                fontWeight: 600
+                              }}>
+                                {(primaryLecturer as any)?.users?.full_name?.charAt(0) || 'L'}
+                              </Avatar>
+                              <Box sx={{ flex: 1, minWidth: 0 }}>
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                                  <Typography variant="body2" sx={{ 
+                                    fontWeight: 600,
+                                    fontFamily: 'DM Sans, sans-serif',
+                                    color: '#000000'
+                                  }}>
+                                    {(primaryLecturer as any)?.users?.full_name || 'Unknown Lecturer'}
+                                  </Typography>
+                                  <Chip label="Primary" size="small" sx={{ 
+                                    height: 20,
+                                    fontSize: '0.65rem',
+                                    backgroundColor: '#000',
+                                    color: '#fff',
+                                    fontWeight: 600
+                                  }} />
+                                </Box>
+                                <Typography variant="caption" sx={{ 
+                                  color: '#666666',
+                                  fontFamily: 'DM Sans, sans-serif'
+                                }}>
+                                  {(primaryLecturer as any)?.users?.email || 'No email'}
+                                </Typography>
+                              </Box>
+                            </Box>
+                          )}
+                          {otherLecturers.map((lecturer: any) => (
+                            <Box key={lecturer.id} sx={{ 
+                              display: 'flex', 
+                              alignItems: 'center', 
+                              gap: 2,
+                              p: 2,
+                              mb: 1,
+                              backgroundColor: '#f9f9f9',
+                              borderRadius: 2,
+                              border: '1px solid #e5e5e5'
+                            }}>
+                              <Avatar sx={{ 
+                                width: { xs: 32, sm: 36 }, 
+                                height: { xs: 32, sm: 36 },
+                                backgroundColor: '#666666',
+                                color: '#ffffff',
+                                fontFamily: 'DM Sans, sans-serif',
+                                fontWeight: 600,
+                                fontSize: '0.875rem'
+                              }}>
+                                {lecturer.users?.full_name?.charAt(0) || 'L'}
+                              </Avatar>
+                              <Box sx={{ flex: 1, minWidth: 0 }}>
+                                <Typography variant="body2" sx={{ 
+                                  fontWeight: 600,
+                                  fontFamily: 'DM Sans, sans-serif',
+                                  color: '#000000',
+                                  mb: 0.5,
+                                  fontSize: '0.875rem'
+                                }}>
+                                  {lecturer.users?.full_name || 'Unknown Lecturer'}
+                                </Typography>
+                                <Typography variant="caption" sx={{ 
+                                  color: '#666666',
+                                  fontFamily: 'DM Sans, sans-serif',
+                                  fontSize: '0.75rem'
+                                }}>
+                                  {lecturer.users?.email || 'No email'}
+                                </Typography>
+                              </Box>
+                            </Box>
+                          ))}
+                        </Box>
+                      )
+                    })()}
                   </Box>
 
                   <Box sx={{ 
@@ -1231,6 +1334,7 @@ export default function CourseDetailPage({ params }: CourseDetailProps) {
                     </Typography>
                     {(() => {
                       const assignedLecturers = getLecturersByCourse(courseId)
+                      
                       const primaryLecturer = assignedLecturers.find(l => (l as any).is_primary)
                       const additionalLecturers = assignedLecturers.filter(l => !(l as any).is_primary)
                       
@@ -1258,7 +1362,9 @@ export default function CourseDetailPage({ params }: CourseDetailProps) {
                                 </Typography>
                                 <Typography variant="caption" sx={{ color: 'text.secondary' }}>
                                   {(primaryLecturer as any).teaching_hours_per_week ? `${(primaryLecturer as any).teaching_hours_per_week} hours/week` : ''}
-                                  {(primaryLecturer as any).sections?.section_code ? ` • Section: ${(primaryLecturer as any).sections.section_code}` : ''}
+                                  {(primaryLecturer as any).sections?.section_code ? 
+                                    ` • Section: ${(primaryLecturer as any).programs?.program_code || (primaryLecturer as any).sections?.programs?.program_code || ''} ${(primaryLecturer as any).sections.section_code}`.trim().replace(/Section:\s+/, 'Section: ')
+                                    : ''}
                                 </Typography>
                               </Box>
                               <IconButton
@@ -1288,6 +1394,9 @@ export default function CourseDetailPage({ params }: CourseDetailProps) {
                                     <Typography variant="caption" sx={{ color: 'text.secondary' }}>
                                       {(lecturer as any).users?.email || 'No email'}
                                       {(lecturer as any).teaching_hours_per_week ? ` • ${(lecturer as any).teaching_hours_per_week} hours/week` : ''}
+                                      {(lecturer as any).sections?.section_code ? 
+                                        ` • Section: ${(lecturer as any).programs?.program_code || (lecturer as any).sections?.programs?.program_code || ''} ${(lecturer as any).sections.section_code}`.trim().replace(/Section:\s+/, 'Section: ')
+                                        : ''}
                                     </Typography>
                                   </Box>
                                   <IconButton
@@ -1314,7 +1423,7 @@ export default function CourseDetailPage({ params }: CourseDetailProps) {
                   assignment={selectedLecturerAssignment}
                   mode={lecturerAssignmentMode}
                   onSave={handleSaveLecturerAssignment}
-                  lecturers={state.lecturerProfiles}
+                  lecturers={academicState.lecturerProfiles || []}
                   courses={[course]}
                   academicYears={academicState.academicYears}
                   semesters={academicState.semesters}
@@ -1506,10 +1615,10 @@ export default function CourseDetailPage({ params }: CourseDetailProps) {
                   onSave={handleSaveAssignment}
                   mode={isEditAssignmentOpen ? 'edit' : 'create'}
                   courses={[course].filter(Boolean)}
-                  academicYears={state.academicYears}
-                  semesters={state.semesters}
-                  programs={state.programs}
-                  sections={state.sections}
+                  academicYears={academicData.academicYears}
+                  semesters={academicData.semesters}
+                  programs={academicData.programs}
+                  sections={academicData.sections}
         />
       </Box>
             )}

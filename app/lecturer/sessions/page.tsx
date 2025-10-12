@@ -1000,7 +1000,7 @@ export default function LecturerSessionsPage() {
       <CreateSessionModal
         open={showCreateDialog}
         onOpenChange={setShowCreateDialog}
-        lecturerId={state.currentUser?.id || ''}
+        lecturerId={state.currentUser?.id || 'guest'}
         onSessionCreated={(sessionId) => {
             setShowCreateDialog(false)
             fetchAttendanceSessions()
@@ -1027,7 +1027,7 @@ export default function LecturerSessionsPage() {
         <CreateSessionModal 
           open={editModalOpen}
           onOpenChange={handleEditModalClose}
-          lecturerId={state.currentUser?.id || ''}
+          lecturerId={state.currentUser?.id || 'guest'}
           onSessionCreated={() => {}} // Not used in edit mode
           editSession={editingSession}
           onSessionUpdated={() => {

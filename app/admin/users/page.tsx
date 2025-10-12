@@ -110,84 +110,7 @@ interface UserStats {
   inactiveUsers: number
 }
 
-// ============================================================================
-// MOCK DATA
-// ============================================================================
-
-const mockUsers: User[] = [
-  {
-    id: "1",
-    name: "Dr. Sarah Johnson",
-    email: "sarah.johnson@university.edu",
-    role: "lecturer",
-    status: "active",
-    lastLogin: "2024-01-23T10:30:00",
-    createdAt: "2023-08-15T09:00:00",
-    courses: ["CS101", "CS201"]
-  },
-  {
-    id: "2",
-    name: "John Smith",
-    email: "john.smith@student.edu",
-    role: "student",
-    status: "active",
-    lastLogin: "2024-01-23T14:20:00",
-    createdAt: "2023-09-01T08:00:00",
-    courses: ["CS101", "MATH201", "ENG101"]
-  },
-  {
-    id: "3",
-    name: "Prof. Michael Brown",
-    email: "michael.brown@university.edu",
-    role: "lecturer",
-    status: "active",
-    lastLogin: "2024-01-22T16:45:00",
-    createdAt: "2023-07-20T10:30:00",
-    courses: ["MATH201", "PHYS101"]
-  },
-  {
-    id: "4",
-    name: "Emily Davis",
-    email: "emily.davis@student.edu",
-    role: "student",
-    status: "inactive",
-    lastLogin: "2024-01-15T11:00:00",
-    createdAt: "2023-09-01T08:00:00",
-    courses: ["ENG101", "HIST101"]
-  },
-  {
-    id: "5",
-    name: "Admin User",
-    email: "admin@university.edu",
-    role: "admin",
-    status: "active",
-    lastLogin: "2024-01-23T09:15:00",
-    createdAt: "2023-06-01T00:00:00",
-    courses: []
-  },
-  {
-    id: "6",
-    name: "Alex Wilson",
-    email: "alex.wilson@student.edu",
-    role: "student",
-    status: "pending",
-    lastLogin: "2024-01-20T13:30:00",
-    createdAt: "2024-01-20T13:30:00",
-    courses: ["CS101"]
-  }
-]
-
-const userStats: UserStats = {
-  totalUsers: mockUsers.length,
-  activeUsers: mockUsers.filter(u => u.status === 'active').length,
-  newUsers: mockUsers.filter(u => {
-    const created = new Date(u.createdAt)
-    const thirtyDaysAgo = new Date()
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
-    return created > thirtyDaysAgo
-  }).length,
-  inactiveUsers: mockUsers.filter(u => u.status === 'inactive').length
-}
+// Mock data removed - Now using real data from database
 
 // ============================================================================
 // MAIN COMPONENT
@@ -196,21 +119,13 @@ const userStats: UserStats = {
 export default function AdminUsersPage() {
   const router = useRouter()
   
-  // Data Context
+  // Data Context - Access state directly without merging
   const auth = useAuth()
   const academic = useAcademicStructure()
   const courses = useCourses()
   const attendance = useAttendance()
-  
-  // Create unified state object
-  const state = {
-    ...auth.state,
-    ...academic.state,
-    ...courses.state,
-    ...attendance.state
-  }
 
-  // Data fetching
+  // Data fetching - Enhanced error handling
   React.useEffect(() => {
     const fetchData = async () => {
       try {
@@ -218,11 +133,15 @@ export default function AdminUsersPage() {
           auth.fetchUsers(),
           academic.fetchStudentProfiles(),
           academic.fetchLecturerProfiles(),
+          academic.fetchAdminProfiles(),
+          academic.fetchSectionEnrollments(),
           courses.fetchCourses(),
+          courses.fetchCourseAssignments(),
+          courses.fetchLecturerAssignments(),
           attendance.fetchAttendanceSessions()
         ])
-      } catch (error) {
-        console.error('Error fetching users data:', error)
+      } catch (error: any) {
+        console.error('❌ Error fetching users data:', error)
       }
     }
     
@@ -247,26 +166,84 @@ export default function AdminUsersPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [userToDelete, setUserToDelete] = useState<User | null>(null)
 
-  // Get users from DataContext
+  // Get users from DataContext - Safe access with real data
   const users = useMemo(() => {
-    return state.users.map(user => ({
-      id: user.id,
-      name: user.full_name,
-      email: user.email,
-      role: (user.role as 'admin' | 'lecturer' | 'student') || 'student',
-      status: 'active' as 'active' | 'inactive' | 'pending', // Default to active
-      lastLogin: new Date().toISOString(), // Default to current time
-      createdAt: user.created_at,
-      avatar: user.profile_image_url,
-      department: 'Computer Science', // Default department
-      courses: state.enrollments
-        .filter(e => e.student_id === user.id)
-        .map(e => {
-          const course = state.courses.find(c => c.id === e.course_id)
-          return course?.course_code || 'Unknown'
-        })
-    }))
-  }, [state.users, state.enrollments, state.courses])
+    if (!auth.state.users || !Array.isArray(auth.state.users)) {
+      console.warn('Admin Users: No users available')
+      return []
+    }
+
+    try {
+      return auth.state.users.map(user => {
+        // Get role-specific profile data
+        let department = 'N/A'
+        let userCourses: string[] = []
+
+        // For students, get their courses from section enrollments
+        if (user.role === 'student') {
+          const studentEnrollments = academic.state.sectionEnrollments?.filter((e: any) => e.student_id === user.id) || []
+          // Get courses from course assignments for the student's program/year/semester
+          studentEnrollments.forEach((enrollment: any) => {
+            const assignments = courses.state.courseAssignments?.filter((ca: any) => 
+              ca.program_id === enrollment.program_id &&
+              ca.academic_year_id === enrollment.academic_year_id &&
+              ca.semester_id === enrollment.semester_id &&
+              ca.year === enrollment.year
+            ) || []
+            
+            assignments.forEach((assignment: any) => {
+              const course = courses.state.courses?.find((c: any) => c.id === assignment.course_id)
+              if (course && !userCourses.includes(course.course_code)) {
+                userCourses.push(course.course_code)
+              }
+            })
+          })
+        }
+
+        // For lecturers, get their assigned courses
+        if (user.role === 'lecturer') {
+          const lecturerAssignments = courses.state.lecturerAssignments?.filter((la: any) => la.lecturer_id === user.id) || []
+          userCourses = lecturerAssignments.map((la: any) => la.courses?.course_code || 'Unknown').filter(Boolean)
+        }
+
+        return {
+          id: user.id,
+          name: user.full_name,
+          email: user.email,
+          role: (user.role as 'admin' | 'lecturer' | 'student') || 'student',
+          status: 'active' as 'active' | 'inactive' | 'pending',
+          lastLogin: user.updated_at || user.created_at,
+          createdAt: user.created_at,
+          avatar: user.profile_image_url,
+          department,
+          courses: userCourses
+        }
+      })
+    } catch (error) {
+      console.error('Admin Users: Error processing users:', error)
+      return []
+    }
+  }, [auth.state.users, academic.state.sectionEnrollments, courses.state.courses, courses.state.courseAssignments, courses.state.lecturerAssignments])
+
+  // Compute stats from real data
+  const stats = useMemo(() => {
+    const totalUsers = users.length
+    const activeUsers = users.filter(u => u.status === 'active').length
+    const thirtyDaysAgo = new Date()
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
+    const newUsers = users.filter(u => {
+      const created = new Date(u.createdAt)
+      return created > thirtyDaysAgo
+    }).length
+    const inactiveUsers = users.filter(u => u.status === 'inactive').length
+
+    return {
+      totalUsers,
+      activeUsers,
+      newUsers,
+      inactiveUsers
+    }
+  }, [users])
 
   // ============================================================================
   // MEMOIZED VALUES
@@ -405,18 +382,27 @@ export default function AdminUsersPage() {
     handleMenuClose()
   }
 
-  const confirmDeleteUser = () => {
-    if (userToDelete) {
-      // TODO: Implement delete user functionality in DataContext
-      console.log("Delete user:", userToDelete.id)
+  const confirmDeleteUser = async () => {
+    if (!userToDelete) return
+
+    try {
+      await auth.deleteUser(userToDelete.id)
       setDeleteDialogOpen(false)
       setUserToDelete(null)
+    } catch (error: any) {
+      console.error('❌ Error deleting user:', error)
+      alert(`Failed to delete user: ${error?.message || 'Unknown error'}`)
     }
   }
 
-  const handleToggleUserStatus = (userId: string) => {
-    // TODO: Implement toggle user status functionality in DataContext
-    console.log("Toggle user status:", userId)
+  const handleToggleUserStatus = async (userId: string, currentStatus: boolean) => {
+    try {
+      await auth.updateUserStatus(userId, !currentStatus)
+      // Refresh will happen automatically via fetchUsers in updateUserStatus
+    } catch (error: any) {
+      console.error('❌ Error toggling user status:', error)
+      alert(`Failed to update user status: ${error?.message || 'Unknown error'}`)
+    }
   }
 
   const getRoleColor = (role: string) => {
@@ -444,7 +430,7 @@ export default function AdminUsersPage() {
   const statsCards = [
     {
       title: "Total Users",
-      value: userStats.totalUsers,
+      value: stats.totalUsers,
       icon: UsersIcon,
       color: "#000000",
       subtitle: "Registered users",
@@ -452,7 +438,7 @@ export default function AdminUsersPage() {
     },
     {
       title: "Active Users",
-      value: userStats.activeUsers,
+      value: stats.activeUsers,
       icon: UserPlusIcon,
       color: "#000000",
       subtitle: "Currently online",
@@ -460,7 +446,7 @@ export default function AdminUsersPage() {
     },
     {
       title: "New This Month",
-      value: userStats.newUsers,
+      value: stats.newUsers,
       icon: UserPlusIcon,
       color: "#000000",
       subtitle: "Recent registrations",
@@ -468,7 +454,7 @@ export default function AdminUsersPage() {
     },
     {
       title: "Inactive Users",
-      value: userStats.inactiveUsers,
+      value: stats.inactiveUsers,
       icon: UserMinusIcon,
       color: "#000000",
       subtitle: "Disabled accounts",
@@ -481,7 +467,7 @@ export default function AdminUsersPage() {
     {
       key: 'user',
       label: 'User',
-      render: (value: any, row: User) => (
+      render: (_value: string, row: User) => (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
           <Avatar 
             src={row.avatar} 
@@ -504,7 +490,7 @@ export default function AdminUsersPage() {
     {
       key: 'role',
       label: 'Role',
-      render: (value: any, row: User) => (
+      render: (_value: string, row: User) => (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <Typography variant="body2" sx={{ fontSize: '1.2rem' }}>
             {getRoleIcon(row.role)}
@@ -526,11 +512,11 @@ export default function AdminUsersPage() {
     {
       key: 'status',
       label: 'Status',
-      render: (value: any, row: User) => (
+      render: (_value: string, row: User) => (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <Switch
             checked={row.status === 'active'}
-            onChange={() => handleToggleUserStatus(row.id)}
+            onChange={() => handleToggleUserStatus(row.id, row.status === 'active')}
             size="small"
             sx={{
               '& .MuiSwitch-switchBase.Mui-checked': {
@@ -558,7 +544,7 @@ export default function AdminUsersPage() {
     {
       key: 'lastLogin',
       label: 'Last Login',
-      render: (value: any, row: User) => (
+      render: (_value: string, row: User) => (
         <Typography variant="body2" sx={TYPOGRAPHY_STYLES.tableBody}>
           {formatDate(row.lastLogin)}
         </Typography>
@@ -567,7 +553,7 @@ export default function AdminUsersPage() {
     {
       key: 'actions',
       label: 'Actions',
-      render: (value: any, row: User) => (
+      render: (_value: string, row: User) => (
         <IconButton
           size="small"
           onClick={(e) => handleMenuClick(e, row)}

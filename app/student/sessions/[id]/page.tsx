@@ -117,7 +117,8 @@ export default function StudentSessionDetailsPage() {
     fetchAttendanceSessions,
     fetchStudentAttendanceSessions,
     fetchAttendanceRecords,
-    getAttendanceRecordsBySession
+    getAttendanceRecordsBySession,
+    fetchSessionById
   } = attendance
 
   const {
@@ -157,8 +158,8 @@ export default function StudentSessionDetailsPage() {
         await Promise.all([
           fetchCourses(),
           fetchEnrollments(),
-          // Use section-based session fetching for students
-          fetchStudentAttendanceSessions(authState.currentUser?.id || ''),
+          // Use section-based session fetching for students (only if user is logged in)
+          authState.currentUser?.id ? fetchStudentAttendanceSessions(authState.currentUser.id) : Promise.resolve(),
           fetchAttendanceRecords()
         ])
         
@@ -184,9 +185,23 @@ export default function StudentSessionDetailsPage() {
   // Build session view model from store
   useEffect(() => {
     const source: AttendanceSession | undefined = state.attendanceSessions.find((s: any) => s.id === sessionId)
+
     if (!source) {
+      console.log('❌ Session not found in student sessions:', {
+        sessionId,
+        availableSessions: state.attendanceSessions.map(s => ({ id: s.id, name: s.session_name })),
+        currentUser: state.currentUser?.id
+      })
+
+      // Try to fetch the specific session directly if not found in filtered list
+      if (sessionId && state.currentUser?.id) {
+        console.log('🔄 Attempting to fetch specific session:', sessionId)
+        fetchSessionById(sessionId)
+      }
       return
     }
+
+    console.log('✅ Session found in student sessions:', source.session_name)
 
     // Determine status for student view
     const now = new Date()
@@ -638,3 +653,4 @@ export default function StudentSessionDetailsPage() {
     </div>
   )
 }
+

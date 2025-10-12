@@ -1,6 +1,7 @@
 import { AttendanceSession, AttendanceRecord } from '@/lib/types/shared'
 
 export interface AttendanceState {
+  currentUser: any
   attendanceSessions: AttendanceSession[]
   attendanceRecords: AttendanceRecord[]
   loading: boolean
