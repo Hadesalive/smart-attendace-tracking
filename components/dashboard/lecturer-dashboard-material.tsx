@@ -158,82 +158,127 @@ const useDataFetching = (userId: string) => {
     sessions: Session[]
   }> => {
     try {
-      // Mock data for development - replace with actual API calls when database is ready
-      const mockCourses: Course[] = [
-        {
-          id: "1",
-          course_code: "CS101",
-          course_name: "Introduction to Computer Science",
-          credits: 3,
-          enrollments: [{ count: 45 }]
-        },
-        {
-          id: "2", 
-          course_code: "CS201",
-          course_name: "Data Structures",
-          credits: 4,
-          enrollments: [{ count: 38 }]
-        },
-        {
-          id: "3",
-          course_code: "CS301", 
-          course_name: "Database Systems",
-          credits: 3,
-          enrollments: [{ count: 42 }]
-        }
-      ]
+      const { supabase } = await import('@/lib/supabase')
 
-      const mockSessions: Session[] = [
-        {
-          id: "1",
-          session_name: "Lecture 5: Data Structures",
-          session_date: "2024-01-20",
-          start_time: "09:00",
-          end_time: "10:30",
-          status: "active",
-          course: {
-            course_code: "CS101",
-            course_name: "Introduction to Computer Science"
-          }
-        },
-        {
-          id: "2",
-          session_name: "Tutorial 3: Database Design",
-          session_date: "2024-01-21",
-          start_time: "14:00", 
-          end_time: "15:30",
-          status: "scheduled",
-          course: {
-            course_code: "CS301",
-            course_name: "Database Systems"
-          }
-        }
-      ]
+      // Fetch lecturer's courses with enrollment counts
+      const { data: coursesData, error: coursesError } = await supabase
+        .from('courses')
+        .select(`
+          id,
+          course_code,
+          course_name,
+          credits,
+          course_assignments!inner(
+            id,
+            section_id,
+            sections!inner(
+              id,
+              section_enrollments(count)
+            )
+          )
+        `)
+        .eq('course_assignments.lecturer_id', userId)
 
-      // Calculate statistics
-      const totalStudents = mockCourses.reduce(
-        (sum, course) => sum + (course.enrollments?.[0]?.count || 0), 
+      if (coursesError) {
+        console.error('Error fetching courses:', coursesError)
+        throw coursesError
+      }
+
+      // Transform courses data
+      const courses: Course[] = (coursesData || []).map((course: any) => {
+        // Calculate total enrollments across all sections
+        const totalEnrollments = course.course_assignments?.reduce((sum: number, assignment: any) => {
+          const sectionEnrollments = assignment.sections?.section_enrollments?.[0]?.count || 0
+          return sum + sectionEnrollments
+        }, 0) || 0
+
+        return {
+          id: course.id,
+          course_code: course.course_code,
+          course_name: course.course_name,
+          credits: course.credits,
+          enrollments: [{ count: totalEnrollments }]
+        }
+      })
+
+      // Fetch lecturer's attendance sessions
+      const { data: sessionsData, error: sessionsError } = await supabase
+        .from('attendance_sessions')
+        .select(`
+          id,
+          session_name,
+          session_date,
+          start_time,
+          end_time,
+          status,
+          courses!inner(
+            course_code,
+            course_name
+          )
+        `)
+        .eq('lecturer_id', userId)
+        .order('session_date', { ascending: false })
+        .limit(10)
+
+      if (sessionsError) {
+        console.error('Error fetching sessions:', sessionsError)
+        throw sessionsError
+      }
+
+      // Transform sessions data
+      const sessions: Session[] = (sessionsData || []).map((session: any) => ({
+        id: session.id,
+        session_name: session.session_name,
+        session_date: session.session_date,
+        start_time: session.start_time,
+        end_time: session.end_time,
+        status: session.status || 'scheduled',
+        course: {
+          course_code: session.courses?.course_code || '',
+          course_name: session.courses?.course_name || ''
+        }
+      }))
+
+      // Calculate total students across all courses
+      const totalStudents = courses.reduce(
+        (sum, course) => sum + (course.enrollments?.[0]?.count || 0),
         0
       )
 
-      const todaySessions = mockSessions.filter(session => 
-        new Date(session.session_date).toDateString() === new Date().toDateString()
+      // Count today's sessions
+      const today = new Date().toISOString().split('T')[0]
+      const todaySessions = sessions.filter(session =>
+        session.session_date === today
       ).length
 
-      const stats: LecturerStats = {
-        totalCourses: mockCourses.length,
-        totalStudents,
-        todaySessions,
-        averageAttendance: DEFAULT_AVERAGE_ATTENDANCE
+      // Calculate average attendance
+      let averageAttendance = DEFAULT_AVERAGE_ATTENDANCE
+
+      // Fetch attendance records for all lecturer's sessions
+      const { data: attendanceData } = await supabase
+        .from('attendance_records')
+        .select('id, session_id, attendance_sessions!inner(lecturer_id)')
+        .eq('attendance_sessions.lecturer_id', userId)
+
+      if (attendanceData && attendanceData.length > 0 && totalStudents > 0) {
+        // Calculate attendance percentage
+        const totalPossibleAttendance = totalStudents * sessions.length
+        if (totalPossibleAttendance > 0) {
+          averageAttendance = Math.round((attendanceData.length / totalPossibleAttendance) * 100)
+        }
       }
 
-      // Simulate API delay
-      await new Promise(resolve => setTimeout(resolve, 500))
+      const stats: LecturerStats = {
+        totalCourses: courses.length,
+        totalStudents,
+        todaySessions,
+        averageAttendance
+      }
 
       return {
         stats,
-        courses: mockCourses,
-        sessions: mockSessions
+        courses,
+        sessions
       }
     } catch (error) {
       console.error('Error fetching lecturer data:', error)
@@ -299,35 +344,35 @@ const useDashboardActions = (userId: string, updateState: (updates: Partial<Dash
  * Error display component
  * Shows error message with retry option
  */
-const ErrorDisplay = ({ 
-  error, 
-  onRetry 
-}: { 
+const ErrorDisplay = ({
+  error,
+  onRetry
+}: {
   error: string
-  onRetry: () => void 
+  onRetry: () => void
 }) => (
-  <Box sx={{ 
-    display: 'flex', 
-    alignItems: 'center', 
-    justifyContent: 'center', 
+  <Box sx={{
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
     height: 400,
     flexDirection: 'column',
     gap: 2
   }}>
-    <Typography 
-      variant="h6" 
-      sx={{ 
-        color: '#dc2626', 
+    <Typography
+      variant="h6"
+      sx={{
+        color: '#dc2626',
         fontFamily: 'DM Sans',
         textAlign: 'center'
       }}
     >
       Failed to load dashboard
     </Typography>
-    <Typography 
-      variant="body2" 
-      sx={{ 
-        color: '#666666', 
+    <Typography
+      variant="body2"
+      sx={{
+        color: '#666666',
         fontFamily: 'DM Sans',
         textAlign: 'center',
         maxWidth: 400
@@ -359,12 +404,12 @@ const ErrorDisplay = ({
  * Displays a centered loading animation
  */
 const LoadingSpinner = () => (
-  <Box 
-    sx={{ 
-      display: 'flex', 
-      alignItems: 'center', 
-      justifyContent: 'center', 
-      height: 400 
+  <Box
+    sx={{
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      height: 400
     }}
     role="status"
     aria-label="Loading dashboard data"
@@ -389,19 +434,19 @@ const LoadingSpinner = () => (
         }}
         aria-hidden="true"
       >
-        <ComputerDesktopIcon 
-          style={{ 
-            width: 32, 
-            height: 32, 
-            color: LOADING_CONFIG.spinner.color 
-          }} 
+        <ComputerDesktopIcon
+          style={{
+            width: 32,
+            height: 32,
+            color: LOADING_CONFIG.spinner.color
+          }}
         />
       </Box>
-      <Typography 
-        variant="h6" 
-        sx={{ 
-          color: LOADING_CONFIG.text.color, 
-          fontFamily: LOADING_CONFIG.text.fontFamily 
+      <Typography
+        variant="h6"
+        sx={{
+          color: LOADING_CONFIG.text.color,
+          fontFamily: LOADING_CONFIG.text.fontFamily
         }}
       >
         Loading dashboard...
@@ -413,15 +458,15 @@ const LoadingSpinner = () => (
 /**
  * Welcome header section component
  */
-const WelcomeSection = ({ 
-  userId, 
-  onCreateSession 
-}: { 
+const WelcomeSection = ({
+  userId,
+  onCreateSession
+}: {
   userId: string
-  onCreateSession: () => void 
+  onCreateSession: () => void
 }) => (
   <Box sx={{ mb: { xs: 2, sm: 3, md: 4 } }}>
-    <WelcomeHeader 
+    <WelcomeHeader
       onCreateSession={onCreateSession}
       lecturerId={userId}
     />
@@ -449,33 +494,33 @@ const AnalyticsSection = () => (
 /**
  * Sessions and courses grid section component
  */
-const SessionsAndCoursesSection = ({ 
-  sessions, 
-  courses, 
-  onShowQR, 
-  onStartAttendance 
+const SessionsAndCoursesSection = ({
+  sessions,
+  courses,
+  onShowQR,
+  onStartAttendance
 }: {
   sessions: Session[]
   courses: Course[]
   onShowQR: (session: Session) => void
   onStartAttendance: (courseId: string) => void
 }) => (
-  <Box sx={{ 
-    display: 'grid', 
-    gridTemplateColumns: { 
-      xs: '1fr', 
-      sm: '1fr', 
+  <Box sx={{
+    display: 'grid',
+    gridTemplateColumns: {
+      xs: '1fr',
+      sm: '1fr',
       md: '1fr 1fr',
-      lg: '1fr 1fr' 
+      lg: '1fr 1fr'
     },
     gap: { xs: 2, sm: 3, md: 3 },
     mb: { xs: 2, sm: 3, md: 4 }
   }}>
-    <SessionsCard 
+    <SessionsCard
       sessions={sessions}
       onShowQR={onShowQR}
     />
-    <CoursesCard 
+    <CoursesCard
       courses={courses}
       onStartAttendance={onStartAttendance}
     />
@@ -485,10 +530,10 @@ const SessionsAndCoursesSection = ({
 /**
  * QR code dialog component
  */
-const QrCodeDialog = ({ 
-  isOpen, 
-  onClose, 
-  session 
+const QrCodeDialog = ({
+  isOpen,
+  onClose,
+  session
 }: {
   isOpen: boolean
   onClose: () => void
@@ -519,14 +564,14 @@ const QrCodeDialog = ({
  * @param userId - The ID of the lecturer
  * @param className - Optional additional CSS classes
  */
-export default function LecturerDashboard({ 
-  userId, 
-  className 
+export default function LecturerDashboard({
+  userId,
+  className
 }: LecturerDashboardProps) {
   // ============================================================================
   // STATE & HOOKS
   // ============================================================================
-  
+
   const { state, updateState, resetState } = useDashboardState(userId)
   const { fetchLecturerData } = useDataFetching(userId)
   const {
@@ -543,7 +588,7 @@ export default function LecturerDashboard({
 
   const qrDialogSession = useMemo((): QrDialogSession | null => {
     if (!state.selectedSession) return null
-    
+
     return {
       id: state.selectedSession.id,
       course_name: state.selectedSession.course.course_name,
@@ -572,9 +617,9 @@ export default function LecturerDashboard({
       } catch (error) {
         console.error('Failed to load dashboard data:', error)
         const errorMessage = error instanceof Error ? error.message : 'Failed to load dashboard data'
-        updateState({ 
-          loading: false, 
-          error: errorMessage 
+        updateState({
+          loading: false,
+          error: errorMessage
         })
       }
     }
@@ -613,9 +658,9 @@ export default function LecturerDashboard({
       } catch (error) {
         console.error('Failed to load dashboard data:', error)
         const errorMessage = error instanceof Error ? error.message : 'Failed to load dashboard data'
-        updateState({ 
-          loading: false, 
-          error: errorMessage 
+        updateState({
+          loading: false,
+          error: errorMessage
         })
       }
     }
@@ -635,7 +680,7 @@ export default function LecturerDashboard({
   }
 
   return (
-    <Box sx={{ 
+    <Box sx={{
       bgcolor: 'transparent',
       py: { xs: 1, sm: 2, md: 0 },
       px: { xs: 1, sm: 2, md: 0 },
@@ -646,7 +691,7 @@ export default function LecturerDashboard({
         animate="visible"
         variants={ANIMATION_VARIANTS.container}
       >
-        <WelcomeSection 
+        <WelcomeSection
           userId={userId}
           onCreateSession={handleCreateSessionComplete}
         />
@@ -676,12 +721,12 @@ export default function LecturerDashboard({
 // EXPORTS
 // ============================================================================
 
-export type { 
-  LecturerDashboardProps, 
-  LecturerStats, 
-  Course, 
-  Session, 
+export type {
+  LecturerDashboardProps,
+  LecturerStats,
+  Course,
+  Session,
   DashboardState,
-  QrDialogSession 
+  QrDialogSession
 }
 export { INITIAL_STATS, ANIMATION_VARIANTS, LOADING_CONFIG, DEFAULT_AVERAGE_ATTENDANCE }

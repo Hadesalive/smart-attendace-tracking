@@ -1,11 +1,11 @@
 "use client"
 
 import React, { useState, useMemo, useEffect } from "react"
-import { 
-  Box, 
-  Typography, 
-  Card as MUICard, 
-  CardContent as MUICardContent, 
+import {
+  Box,
+  Typography,
+  Card as MUICard,
+  CardContent as MUICardContent,
   Button as MUIButton,
   TextField,
   FormControl,
@@ -25,8 +25,8 @@ import {
 } from "@mui/material"
 import StatCard from "@/components/dashboard/stat-card"
 import { Badge } from "@/components/ui/badge"
-import { 
-  CalendarDaysIcon, 
+import {
+  CalendarDaysIcon,
   CheckCircleIcon,
   XCircleIcon,
   ExclamationTriangleIcon,
@@ -91,10 +91,10 @@ export default function StudentAttendancePage() {
   const attendance = useAttendance()
   const coursesHook = useCourses()
   const auth = useAuth()
-  
+
   // Extract state and methods
-  const { 
-    state: attendanceState, 
+  const {
+    state: attendanceState,
     getAttendanceSessionsByCourse,
     getAttendanceRecordsBySession,
     markAttendanceSupabase,
@@ -104,19 +104,19 @@ export default function StudentAttendancePage() {
     fetchStudentAttendanceSessions, // New section-based function
     fetchAttendanceRecords
   } = attendance
-  
-  const { 
+
+  const {
     state: coursesState,
-    getCoursesByLecturer, 
+    getCoursesByLecturer,
     getStudentsByCourse,
     fetchCourses,
     fetchEnrollments
   } = coursesHook
-  
+
   const { state: authState } = auth
   const academic = useAcademicStructure()
   const { state: academicState } = academic
-  
+
 
   // Load all data on component mount (same pattern as lecturer sessions page)
   useEffect(() => {
@@ -141,7 +141,7 @@ export default function StudentAttendancePage() {
         console.error('Error loading student attendance page data:', error)
       }
     }
-    
+
     fetchData()
   }, [auth.loadCurrentUser, fetchCourses, coursesHook.fetchCourseAssignments, academic.fetchSectionEnrollments, fetchAttendanceRecords])
 
@@ -162,68 +162,68 @@ export default function StudentAttendancePage() {
     console.log('Student Attendance - State data:', {
       courses: coursesState.courses.length,
       sectionEnrollments: academicState.sectionEnrollments.length,
-      courseAssignments: academicState.courseAssignments?.length || 0,
+      courseAssignments: coursesState.courseAssignments?.length || 0,
       attendanceSessions: attendanceState.attendanceSessions.length,
       attendanceRecords: attendanceState.attendanceRecords.length,
       currentUserId: authState.currentUser?.id
     })
-    
+
     // Get student's enrolled section
     const studentSectionEnrollment = academicState.sectionEnrollments.find(
       (enrollment: any) => enrollment.student_id === authState.currentUser?.id
     )
-    
+
     console.log('Student Attendance - Student section enrollment:', studentSectionEnrollment)
-    
+
     if (!(studentSectionEnrollment as any)?.sections) {
       console.log('Student Attendance - No section enrollment found')
       return []
     }
-    
+
     const section = (studentSectionEnrollment as any).sections
     console.log('Student Attendance - Student section details:', section)
-    
+
     // Get course assignments for this student's program/academic year/semester/year level
-    const relevantCourseAssignments = academicState.courseAssignments?.filter((assignment: any) => 
+    const relevantCourseAssignments = coursesState.courseAssignments?.filter((assignment: any) =>
       assignment.program_id === section.program_id &&
       assignment.academic_year_id === section.academic_year_id &&
       assignment.semester_id === section.semester_id &&
       assignment.year === section.year
     ) || []
-    
+
     console.log('Student Attendance - Relevant course assignments:', relevantCourseAssignments)
-    
+
     // Get courses from these assignments
     const studentCourses = relevantCourseAssignments
-      .map((assignment: any) => coursesState.courses.find(course => course?.id === assignment.course_id))
+      .map((assignment: any) => coursesState.courses.find((course: Course) => course?.id === assignment.course_id))
       .filter((course): course is Course => Boolean(course))
-    
+
     console.log('Student Attendance - Student courses (inherited from program):', studentCourses.length)
     console.log('Student Attendance - Student courses details:', studentCourses)
     return studentCourses
-  }, [coursesState.courses, academicState.sectionEnrollments, academicState.courseAssignments, authState.currentUser?.id])
+  }, [coursesState.courses, academicState.sectionEnrollments, coursesState.courseAssignments, authState.currentUser?.id])
 
   // Get student's attendance records from shared data
   // ✅ FIXED: Iterate through sessions directly (already filtered by fetchStudentAttendanceSessions)
   const attendanceRecords = useMemo(() => {
-    const studentId = state.currentUser?.id
+    const studentId = authState.currentUser?.id
     const allRecords: any[] = []
-    
+
     console.log('📊 Student attendance records calculation:', {
       studentId,
       coursesCount: courses.length,
       sessionsCount: attendanceState.attendanceSessions.length,
       recordsCount: attendanceState.attendanceRecords.length
     })
-    
+
     // Iterate through sessions directly instead of through courses
     // fetchStudentAttendanceSessions already filtered by student's section enrollment
     attendanceState.attendanceSessions.forEach(session => {
       const records = getAttendanceRecordsBySession(session.id)
       const studentRecord = records.find(r => !!studentId && r.student_id === studentId)
-      
+
       console.log(`🎯 Session ${session.session_name}: ${records.length} records, student record:`, !!studentRecord)
-      
+
       // Only include sessions where student has an attendance record
       // This is correct behavior - students only see their own attendance history
       if (studentRecord) {
@@ -242,7 +242,7 @@ export default function StudentAttendancePage() {
         })
       }
     })
-    
+
     console.log('📋 Final attendance records:', allRecords.length)
     return allRecords
   }, [getAttendanceRecordsBySession, authState.currentUser?.id, attendanceState.attendanceSessions, attendanceState.attendanceRecords])
@@ -250,28 +250,28 @@ export default function StudentAttendancePage() {
   // Computed values
   const filteredRecords = useMemo(() => {
     let filtered = attendanceRecords
-    
+
     if (selectedCourse) {
       filtered = filtered.filter(record => record.courseCode === selectedCourse)
     }
-    
+
     if (statusTab !== "all") {
       filtered = filtered.filter(record => {
         const mappedStatus = mapAttendanceStatus(record.status, 'student')
         return mappedStatus === statusTab
       })
     }
-    
+
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase()
-      filtered = filtered.filter(record => 
+      filtered = filtered.filter(record =>
         record.sessionTitle.toLowerCase().includes(query) ||
         record.courseCode.toLowerCase().includes(query) ||
         record.courseName.toLowerCase().includes(query) ||
         record.instructor.toLowerCase().includes(query)
       )
     }
-    
+
     return filtered.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
   }, [selectedCourse, statusTab, searchQuery])
 
@@ -279,7 +279,7 @@ export default function StudentAttendancePage() {
   useEffect(() => {
     // Subscribe to attendance record changes for the current student
     subscribeToAttendanceRecords()
-    
+
     // Cleanup subscriptions on unmount
     return () => {
       unsubscribeAll()
@@ -297,7 +297,7 @@ export default function StudentAttendancePage() {
 
   const courseStats = useMemo(() => {
     const courseStatsMap = new Map()
-    
+
     coursesState.courses.forEach(course => {
       if (course) {
         const courseRecords = attendanceRecords.filter(r => r.courseCode === course!.course_code)
@@ -307,7 +307,7 @@ export default function StudentAttendancePage() {
         }).length
         const total = courseRecords.length
         const rate = total > 0 ? (present / total) * 100 : 0
-        
+
         courseStatsMap.set(course!.course_code, {
           courseName: course!.course_name,
           present,
@@ -316,7 +316,7 @@ export default function StudentAttendancePage() {
         })
       }
     })
-    
+
     return courseStatsMap
   }, [attendanceRecords, courses])
 
@@ -365,8 +365,8 @@ export default function StudentAttendancePage() {
           <p className="text-muted-foreground font-dm-sans">Track your attendance history and statistics</p>
         </div>
         <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
-          <MUIButton 
-            variant="outlined" 
+          <MUIButton
+            variant="outlined"
             startIcon={<ChartBarIcon className="h-4 w-4" />}
             sx={BUTTON_STYLES.outlined}
           >
@@ -397,16 +397,16 @@ export default function StudentAttendancePage() {
               Course Performance
             </Typography>
           </Box>
-          
-          <Box sx={{ 
-            display: 'grid', 
-            gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', lg: 'repeat(4, 1fr)' }, 
-            gap: { xs: 2, sm: 3 } 
+
+          <Box sx={{
+            display: 'grid',
+            gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', lg: 'repeat(4, 1fr)' },
+            gap: { xs: 2, sm: 3 }
           }}>
             {Array.from(courseStats.entries()).map(([courseCode, stats]) => (
-              <Box key={courseCode} sx={{ 
-                p: 2, 
-                border: '1px solid #000', 
+              <Box key={courseCode} sx={{
+                p: 2,
+                border: '1px solid #000',
                 borderRadius: 2,
                 textAlign: 'center'
               }}>
@@ -446,7 +446,7 @@ export default function StudentAttendancePage() {
             onChange: setSelectedCourse,
             options: [
               { value: '', label: 'All Courses' },
-              ...courses.filter(course => course).map(course => ({
+              ...courses.filter((course: Course) => course).map((course: Course) => ({
                 value: course!.course_code,
                 label: `${course!.course_code} - ${course!.course_name}`
               }))
@@ -496,8 +496,8 @@ export default function StudentAttendancePage() {
           ) : (
             <Table>
               <TableHead>
-                <TableRow sx={{ 
-                  '& .MuiTableCell-root': { 
+                <TableRow sx={{
+                  '& .MuiTableCell-root': {
                     borderColor: '#000',
                     backgroundColor: 'hsl(var(--muted) / 0.3)',
                     fontFamily: 'Poppins, sans-serif',
@@ -514,7 +514,7 @@ export default function StudentAttendancePage() {
               </TableHead>
               <TableBody>
                 {filteredRecords.map((record) => (
-                  <TableRow key={record.id} sx={{ 
+                  <TableRow key={record.id} sx={{
                     '& .MuiTableCell-root': { borderColor: '#000' }
                   }}>
                     <TableCell sx={{ fontFamily: 'Poppins, sans-serif', fontWeight: 600 }}>

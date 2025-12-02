@@ -91,16 +91,64 @@ const useDataFetching = (userId: string) => {
         stats: AdminStats
     }> => {
         try {
-            // Mock data for demo - replace with actual API calls
-            const stats: AdminStats = {
-                totalCourses: 156,
-                totalStudents: 1247,
-                todaySessions: 23,
-                averageAttendance: 87
+            const { supabase } = await import('@/lib/supabase')
+
+            // Fetch total courses count
+            const { count: coursesCount, error: coursesError } = await supabase
+                .from('courses')
+                .select('*', { count: 'exact', head: true })
+
+            if (coursesError) {
+                console.error('Error fetching courses count:', coursesError)
             }
 
-            // Simulate API delay
-            await new Promise(resolve => setTimeout(resolve, 500))
+            // Fetch total students count (users with role 'student')
+            const { count: studentsCount, error: studentsError } = await supabase
+                .from('users')
+                .select('*', { count: 'exact', head: true })
+                .eq('role', 'student')
+
+            if (studentsError) {
+                console.error('Error fetching students count:', studentsError)
+            }
+
+            // Fetch today's sessions count
+            const today = new Date().toISOString().split('T')[0]
+            const { count: todaySessionsCount, error: sessionsError } = await supabase
+                .from('attendance_sessions')
+                .select('*', { count: 'exact', head: true })
+                .eq('session_date', today)
+
+            if (sessionsError) {
+                console.error('Error fetching today sessions count:', sessionsError)
+            }
+
+            // Calculate average attendance across all sessions
+            const { data: allSessions } = await supabase
+                .from('attendance_sessions')
+                .select('id')
+
+            const { data: allAttendanceRecords } = await supabase
+                .from('attendance_records')
+                .select('id')
+
+            let averageAttendance = 87 // Default fallback
+
+            if (allSessions && allAttendanceRecords && studentsCount) {
+                const totalPossibleAttendance = (studentsCount || 0) * (allSessions.length || 1)
+                if (totalPossibleAttendance > 0) {
+                    averageAttendance = Math.round(
+                        ((allAttendanceRecords.length || 0) / totalPossibleAttendance) * 100
+                    )
+                }
+            }
+
+            const stats: AdminStats = {
+                totalCourses: coursesCount || 0,
+                totalStudents: studentsCount || 0,
+                todaySessions: todaySessionsCount || 0,
+                averageAttendance
+            }
 
             return { stats }
         } catch (error) {
