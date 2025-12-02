@@ -44,6 +44,10 @@ import {
   ChatBubbleLeftRightIcon
 } from "@heroicons/react/24/outline"
 import { formatDate, formatNumber } from "@/lib/utils"
+import { useGrades, useCourses, useAcademicStructure, useAuth } from "@/lib/domains"
+import { useMockData } from "@/lib/hooks/useMockData"
+import { mapAssignmentStatus, mapSubmissionStatus } from "@/lib/utils/statusMapping"
+import { toast } from "sonner"
 
 // ============================================================================
 // CONSTANTS
@@ -149,6 +153,25 @@ export default function AssignmentDetailsPage() {
   const router = useRouter()
   const assignmentId = (params?.assignmentId as string) || ""
 
+  // Domain hooks
+  const grades = useGrades()
+  const coursesHook = useCourses()
+  const academic = useAcademicStructure()
+  const auth = useAuth()
+  
+  const { 
+    state: gradesState,
+    getAssignmentsByCourse,
+    getSubmissionsByAssignment,
+    createSubmission
+  } = grades
+  
+  const { state: coursesState } = coursesHook
+  const { state: academicState } = academic
+  const { state: authState } = auth
+  
+  const { isInitialized } = useMockData()
+
   // ============================================================================
   // STATE
   // ============================================================================
@@ -162,66 +185,88 @@ export default function AssignmentDetailsPage() {
   const [isDragOver, setIsDragOver] = useState(false)
 
   // ============================================================================
-  // MOCK DATA
+  // DATA LOADING
   // ============================================================================
 
   useEffect(() => {
-    // Mock data - replace with actual API call
-    const mockAssignment: AssignmentDetails = {
-      id: assignmentId,
-      title: "Data Structures Implementation",
-      description: "Implement basic data structures including arrays, linked lists, and stacks. Submit your code with proper documentation and test cases.",
-      courseId: "1",
-      courseCode: "CS101",
-      courseName: "Introduction to Computer Science",
-      instructor: "Dr. Smith",
-      dueDate: "2024-01-25T23:59:00",
-      totalPoints: 100,
-      status: "pending",
-      submissionType: "both",
-      allowLateSubmission: true,
-      createdAt: "2024-01-15",
-      instructions: `
-1. Implement the following data structures in your preferred programming language:
-   - Dynamic Array
-   - Singly Linked List
-   - Stack (using array and linked list)
-   - Queue (using array and linked list)
+    const loadData = async () => {
+      try {
+        const results = await Promise.allSettled([
+          auth.loadCurrentUser(),
+          grades.fetchAssignments(),
+          grades.fetchSubmissions(),
+          coursesHook.fetchCourses(),
+          coursesHook.fetchCourseAssignments(),
+          academic.fetchSectionEnrollments()
+        ])
 
-2. Include comprehensive test cases for each implementation
-3. Add proper documentation and comments
-4. Submit both source code and a README file
-5. Include time complexity analysis for each operation
+        results.forEach((result, index) => {
+          if (result.status === 'rejected') {
+            console.error(`Failed to load assignment detail data (${index}):`, result.reason)
+          }
+        })
 
-Evaluation Criteria:
-- Correctness (40%)
-- Code Quality (25%)
-- Documentation (20%)
-- Test Coverage (15%)
-      `,
-      rubric: `
-Excellent (90-100): All implementations correct, excellent documentation, comprehensive tests
-Good (80-89): Minor issues, good documentation, adequate tests
-Satisfactory (70-79): Some issues, basic documentation, minimal tests
-Needs Improvement (60-69): Multiple issues, poor documentation, insufficient tests
-Unsatisfactory (0-59): Major issues, no documentation, no tests
-      `
+        // Find the specific assignment
+        const foundAssignment = gradesState.assignments.find(a => a.id === assignmentId)
+        if (foundAssignment) {
+          const course = coursesState.courses.find(c => c.id === foundAssignment.course_id)
+          const submissions = getSubmissionsByAssignment(foundAssignment.id)
+          const studentSubmission = submissions.find((s: any) => s.student_id === authState.currentUser?.id)
+          
+          const assignmentDetails: AssignmentDetails = {
+            id: foundAssignment.id,
+            title: foundAssignment.title,
+            description: foundAssignment.description,
+            courseId: foundAssignment.course_id,
+            courseCode: foundAssignment.course_code,
+            courseName: foundAssignment.course_name,
+            instructor: course?.lecturer_name || "TBD",
+            dueDate: foundAssignment.due_date,
+            totalPoints: foundAssignment.total_points,
+            status: studentSubmission ? 
+              mapSubmissionStatus(studentSubmission.status, 'student') as "pending" | "submitted" | "graded" : 
+              "pending",
+            submittedAt: studentSubmission?.submitted_at,
+            grade: studentSubmission?.grade ?? undefined,
+            finalGrade: studentSubmission?.final_grade ?? undefined,
+            feedback: studentSubmission?.comments,
+            submissionType: "both" as const,
+            allowLateSubmission: foundAssignment.late_penalty_enabled,
+            createdAt: foundAssignment.created_at,
+            instructions: foundAssignment.description,
+            rubric: ""
+          }
+
+          setAssignment(assignmentDetails)
+          
+          // Set submission history
+          const history: SubmissionHistory[] = studentSubmission ? [{
+            id: studentSubmission.id,
+            submittedAt: studentSubmission.submitted_at,
+            status: mapSubmissionStatus(studentSubmission.status, 'student') as "draft" | "submitted" | "graded",
+            textContent: studentSubmission.submission_text,
+            attachments: studentSubmission.submission_files,
+            grade: studentSubmission.grade ?? undefined,
+            feedback: studentSubmission.comments
+          }] : []
+
+          setSubmissionHistory(history)
+        } else {
+          // Assignment not found
+          setAssignment(null)
+        }
+      } catch (error) {
+        console.error('Error loading assignment details:', error)
+        toast.error('Failed to load assignment details')
+      } finally {
+        setLoading(false)
+      }
     }
 
-    const mockHistory: SubmissionHistory[] = [
-      {
-        id: "1",
-        submittedAt: "2024-01-20T14:30:00",
-        status: "draft",
-        textContent: "Work in progress...",
-        attachments: ["draft_implementation.py"]
-      }
-    ]
-
-    setAssignment(mockAssignment)
-    setSubmissionHistory(mockHistory)
-    setLoading(false)
-  }, [assignmentId])
+    if (assignmentId) {
+      loadData()
+    }
+  }, [assignmentId, auth.loadCurrentUser, grades.fetchAssignments, grades.fetchSubmissions, coursesHook.fetchCourses, coursesHook.fetchCourseAssignments, academic.fetchSectionEnrollments, gradesState.assignments, coursesState.courses, authState.currentUser?.id, getSubmissionsByAssignment])
 
   // ============================================================================
   // COMPUTED VALUES
@@ -254,17 +299,37 @@ Unsatisfactory (0-59): Major issues, no documentation, no tests
     setSubmissionDialogOpen(true)
   }
 
-  const handleSaveSubmission = () => {
-    if (!assignment) return
+  const handleSaveSubmission = async () => {
+    if (!assignment || !authState.currentUser?.id) return
     
-    // Here you would save the submission to database
-    console.log('Submitting assignment:', {
-      assignmentId: assignment.id,
-      text: submissionText,
-      files: submissionFiles
-    })
-    
-    setSubmissionDialogOpen(false)
+    try {
+      await createSubmission({
+        assignment_id: assignment.id,
+        student_id: authState.currentUser.id,
+        student_name: authState.currentUser.full_name || '',
+        student_email: authState.currentUser.email || '',
+        submitted_at: new Date().toISOString(),
+        grade: null,
+        max_grade: assignment.totalPoints,
+        status: 'submitted',
+        late_penalty_applied: 0,
+        final_grade: null,
+        comments: '',
+        submission_text: submissionText,
+        submission_files: submissionFiles.map(file => file.name)
+      })
+      
+      toast.success('Assignment submitted successfully!')
+      setSubmissionDialogOpen(false)
+      setSubmissionText("")
+      setSubmissionFiles([])
+      
+      // Reload data to update the assignment status
+      window.location.reload()
+    } catch (error) {
+      console.error('Error submitting assignment:', error)
+      toast.error('Failed to submit assignment')
+    }
   }
 
   const handleFileUpload = (files: FileList | File[]) => {

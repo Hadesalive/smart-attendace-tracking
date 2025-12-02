@@ -215,12 +215,21 @@ export default function AttendanceSessionDetailsPage() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        await Promise.all([
+        const results = await Promise.allSettled([
           attendance.fetchAttendanceSessions(),
           attendance.fetchAttendanceRecords(),
           courses.fetchCourses(),
           academic.fetchStudentProfiles()
         ])
+        
+        // Check for failures
+        const failures = results.filter(r => r.status === 'rejected')
+        if (failures.length > 0) {
+          const failedNames = ['attendance sessions', 'attendance records', 'courses', 'student profiles']
+            .filter((_, i) => results[i].status === 'rejected')
+          console.error('❌ Some data failed to load:', failures)
+          setError(`Failed to load: ${failedNames.join(', ')}. Some features may not work correctly.`)
+        }
       } catch (error: any) {
         console.error('❌ Error loading attendance session data:', error)
         setError(`Failed to load session data: ${error?.message || 'Unknown error'}`)

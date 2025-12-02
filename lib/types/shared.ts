@@ -208,6 +208,11 @@ export interface Material {
   file_type?: string
   external_url?: string
   is_public: boolean
+  download_count?: number
+  author_id?: string
+  author_name?: string
+  file_name?: string
+  category?: string
   created_at: string
   updated_at: string
 }

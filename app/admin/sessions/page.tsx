@@ -197,11 +197,17 @@ export default function SessionsPage() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        await Promise.all([
+        const results = await Promise.allSettled([
           attendance.fetchAttendanceSessions(),
           courses.fetchCourses(),
           academic.fetchLecturerProfiles()
         ])
+        
+        // Log any failures
+        const failures = results.filter(r => r.status === 'rejected')
+        if (failures.length > 0) {
+          console.error('❌ Some data failed to load:', failures)
+        }
       } catch (error) {
         console.error('Error fetching sessions data:', error)
       }

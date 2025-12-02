@@ -90,6 +90,7 @@ import { BUTTON_STYLES } from "@/lib/constants/admin-constants"
 import { useCourses } from "@/lib/domains/courses/hooks"
 import { useAcademicStructure } from "@/lib/domains/academic/hooks"
 import { useAuth } from "@/lib/domains/auth/hooks"
+import { SectionEnrollmentWithJoins, CourseAssignmentWithJoins } from "@/lib/types/joined-data"
 import PageHeader from "@/components/admin/PageHeader"
 import StatsGrid from "@/components/admin/StatsGrid"
 import { CourseForm, CourseAssignmentForm } from "@/components/admin/forms"
@@ -212,7 +213,7 @@ export default function CoursesPage() {
     if (!academicState.programs || !Array.isArray(academicState.programs) || academicState.programs.length === 0) {
       return []
     }
-    return academicState.programs.map((program: any) => ({
+    return academicState.programs.map(program => ({
       value: program.id,
       label: program.program_name
     }))
@@ -223,10 +224,10 @@ export default function CoursesPage() {
     if (!coursesState.courses || !Array.isArray(coursesState.courses) || coursesState.courses.length === 0) {
       return []
     }
-    const departments = [...new Set(coursesState.courses.map((course: any) => course.department).filter(Boolean))]
-    return departments.map((dept: any) => ({
-      value: dept,
-      label: dept
+    const departments = [...new Set(coursesState.courses.map(course => course.department).filter(Boolean))] as string[]
+    return departments.map(dept => ({
+      value: dept as string,
+      label: dept as string
     }))
   }, [coursesState.courses])
   
@@ -258,7 +259,7 @@ export default function CoursesPage() {
   useEffect(() => {
     const loadData = async () => {
       try {
-        await Promise.all([
+        const results = await Promise.allSettled([
           coursesHook.fetchCourses(),
           coursesHook.fetchCourseAssignments(),
           coursesHook.fetchLecturerAssignments(),
@@ -270,6 +271,12 @@ export default function CoursesPage() {
           fetchSections(),
           fetchClassrooms()
         ])
+        
+        // Log any failures
+        const failures = results.filter(r => r.status === 'rejected')
+        if (failures.length > 0) {
+          console.error('❌ Some data failed to load:', failures)
+        }
       } catch (error: any) {
         console.error('❌ Error loading courses page data:', error)
       }
@@ -312,29 +319,31 @@ export default function CoursesPage() {
       console.log('❌ No section enrollments found in state')
     }
     
-    return coursesState.courses.map((course: any) => {
+    return coursesState.courses.map(course => {
       // Get course assignments for this course
-      const courseAssignments = coursesState.courseAssignments?.filter((ca: any) => ca.course_id === course.id) || []
+      const courseAssignments = coursesState.courseAssignments?.filter(ca => ca.course_id === course.id) || []
       
       // Get unique years from course assignments
-      const years = [...new Set(courseAssignments.map((ca: any) => ca.year).filter(Boolean))]
+      const years = [...new Set(courseAssignments.map(ca => (ca as CourseAssignmentWithJoins).year).filter(Boolean))]
       const primaryYear = years.length > 0 ? Math.min(...(years as number[])) : 1 // Use lowest year as primary
       
       // Get program names from assignments
-      const programNames = courseAssignments.map((ca: any) => {
+      const programNames = courseAssignments.map(ca => {
+        const caWithJoins = ca as CourseAssignmentWithJoins
         // First try to get from joined data
-        if (ca.programs?.program_name) {
-          return ca.programs.program_name
+        if (caWithJoins.programs?.program_name) {
+          return caWithJoins.programs.program_name
         }
         // Fallback to manual lookup
-        const program = academicState.programs?.find((p: any) => p.id === ca.program_id)
+        const program = academicState.programs?.find(p => p.id === caWithJoins.program_id)
         return program?.program_name || 'Unknown Program'
       })
       
       // Calculate inherited students for this course
-      const inheritedStudents = courseAssignments.reduce((total: number, assignment: any) => {
+      const inheritedStudents = courseAssignments.reduce((total: number, assignment) => {
+        const assignmentWithJoins = assignment as CourseAssignmentWithJoins
         // Find students enrolled in this program/semester/year combination
-        const studentsInProgram = academicState.sectionEnrollments?.filter((enrollment: any) => 
+        const studentsInProgram = academicState.sectionEnrollments?.filter(enrollment => 
           enrollment.program_id === assignment.program_id &&
           enrollment.semester_id === assignment.semester_id &&
           enrollment.academic_year_id === assignment.academic_year_id &&
@@ -364,7 +373,7 @@ export default function CoursesPage() {
             console.log('Assignment academic_year_id:', assignment.academic_year_id, 'Type:', typeof assignment.academic_year_id)
             console.log('Assignment year:', assignment.year, 'Type:', typeof assignment.year)
             
-            academicState.sectionEnrollments.forEach((enrollment: any, index: number) => {
+            academicState.sectionEnrollments.forEach((enrollment, index: number) => {
               console.log(`Enrollment ${index}:`, {
                 program_id: enrollment.program_id,
                 semester_id: enrollment.semester_id,
@@ -380,8 +389,9 @@ export default function CoursesPage() {
 
       // Get unique students who inherit this course
       const uniqueInheritedStudents = new Set()
-      courseAssignments.forEach((assignment: any) => {
-        const studentsInProgram = academicState.sectionEnrollments?.filter((enrollment: any) => 
+      courseAssignments.forEach(assignment => {
+        const assignmentWithJoins = assignment as CourseAssignmentWithJoins
+        const studentsInProgram = academicState.sectionEnrollments?.filter(enrollment => 
           enrollment.program_id === assignment.program_id &&
           enrollment.semester_id === assignment.semester_id &&
           enrollment.academic_year_id === assignment.academic_year_id &&
@@ -389,7 +399,7 @@ export default function CoursesPage() {
           enrollment.status === 'active'
         ) || []
         
-        studentsInProgram.forEach((enrollment: any) => {
+        studentsInProgram.forEach(enrollment => {
           uniqueInheritedStudents.add(enrollment.student_id)
         })
       })
@@ -401,11 +411,11 @@ export default function CoursesPage() {
         credits: course.credits,
         department: course.department,
         lecturer_id: course.lecturer_id,
-        lecturer_name: course.lecturer_name,
-        lecturer_email: course.lecturer_email,
-        status: course.status || 'active',
+        lecturer_name: (course as any).lecturer_name,
+        lecturer_email: (course as any).lecturer_email,
+        status: (course as any).status || 'active',
         created_at: course.created_at,
-        description: course.description,
+        description: (course as any).description,
         year: primaryYear,
         yearLabel: `Year ${primaryYear}`,
         years: years, // All years this course is offered
@@ -413,16 +423,19 @@ export default function CoursesPage() {
         programNames: programNames,
         inheritedStudents: uniqueInheritedStudents.size, // Unique students who inherit this course
         totalInheritedStudents: inheritedStudents, // Total count (may include duplicates across programs)
-        assignments: courseAssignments.map((ca: any) => ({
-          id: ca.id,
-          program_id: ca.program_id,
-          program_name: programNames[courseAssignments.indexOf(ca)],
-          academic_year_id: ca.academic_year_id,
-          semester_id: ca.semester_id,
-          year: ca.year,
-          is_mandatory: ca.is_mandatory,
-          max_students: ca.max_students
-        }))
+        assignments: courseAssignments.map(ca => {
+          const caWithJoins = ca as CourseAssignmentWithJoins
+          return {
+            id: ca.id,
+            program_id: ca.program_id,
+            program_name: programNames[courseAssignments.indexOf(ca)],
+            academic_year_id: ca.academic_year_id,
+            semester_id: ca.semester_id,
+            year: caWithJoins.year || 1,
+            is_mandatory: ca.is_mandatory,
+            max_students: ca.max_students
+          }
+        })
       }
     })
   }, [coursesState.courses, coursesState.courseAssignments, academicState.programs, academicState.sectionEnrollments])
@@ -501,7 +514,7 @@ export default function CoursesPage() {
     handleMenuClose()
   }, [selectedCourse, handleMenuClose])
 
-  const handleSaveCourse = useCallback(async (courseData: any) => {
+  const handleSaveCourse = useCallback(async (courseData: any) => { // Keep as any for form data
     try {
       if (selectedCourse) {
         await updateCourse(selectedCourse.id, courseData)
@@ -563,14 +576,14 @@ export default function CoursesPage() {
     // Advanced filters
     if (filters.assignmentStatus !== 'all') {
       filtered = filtered.filter((course: Course) => {
-        const assignments = coursesState.courseAssignments?.filter((ca: any) => ca.course_id === course.id) || []
+        const assignments = coursesState.courseAssignments?.filter(ca => ca.course_id === course.id) || []
         return filters.assignmentStatus === 'assigned' ? assignments.length > 0 : assignments.length === 0
       })
     }
 
     if (filters.lecturerStatus !== 'all') {
       filtered = filtered.filter((course: Course) => {
-        const lecturerAssignments = coursesState.lecturerAssignments?.filter((la: any) => la.course_id === course.id) || []
+        const lecturerAssignments = coursesState.lecturerAssignments?.filter(la => la.course_id === course.id) || []
         return filters.lecturerStatus === 'assigned' ? lecturerAssignments.length > 0 : lecturerAssignments.length === 0
       })
     }
@@ -581,7 +594,7 @@ export default function CoursesPage() {
 
     if (filters.program !== 'all') {
       filtered = filtered.filter((course: Course) => {
-        const assignments = coursesState.courseAssignments?.filter((ca: any) => ca.course_id === course.id) || []
+        const assignments = coursesState.courseAssignments?.filter(ca => ca.course_id === course.id) || []
         return assignments.some((ca: any) => ca.program_id === parseInt(filters.program))
       })
     }

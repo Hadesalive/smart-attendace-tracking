@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useMemo } from "react"
+import React, { useState, useMemo, useEffect, useCallback } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { 
   Box, 
@@ -40,9 +40,10 @@ import {
   ClockIcon
 } from "@heroicons/react/24/outline"
 import { formatDate, formatFileSize } from "@/lib/utils"
-import { useMaterials, useCourses } from "@/lib/domains"
+import { useMaterials, useCourses, useAuth, useAcademicStructure } from "@/lib/domains"
 import { useMockData } from "@/lib/hooks/useMockData"
 import { Material as SharedMaterial } from "@/lib/types/shared"
+import { toast } from "sonner"
 
 // Constants
 const CARD_SX = {
@@ -130,14 +131,14 @@ export default function StudentMaterialsPage() {
   // Data Context
   const materialsHook = useMaterials()
   const coursesHook = useCourses()
+  const auth = useAuth()
+  const academic = useAcademicStructure()
+  
   const { state: materialsState } = materialsHook
   const { state: coursesState } = coursesHook
+  const { state: authState } = auth
+  const { state: academicState } = academic
   
-  // Create legacy state object for compatibility
-  const state = {
-    ...materialsState,
-    ...coursesState
-  }
   const { isInitialized } = useMockData()
   
   // State
@@ -145,41 +146,109 @@ export default function StudentMaterialsPage() {
   const [categoryTab, setCategoryTab] = useState<"all" | "lecture" | "assignment" | "reading" | "reference" | "lab">("all")
   const [searchQuery, setSearchQuery] = useState<string>("")
 
+  // Load data on mount
+  useEffect(() => {
+    const loadData = async () => {
+      const results = await Promise.allSettled([
+        auth.loadCurrentUser(),
+        materialsHook.fetchMaterials(),
+        coursesHook.fetchCourses(),
+        coursesHook.fetchCourseAssignments(),
+        academic.fetchSectionEnrollments()
+      ])
+
+      results.forEach((result, index) => {
+        if (result.status === 'rejected') {
+          console.error(`Failed to load student materials data (${index}):`, result.reason)
+        }
+      })
+    }
+
+    loadData()
+  }, [])
+
+  // Load data on mount
+  useEffect(() => {
+    const loadData = async () => {
+      const results = await Promise.allSettled([
+        auth.loadCurrentUser(),
+        materialsHook.fetchMaterials(),
+        coursesHook.fetchCourses(),
+        coursesHook.fetchCourseAssignments(),
+        academic.fetchSectionEnrollments()
+      ])
+
+      results.forEach((result, index) => {
+        if (result.status === 'rejected') {
+          console.error(`Failed to load student materials data (${index}):`, result.reason)
+        }
+      })
+    }
+
+    loadData()
+  }, [auth.loadCurrentUser, materialsHook.fetchMaterials, coursesHook.fetchCourses, coursesHook.fetchCourseAssignments, academic.fetchSectionEnrollments])
+
   // Get student's courses from DataContext
-  const studentId = "user_1" // Assuming current user is student with ID "user_1"
   const studentCourses = useMemo(() => {
-    return state.courses.filter(course => 
-      state.enrollments.some(enrollment => 
-        enrollment.student_id === studentId && enrollment.course_id === course.id
+    const studentId = authState.currentUser?.id
+    if (!studentId) return []
+
+    // Get student's section enrollment
+    const studentSection = academicState.sectionEnrollments.find(
+      (enrollment: any) => enrollment.student_id === studentId
+    ) as any
+
+    if (!studentSection?.sections) return []
+
+    const section = studentSection.sections
+    
+    // Get course assignments for student's program/year/semester
+    const relevantAssignments = coursesState.courseAssignments?.filter((assignment: any) => 
+      assignment.program_id === section.program_id &&
+      assignment.academic_year_id === section.academic_year_id &&
+      assignment.semester_id === section.semester_id &&
+      assignment.year === section.year
+    ) || []
+
+    // Map to courses
+    return relevantAssignments
+      .map((assignment: any) => 
+        coursesState.courses.find((course: any) => course?.id === assignment.course_id)
       )
-    ).map(course => ({
-      id: course.id,
-      course_code: course.course_code,
-      course_name: course.course_name,
-      instructor: course.lecturer_name || "TBD"
-    }))
-  }, [state.courses, state.enrollments, studentId])
+      .filter((course): course is any => Boolean(course))
+      .map(course => ({
+        id: course.id,
+        course_code: course.course_code,
+        course_name: course.course_name,
+        instructor: course.lecturer_name || "TBD"
+      }))
+  }, [coursesState.courses, coursesState.courseAssignments, academicState.sectionEnrollments, authState.currentUser?.id])
 
   // Get materials from DataContext
   const materials = useMemo(() => {
-    return state.materials.map((material: any) => {
-      const course = state.courses.find((c: any) => c.id === material.course_id)
-      return {
-        id: material.id,
-        title: material.title,
-        course_code: course?.course_code || 'N/A',
-        course_name: course?.course_name || 'N/A',
-        type: material.material_type as "document" | "video" | "image" | "link",
-        size: material.file_size,
-        url: material.file_url || material.link_url,
-        uploaded_by: material.author_id || 'Unknown',
-        uploaded_at: material.created_at,
-        description: material.description,
-        downloads: material.download_count || 0,
-        category: material.material_type as "lecture" | "assignment" | "reading" | "reference" | "lab"
-      }
-    })
-  }, [state.materials, state.courses])
+    // Filter materials for student's enrolled courses
+    const enrolledCourseIds = studentCourses.map(c => c.id)
+    
+    return materialsState.materials
+      .filter((material: any) => enrolledCourseIds.includes(material.course_id))
+      .map((material: any) => {
+        const course = coursesState.courses.find((c: any) => c.id === material.course_id)
+        return {
+          id: material.id,
+          title: material.title,
+          course_code: course?.course_code || 'N/A',
+          course_name: course?.course_name || 'N/A',
+          type: material.material_type as "document" | "video" | "image" | "link",
+          size: material.file_size,
+          url: material.file_url || material.external_url,
+          uploaded_by: material.author_name || 'Unknown',
+          uploaded_at: material.created_at,
+          description: material.description,
+          downloads: material.download_count || 0,
+          category: material.category as "lecture" | "assignment" | "reading" | "reference" | "lab"
+        }
+      })
+  }, [materialsState.materials, coursesState.courses, studentCourses])
 
   // Legacy mock data for reference
   const legacyMaterials: Material[] = [
@@ -340,10 +409,19 @@ export default function StudentMaterialsPage() {
     setSearchQuery("")
   }
 
-  const handleDownload = (materialId: string) => {
-    // Simulate download
-    console.log('Downloading material:', materialId)
-  }
+  const handleDownload = useCallback(async (materialId: string, url: string) => {
+    try {
+      // Increment download count
+      await materialsHook.incrementDownloadCount(materialId)
+      
+      // Open file in new tab
+      window.open(url, '_blank')
+    } catch (error) {
+      console.error('Error downloading material:', error)
+      toast.error('Failed to download material')
+    }
+  }, [materialsHook])
+
 
   const getFileIcon = (type: string) => {
     switch (type) {
@@ -637,7 +715,7 @@ export default function StudentMaterialsPage() {
                         variant="outlined"
                         size="small"
                         startIcon={<ArrowDownTrayIcon className="h-4 w-4" />}
-                        onClick={() => handleDownload(material.id)}
+                        onClick={() => handleDownload(material.id, material.url)}
                         sx={{
                           ...BUTTON_STYLES.outlined,
                           minWidth: 'auto',

@@ -127,24 +127,9 @@ export default function LecturerCoursesPage() {
   const { getAssignmentsByCourse, getSubmissionsByAssignment, getStudentGradesByCourse, calculateFinalGrade } = grades
   const { state: materialsState } = materials
   const { state: authState } = auth
+  const { state: academicState } = academic
   
-  // Create merged state object with academic data
-  const state = {
-    ...dataState,
-    ...attendance.state,
-    ...grades.state,
-    ...academic.state,
-    ...coursesState, // Put coursesState last to ensure courses are not overridden
-    materials: materialsState.materials,
-    currentUser: authState.currentUser,
-    lecturerAssignments: coursesState.lecturerAssignments || [],
-    // Ensure academic data is properly accessible
-    semesters: academic.state.semesters,
-    departments: academic.state.departments,
-    academicYears: academic.state.academicYears,
-    programs: academic.state.programs,
-    sectionEnrollments: academic.state.sectionEnrollments || []
-  }
+  // Direct state access - NO STATE MERGING
 
   const router = useRouter()
   const [searchQuery, setSearchQuery] = useState<string>("")
@@ -160,17 +145,17 @@ export default function LecturerCoursesPage() {
   })
 
   // Get lecturer's courses from shared data
-  const lecturerId = state.currentUser?.id || "user_2" // Use actual current user ID
+  const lecturerId = authState.currentUser?.id || "user_2" // Use actual current user ID
   
   // Function to get enrolled students using inheritance logic
   const getEnrolledStudentsByCourse = useCallback((courseId: string) => {
     // Early return if data is not loaded
-    if (!state.lecturerAssignments || !state.sectionEnrollments) {
+    if (!coursesState.lecturerAssignments || !academicState.sectionEnrollments) {
       return []
     }
     
     // Get course assignments for this specific course
-    const courseAssignments = state.lecturerAssignments?.filter((assignment: any) => 
+    const courseAssignments = coursesState.lecturerAssignments?.filter((assignment: any) => 
       assignment.course_id === courseId && assignment.lecturer_id === lecturerId
     ) || []
     
@@ -182,7 +167,7 @@ export default function LecturerCoursesPage() {
     
     // For each course assignment, find students enrolled in that program/semester/year
     courseAssignments.forEach((assignment: any) => {
-      const studentsInProgram = state.sectionEnrollments?.filter((enrollment: any) => 
+      const studentsInProgram = academicState.sectionEnrollments?.filter((enrollment: any) => 
         enrollment.program_id === assignment.program_id &&
         enrollment.semester_id === assignment.semester_id &&
         enrollment.academic_year_id === assignment.academic_year_id &&
@@ -225,7 +210,7 @@ export default function LecturerCoursesPage() {
     })
     
     return Array.from(inheritedStudents.values())
-  }, [state.lecturerAssignments, state.sectionEnrollments, lecturerId])
+  }, [coursesState.lecturerAssignments, academicState.sectionEnrollments, lecturerId])
   
   // Fetch data on component mount
   useEffect(() => {
@@ -269,14 +254,14 @@ export default function LecturerCoursesPage() {
     
     // Get lecturer's assigned courses from lecturer_assignments table
     // Only show courses assigned to the current lecturer - no fallbacks
-    const lecturerAssignments = state.lecturerAssignments?.filter((assignment: any) => 
+    const lecturerAssignments = coursesState.lecturerAssignments?.filter((assignment: any) => 
       assignment.lecturer_id === lecturerId
     ) || []
     
     
     
     const lecturerCourses = lecturerAssignments.map((assignment: any) => {
-      const course = state.courses?.find((c: any) => c.id === assignment.course_id)
+      const course = coursesState.courses?.find((c: any) => c.id === assignment.course_id)
       if (!course) return null
       
       // Calculate course-specific stats
@@ -312,10 +297,10 @@ export default function LecturerCoursesPage() {
       const nextSession = futureSessions[0]
       
       // Get assignment information
-      const section = state.sections?.find((s: any) => s.id === assignment?.section_id)
-      const semester = state.semesters?.find((s: any) => s.id === assignment?.semester_id)
-      const academicYear = state.academicYears?.find((ay: any) => ay.id === assignment?.academic_year_id)
-      const program = state.programs?.find((p: any) => p.id === assignment?.program_id)
+      const section = academicState.sections?.find((s: any) => s.id === assignment?.section_id)
+      const semester = academicState.semesters?.find((s: any) => s.id === assignment?.semester_id)
+      const academicYear = academicState.academicYears?.find((ay: any) => ay.id === assignment?.academic_year_id)
+      const program = academicState.programs?.find((p: any) => p.id === assignment?.program_id)
       
       // Get year information from section
       const year = section?.year || 1
@@ -338,7 +323,7 @@ export default function LecturerCoursesPage() {
         max_students: 50, // Default max students
         attendance_rate: attendanceRate,
         average_grade: averageGrade,
-        materials_count: state.materials.filter((m: any) => m.course_id === course.id).length,
+        materials_count: materialsState.materials.filter((m: any) => m.course_id === course.id).length,
         assignments_count: assignments.length,
         sessions_count: courseSessions.length,
         description: (course as any).description || "Course description not available",
@@ -357,9 +342,9 @@ export default function LecturerCoursesPage() {
     
     // Fallback: If no lecturer assignments, try to get courses directly assigned to lecturer
     if (lecturerCourses.length === 0) {
-      const directCourses = state.courses?.filter((course: any) => course.lecturer_id === lecturerId) || []
+      const directCourses = coursesState.courses?.filter((course: any) => course.lecturer_id === lecturerId) || []
       
-      return directCourses.map(course => {
+      return directCourses.map((course: any) => {
         if (!course) return null
         
         // Calculate course-specific stats for direct courses
@@ -409,7 +394,7 @@ export default function LecturerCoursesPage() {
           max_students: 50,
           attendance_rate: attendanceRate,
           average_grade: averageGrade,
-          materials_count: state.materials.filter((m: any) => m.course_id === course.id).length,
+          materials_count: materialsState.materials.filter((m: any) => m.course_id === course.id).length,
           assignments_count: assignments.length,
           sessions_count: courseSessions.length,
           description: (course as any).description || "Course description not available",
@@ -428,7 +413,7 @@ export default function LecturerCoursesPage() {
     }
     
     return lecturerCourses
-  }, [lecturerId, state.lecturerAssignments, state.courses, state.sections, state.semesters, state.academicYears, state.programs, getStudentsByCourse, getAssignmentsByCourse, getAttendanceSessionsByCourse, getAttendanceRecordsBySession, getStudentGradesByCourse, calculateFinalGrade, state.materials])
+  }, [lecturerId, coursesState.lecturerAssignments, coursesState.courses, academicState.sections, academicState.semesters, academicState.academicYears, academicState.programs, getStudentsByCourse, getAssignmentsByCourse, getAttendanceSessionsByCourse, getAttendanceRecordsBySession, getStudentGradesByCourse, calculateFinalGrade, materialsState.materials, getEnrolledStudentsByCourse])
 
   // Computed values
   const filteredCourses = useMemo(() => {
@@ -469,19 +454,19 @@ export default function LecturerCoursesPage() {
 
   const stats = useMemo(() => {
     const validCourses = courses.filter((c): c is NonNullable<typeof c> => c !== null)
-    const activeCourses = validCourses.filter(c => c.status === 'active').length
-    const totalStudents = validCourses.reduce((sum, c) => sum + (c as any).enrolled_students, 0)
+    const activeCourses = validCourses.filter((c: any) => c.status === 'active').length
+    const totalStudents = validCourses.reduce((sum: number, c: any) => sum + (c as any).enrolled_students, 0)
     const overallAttendanceRate = validCourses.length > 0 
-      ? validCourses.reduce((sum, c) => sum + (c as any).attendance_rate, 0) / validCourses.length : 0
+      ? validCourses.reduce((sum: number, c: any) => sum + (c as any).attendance_rate, 0) / validCourses.length : 0
     const overallGrade = validCourses.length > 0
-      ? validCourses.reduce((sum, c) => sum + (c as any).average_grade, 0) / validCourses.length : 0
+      ? validCourses.reduce((sum: number, c: any) => sum + (c as any).average_grade, 0) / validCourses.length : 0
 
     // Year-based statistics
     const yearStats = {
-      year1: validCourses.filter(c => (c as any).year === 1).length,
-      year2: validCourses.filter(c => (c as any).year === 2).length,
-      year3: validCourses.filter(c => (c as any).year === 3).length,
-      year4: validCourses.filter(c => (c as any).year === 4).length
+      year1: validCourses.filter((c: any) => (c as any).year === 1).length,
+      year2: validCourses.filter((c: any) => (c as any).year === 2).length,
+      year3: validCourses.filter((c: any) => (c as any).year === 3).length,
+      year4: validCourses.filter((c: any) => (c as any).year === 4).length
     }
 
     return { activeCourses, totalStudents, overallAttendanceRate, overallGrade, yearStats }
@@ -817,7 +802,7 @@ export default function LecturerCoursesPage() {
       </MUICard>
 
       {/* Advanced Filters - Only render when data is available */}
-      {!filtersLoading && state.semesters && state.departments && (
+      {!filtersLoading && academicState.semesters && academicState.departments && (
       <FilterBar
         fields={[
           { 
@@ -840,9 +825,9 @@ export default function LecturerCoursesPage() {
             onChange: (v) => setFilters(prev => ({ ...prev, semester: v })), 
             options: [
               { value: 'all', label: 'All Semesters' },
-              ...(state.semesters?.map((semester: any) => ({
+              ...(academicState.semesters?.map((semester: any) => ({
                 value: semester.semester_name,
-                label: `${state.academicYears?.find((ay: any) => ay.id === semester.academic_year_id)?.year_name || 'Current'} - ${semester.semester_name}`
+                label: `${academicState.academicYears?.find((ay: any) => ay.id === semester.academic_year_id)?.year_name || 'Current'} - ${semester.semester_name}`
               })) || [])
             ], 
             span: 2 
@@ -868,7 +853,7 @@ export default function LecturerCoursesPage() {
             onChange: (v) => setFilters(prev => ({ ...prev, department: v })), 
             options: [
               { value: 'all', label: 'All Departments' },
-              ...(state.departments?.map((dept: any) => ({
+              ...(academicState.departments?.map((dept: any) => ({
                 value: dept.department_name,
                 label: dept.department_name
               })) || [])

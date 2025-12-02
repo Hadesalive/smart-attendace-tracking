@@ -144,13 +144,7 @@ export default function SessionDetailsPage() {
   const { state: coursesState } = courses
   const { state: academicState } = academic
   
-  // Create legacy state object for compatibility
-  const state = {
-    ...attendanceState,
-    ...coursesState,
-    ...academicState
-  }
-  // Mock data removed - using DataContext
+  // Direct state access - NO STATE MERGING
 
   // ============================================================================
   // STATE
@@ -178,7 +172,7 @@ export default function SessionDetailsPage() {
         console.log('🔄 Loading lecturer session details for:', sessionId)
         
         // Load all required data first
-        await Promise.all([
+        const results = await Promise.allSettled([
           attendanceHook.fetchAttendanceSessions(),
           attendanceHook.fetchAttendanceRecords(),
           courses.fetchCourses(),
@@ -190,12 +184,12 @@ export default function SessionDetailsPage() {
         await new Promise(resolve => setTimeout(resolve, 500))
         
         console.log('📊 Loaded data:', {
-          sessionsCount: state.attendanceSessions?.length || 0,
-          recordsCount: state.attendanceRecords?.length || 0
+          sessionsCount: attendanceState.attendanceSessions?.length || 0,
+          recordsCount: attendanceState.attendanceRecords?.length || 0
         })
         
         // Find session from shared data
-        const foundSession = state.attendanceSessions.find((s: any) => s.id === sessionId)
+        const foundSession = attendanceState.attendanceSessions.find((s: any) => s.id === sessionId)
         console.log('🔍 Looking for session:', sessionId, 'Found:', !!foundSession)
         
         if (foundSession) {
@@ -221,8 +215,8 @@ export default function SessionDetailsPage() {
 
   // Separate effect to handle data updates when state changes
   useEffect(() => {
-    if (state.attendanceSessions.length > 0 && sessionId && !session) {
-      const foundSession = state.attendanceSessions.find((s: any) => s.id === sessionId)
+    if (attendanceState.attendanceSessions.length > 0 && sessionId && !session) {
+      const foundSession = attendanceState.attendanceSessions.find((s: any) => s.id === sessionId)
       if (foundSession) {
         setSession(foundSession)
         
@@ -235,7 +229,7 @@ export default function SessionDetailsPage() {
         })
       }
     }
-  }, [state.attendanceSessions, sessionId, session, getAttendanceRecordsBySession])
+  }, [attendanceState.attendanceSessions, sessionId, session, getAttendanceRecordsBySession])
 
   // Subscribe to real-time updates
   useEffect(() => {
@@ -466,7 +460,7 @@ export default function SessionDetailsPage() {
                   <UsersIcon className="h-5 w-5 text-gray-500" />
                   <Typography variant="body1">
                     {/* ✅ ENHANCED: Show real enrollment count from section_enrollments */}
-                    {state.sectionEnrollments?.filter((e: any) => 
+                    {academicState.sectionEnrollments?.filter((e: any) => 
                       e.section_id === session.section_id && 
                       e.status === 'active'
                     ).length || 0} students enrolled • {attendanceRecords.length} checked in

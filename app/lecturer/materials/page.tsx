@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useMemo } from "react"
+import React, { useState, useMemo, useEffect, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import { motion } from "framer-motion"
 import { 
@@ -57,6 +57,10 @@ import {
   EllipsisVerticalIcon
 } from "@heroicons/react/24/outline"
 import { formatDate, formatFileSize } from "@/lib/utils"
+import { useMaterials, useCourses, useAuth } from "@/lib/domains"
+import { useMockData } from "@/lib/hooks/useMockData"
+import { Material as SharedMaterial } from "@/lib/types/shared"
+import { toast } from "sonner"
 
 // ============================================================================
 // TYPES & INTERFACES
@@ -262,6 +266,17 @@ const mockMaterials: Material[] = [
 export default function LecturerMaterialsPage() {
   const router = useRouter()
   
+  // Domain hooks
+  const materialsHook = useMaterials()
+  const coursesHook = useCourses()
+  const auth = useAuth()
+  
+  const { state: materialsState } = materialsHook
+  const { state: coursesState } = coursesHook
+  const { state: authState } = auth
+  
+  const { isInitialized } = useMockData()
+  
   // ============================================================================
   // STATE
   // ============================================================================
@@ -286,12 +301,72 @@ export default function LecturerMaterialsPage() {
   const [isUploading, setIsUploading] = useState(false)
   const [showSuccessAlert, setShowSuccessAlert] = useState(false)
 
+  // Load data on mount
+  useEffect(() => {
+    const loadData = async () => {
+      const results = await Promise.allSettled([
+        auth.loadCurrentUser(),
+        materialsHook.fetchMaterials(),
+        coursesHook.fetchCourses(),
+        coursesHook.fetchCourseAssignments()
+      ])
+
+      results.forEach((result, index) => {
+        if (result.status === 'rejected') {
+          console.error(`Failed to load lecturer materials data (${index}):`, result.reason)
+        }
+      })
+    }
+
+    loadData()
+  }, [auth.loadCurrentUser, materialsHook.fetchMaterials, coursesHook.fetchCourses, coursesHook.fetchCourseAssignments])
+
+  // Get lecturer's courses
+  const lecturerCourses = useMemo(() => {
+    const lecturerId = authState.currentUser?.id
+    if (!lecturerId) return []
+
+    return coursesState.courses.filter((course: any) => 
+      course.lecturer_id === lecturerId
+    ).map(course => ({
+      id: course.id,
+      course_code: course.course_code,
+      course_name: course.course_name,
+      lecturer_name: course.lecturer_name
+    }))
+  }, [coursesState.courses, authState.currentUser?.id])
+
+  // Convert materials to display format
+  const materials = useMemo(() => {
+    return materialsState.materials
+      .filter((material: any) => 
+        lecturerCourses.some(course => course.id === material.course_id)
+      )
+      .map((material: any) => {
+        const course = coursesState.courses.find((c: any) => c.id === material.course_id)
+        return {
+          id: material.id,
+          title: material.title,
+          type: material.material_type as 'document' | 'video' | 'image' | 'link',
+          fileName: material.file_name || material.title,
+          fileSize: material.file_size || 0,
+          courseId: material.course_id,
+          courseCode: course?.course_code || 'N/A',
+          courseName: course?.course_name || 'N/A',
+          uploadedAt: material.created_at,
+          downloads: material.download_count || 0,
+          description: material.description,
+          url: material.file_url || material.external_url
+        }
+      })
+  }, [materialsState.materials, lecturerCourses, coursesState.courses])
+
   // ============================================================================
   // COMPUTED VALUES
   // ============================================================================
 
   const filteredMaterials = useMemo(() => {
-    let filtered = mockMaterials
+    let filtered = materials
 
     // Filter by course
     if (selectedCourse) {
@@ -321,7 +396,7 @@ export default function LecturerMaterialsPage() {
     }
 
     return filtered.sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime())
-  }, [selectedCourse, searchQuery, activeTab])
+  }, [materials, selectedCourse, searchQuery, activeTab])
 
   // ============================================================================
   // EVENT HANDLERS
@@ -344,15 +419,27 @@ export default function LecturerMaterialsPage() {
     setViewDialogOpen(true)
   }
 
-  const handleDownloadMaterial = (material: Material) => {
-    // In a real app, this would trigger a download
-    console.log('Downloading material:', material.fileName)
-  }
+  const handleDownloadMaterial = useCallback(async (material: Material) => {
+    try {
+      await materialsHook.incrementDownloadCount(material.id)
+      if (material.url) {
+        window.open(material.url, '_blank')
+      }
+    } catch (error) {
+      console.error('Error downloading material:', error)
+      toast.error('Failed to download material')
+    }
+  }, [materialsHook])
 
-  const handleDeleteMaterial = (materialId: string) => {
-    // In a real app, this would delete the material
-    console.log('Deleting material:', materialId)
-  }
+  const handleDeleteMaterial = useCallback(async (materialId: string) => {
+    try {
+      await materialsHook.deleteMaterial(materialId)
+      toast.success('Material deleted successfully')
+    } catch (error) {
+      console.error('Error deleting material:', error)
+      toast.error('Failed to delete material')
+    }
+  }, [materialsHook])
 
   const handleUploadTypeSelect = (type: 'document' | 'video' | 'image' | 'link') => {
     setSelectedUploadType(type)
@@ -412,7 +499,7 @@ export default function LecturerMaterialsPage() {
   }
 
   const handleUploadSubmit = async () => {
-    if (!selectedUploadType || !uploadForm.title || !uploadForm.courseId) return
+    if (!selectedUploadType || !uploadForm.title || !uploadForm.courseId || !authState.currentUser?.id) return
     
     if (selectedUploadType !== 'link' && !uploadForm.file) return
     if (selectedUploadType === 'link' && !uploadForm.url) return
@@ -420,24 +507,37 @@ export default function LecturerMaterialsPage() {
     setIsUploading(true)
     setUploadProgress(0)
 
-    // Simulate upload progress
-    const progressInterval = setInterval(() => {
-      setUploadProgress(prev => {
-        if (prev >= 100) {
-          clearInterval(progressInterval)
-          setTimeout(() => {
-            setIsUploading(false)
-            handleUploadDialogClose()
-            setShowSuccessAlert(true)
-            // Auto-hide success message after 5 seconds
-            setTimeout(() => setShowSuccessAlert(false), 5000)
-            // In a real app, you would refresh the materials list here
-          }, 500)
-          return 100
-        }
-        return prev + 10
-      })
-    }, 200)
+    try {
+      const course = lecturerCourses.find(c => c.id === uploadForm.courseId)
+      const materialData = {
+        title: uploadForm.title,
+        description: uploadForm.description,
+        course_id: uploadForm.courseId,
+        course_code: course?.course_code || '',
+        material_type: selectedUploadType,
+        author_id: authState.currentUser.id,
+        is_public: true,
+        file: selectedUploadType !== 'link' ? uploadForm.file : undefined,
+        external_url: selectedUploadType === 'link' ? uploadForm.url : undefined
+      }
+
+      await materialsHook.createMaterial(materialData)
+      
+      setUploadProgress(100)
+      setIsUploading(false)
+      setShowSuccessAlert(true)
+      
+      // Reset form after success
+      setTimeout(() => {
+        handleUploadDialogClose()
+        setShowSuccessAlert(false)
+      }, 2000)
+    } catch (error) {
+      console.error('Error uploading material:', error)
+      toast.error('Failed to upload material')
+      setIsUploading(false)
+      setUploadProgress(0)
+    }
   }
 
   const getFileIcon = (type: Material['type']) => {
@@ -602,9 +702,9 @@ export default function LecturerMaterialsPage() {
                   sx={INPUT_STYLES}
                 >
                   <MenuItem value="">All Courses</MenuItem>
-                  {mockCourses.map((course) => (
+                  {lecturerCourses.map((course) => (
                     <MenuItem key={course.id} value={course.id}>
-                      {course.courseCode} - {course.courseName}
+                      {course.course_code} - {course.course_name}
                     </MenuItem>
                   ))}
                 </Select>
@@ -917,9 +1017,9 @@ export default function LecturerMaterialsPage() {
                     onChange={(e) => handleFormChange('courseId', e.target.value)}
                     sx={INPUT_STYLES}
                   >
-                    {mockCourses.map((course) => (
+                    {lecturerCourses.map((course) => (
                       <MenuItem key={course.id} value={course.id}>
-                        {course.courseCode} - {course.courseName}
+                        {course.course_code} - {course.course_name}
                       </MenuItem>
                     ))}
                   </Select>

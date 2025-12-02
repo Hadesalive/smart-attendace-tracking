@@ -145,13 +145,6 @@ export default function StudentSessionsPage() {
   const academic = useAcademicStructure()
   const { state: academicState } = academic
   
-  // Create legacy state object for compatibility
-  const state = {
-    ...attendanceState,
-    ...coursesState,
-    ...academicState,
-    currentUser: authState.currentUser
-  }
   const { isInitialized } = useMockData()
   
   // ============================================================================
@@ -172,13 +165,19 @@ export default function StudentSessionsPage() {
     const fetchData = async () => {
       try {
         console.log('Student Sessions Page: Loading all data...')
-        await Promise.all([
+        const results = await Promise.allSettled([
           auth.loadCurrentUser(), // Load the current user first
           fetchCourses(),
           coursesHook.fetchCourseAssignments(), // Load course assignments for course inheritance
           academic.fetchSectionEnrollments(), // Use section enrollments instead of old enrollments
           fetchAttendanceRecords()
         ])
+
+        results.forEach((result, index) => {
+          if (result.status === 'rejected') {
+            console.error(`Failed to load student sessions data (${index}):`, result.reason)
+          }
+        })
         console.log('Student Sessions Page: Data loaded successfully')
       } catch (error) {
         console.error('Error loading student sessions page data:', error)
@@ -203,16 +202,16 @@ export default function StudentSessionsPage() {
   // Get student's courses (inherited from program/academic year/semester/year level)
   const courses = useMemo(() => {
     console.log('Student Sessions - State data:', {
-      courses: state.courses.length,
-      sectionEnrollments: state.sectionEnrollments.length,
-      courseAssignments: state.courseAssignments?.length || 0,
-      attendanceSessions: state.attendanceSessions.length,
-      currentUserId: state.currentUser?.id
+      courses: coursesState.courses.length,
+      sectionEnrollments: academicState.sectionEnrollments.length,
+      courseAssignments: coursesState.courseAssignments?.length || 0,
+      attendanceSessions: attendanceState.attendanceSessions.length,
+      currentUserId: authState.currentUser?.id
     })
     
     // Get student's enrolled section
-    const studentSectionEnrollment = state.sectionEnrollments.find(
-      (enrollment: any) => enrollment.student_id === state.currentUser?.id
+    const studentSectionEnrollment = academicState.sectionEnrollments.find(
+      (enrollment: any) => enrollment.student_id === authState.currentUser?.id
     )
     
     console.log('Student Sessions - Student section enrollment:', studentSectionEnrollment)
@@ -226,7 +225,7 @@ export default function StudentSessionsPage() {
     console.log('Student Sessions - Student section details:', section)
     
     // Get course assignments for this student's program/academic year/semester/year level
-    const relevantCourseAssignments = state.courseAssignments?.filter((assignment: any) => 
+    const relevantCourseAssignments = coursesState.courseAssignments?.filter((assignment: any) => 
       assignment.program_id === section.program_id &&
       assignment.academic_year_id === section.academic_year_id &&
       assignment.semester_id === section.semester_id &&
@@ -237,27 +236,27 @@ export default function StudentSessionsPage() {
     
     // Get courses from these assignments
     const studentCourses = relevantCourseAssignments
-      .map((assignment: any) => state.courses.find(course => course?.id === assignment.course_id))
+      .map((assignment: any) => coursesState.courses.find((course: any) => course?.id === assignment.course_id))
       .filter((course): course is Course => Boolean(course))
     
     console.log('Student Sessions - Student courses (inherited from program):', studentCourses.length)
     console.log('Student Sessions - Student courses details:', studentCourses)
     return studentCourses
-  }, [state.courses, state.sectionEnrollments, state.courseAssignments, state.currentUser?.id])
+  }, [coursesState.courses, coursesState.courseAssignments, academicState.sectionEnrollments, authState.currentUser?.id])
 
   // Get student's sessions from shared data
   // ✅ FIXED: Use sessions directly from state (already filtered by fetchStudentAttendanceSessions)
   const sessions = useMemo(() => {
     console.log('📊 Student sessions calculation:', {
       coursesCount: courses.length,
-      totalSessionsInState: state.attendanceSessions.length
+      totalSessionsInState: attendanceState.attendanceSessions.length
     })
 
     // fetchStudentAttendanceSessions already filters by student's section enrollment
     // So we can use attendanceSessions directly instead of filtering by courses
-    const studentSessions = state.attendanceSessions.map(session => {
+    const studentSessions = attendanceState.attendanceSessions.map(session => {
       // ✅ ENHANCED: Calculate real enrolled count from section_enrollments
-      const enrolledCount = state.sectionEnrollments?.filter((enrollment: any) =>
+      const enrolledCount = academicState.sectionEnrollments?.filter((enrollment: any) =>
         enrollment.section_id === session.section_id &&
         enrollment.status === 'active'
       ).length || 0
@@ -273,7 +272,7 @@ export default function StudentSessionsPage() {
 
     console.log('📋 Final student sessions:', studentSessions.length)
     return studentSessions
-  }, [state.attendanceSessions, state.sectionEnrollments])
+  }, [attendanceState.attendanceSessions, academicState.sectionEnrollments])
 
   // ============================================================================
   // COMPUTED VALUES
@@ -327,7 +326,7 @@ export default function StudentSessionsPage() {
     
     completedSessionsWithRecords.forEach(session => {
       const records = getAttendanceRecordsBySession(session.id)
-      const studentRecord = records.find(r => !!state.currentUser?.id && r.student_id === state.currentUser.id)
+      const studentRecord = records.find(r => !!authState.currentUser?.id && r.student_id === authState.currentUser.id)
       if (studentRecord && (studentRecord.status === "present" || studentRecord.status === "late")) {
         attendedSessions++
       }
@@ -361,7 +360,7 @@ export default function StudentSessionsPage() {
     
     completedSessionsWithRecords.forEach(session => {
       const records = getAttendanceRecordsBySession(session.id)
-      const studentRecord = records.find(r => !!state.currentUser?.id && r.student_id === state.currentUser.id)
+      const studentRecord = records.find(r => !!authState.currentUser?.id && r.student_id === authState.currentUser.id)
       if (studentRecord && studentRecord.status === "absent") {
         missed++
       }
@@ -522,7 +521,7 @@ export default function StudentSessionsPage() {
             onChange: setSelectedCourse,
             options: [
               { value: '', label: `All Courses (${sessions.length} sessions)` },
-              ...courses.filter(course => course).map(course => {
+              ...courses.filter((course: any) => course).map((course: any) => {
                 const courseSessions = sessions.filter(s => s.course_code === course!.course_code)
                 return {
                   value: course!.course_code,
@@ -694,7 +693,7 @@ export default function StudentSessionsPage() {
                     {getStatusBadge(mapSessionStatus(session.status, 'student'))}
                     {mapSessionStatus(session.status, 'student') === 'completed' && (() => {
                       const records = getAttendanceRecordsBySession(session.id)
-                      const studentRecord = records.find(r => !!state.currentUser?.id && r.student_id === state.currentUser.id)
+                      const studentRecord = records.find(r => !!authState.currentUser?.id && r.student_id === authState.currentUser.id)
                       return studentRecord ? getAttendanceBadge(studentRecord.status) : null
                     })()}
                   </Box>

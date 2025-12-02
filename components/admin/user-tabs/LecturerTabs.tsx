@@ -1,10 +1,386 @@
-import React from "react"
-import { Box, Typography } from "@mui/material"
+import React, { useState, useMemo, memo } from "react"
+import { Box, Typography, TextField, MenuItem, Chip } from "@mui/material"
 import { KeyIcon, AcademicCapIcon, BookOpenIcon, ClockIcon, UsersIcon, StarIcon, UserIcon, DevicePhoneMobileIcon, BuildingOfficeIcon, CalendarDaysIcon } from "@heroicons/react/24/outline"
 import InfoCard from "@/components/admin/InfoCard"
 import StatsGrid from "@/components/admin/StatsGrid"
 import DataTable from "@/components/admin/DataTable"
 import { courseColumns, sessionColumns, upcomingSessionColumns } from "@/lib/table-columns/user-columns"
+import AttendanceManagementTab from "./lecturer/AttendanceManagementTab"
+
+// ============================================================================
+// STUDENTS TAB COMPONENT (with filters)
+// ============================================================================
+
+interface StudentsTabContentProps {
+  courses: Array<{
+    id: string
+    name: string
+    code: string
+    sections?: Array<{
+      section: string
+      semester: string
+      academicYear: string
+      program: string
+      isPrimary: boolean
+      teachingHours: number
+    }>
+    studentDetails?: Array<{
+      id: string
+      name: string
+      email: string
+      studentId: string
+      section: string
+      enrollmentDate: string
+      status: string
+      attendanceRate?: number
+      sessionsAttended?: number
+      totalSessions?: number
+    }>
+    status: 'active' | 'completed' | 'upcoming'
+  }>
+}
+
+const StudentsTabContent = memo(({ courses }: StudentsTabContentProps) => {
+  const [courseFilter, setCourseFilter] = useState<string>('all')
+  const [sectionFilter, setSectionFilter] = useState<string>('all')
+  const [programFilter, setProgramFilter] = useState<string>('all')
+  const [attendanceFilter, setAttendanceFilter] = useState<string>('all')
+
+  // Prepare all students data with enhanced info
+  const allStudents = useMemo(() => {
+    if (!courses || courses.length === 0) return []
+    return courses.flatMap(course => {
+      const courseSections = course.sections || []
+      return (course.studentDetails || []).map(student => {
+        const sectionDetails = courseSections.find(s => s.section === student.section)
+        return {
+          ...student,
+          courseName: course.name,
+          courseCode: course.code,
+          courseId: course.id,
+          program: sectionDetails?.program || 'N/A',
+          semester: sectionDetails?.semester || 'N/A',
+          academicYear: sectionDetails?.academicYear || 'N/A'
+        }
+      })
+    })
+  }, [courses])
+
+  const uniqueCourses = useMemo(() => {
+    const courseIds = Array.from(new Set(allStudents.map(s => s.courseId)))
+    return courseIds.map(id => {
+      const student = allStudents.find(s => s.courseId === id)
+      return { id, name: student?.courseName || '', code: student?.courseCode || '' }
+    })
+  }, [allStudents])
+
+  const uniqueSections = useMemo(() => 
+    Array.from(new Set(allStudents.map(s => s.section))).sort()
+  , [allStudents])
+
+  const uniquePrograms = useMemo(() => 
+    Array.from(new Set(allStudents.map(s => s.program))).filter(p => p !== 'N/A').sort()
+  , [allStudents])
+
+  const filteredStudents = useMemo(() => {
+    return allStudents.filter(student => {
+      if (courseFilter !== 'all' && student.courseId !== courseFilter) return false
+      if (sectionFilter !== 'all' && student.section !== sectionFilter) return false
+      if (programFilter !== 'all' && student.program !== programFilter) return false
+      if (attendanceFilter === 'at-risk' && (student.attendanceRate || 0) >= 75) return false
+      if (attendanceFilter === 'good' && (student.attendanceRate || 0) < 75) return false
+      return true
+    })
+  }, [allStudents, courseFilter, sectionFilter, programFilter, attendanceFilter])
+
+  return (
+    <Box>
+      {/* Summary Stats */}
+      <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 2, mb: 3 }}>
+        <Box sx={{ p: 2, border: '1px solid #e0e0e0', borderRadius: 1 }}>
+          <Typography variant="body2" color="text.secondary">
+            Total Students
+          </Typography>
+          <Typography variant="h4" sx={{ fontWeight: 600 }}>
+            {allStudents.length}
+          </Typography>
+          {filteredStudents.length !== allStudents.length && (
+            <Typography variant="caption" color="text.secondary">
+              Showing {filteredStudents.length}
+            </Typography>
+          )}
+        </Box>
+        <Box sx={{ p: 2, border: '1px solid #e0e0e0', borderRadius: 1 }}>
+          <Typography variant="body2" color="text.secondary">
+            Active Courses
+          </Typography>
+          <Typography variant="h4" sx={{ fontWeight: 600 }}>
+            {courses?.filter(c => c.status === 'active').length || 0}
+          </Typography>
+        </Box>
+        <Box sx={{ p: 2, border: '1px solid #e0e0e0', borderRadius: 1 }}>
+          <Typography variant="body2" color="text.secondary">
+            Total Sections
+          </Typography>
+          <Typography variant="h4" sx={{ fontWeight: 600 }}>
+            {courses?.reduce((sum, c) => sum + (c.sections?.length || 0), 0) || 0}
+          </Typography>
+        </Box>
+        <Box sx={{ p: 2, border: '1px solid #e0e0e0', borderRadius: 1 }}>
+          <Typography variant="body2" color="text.secondary">
+            At Risk Students
+          </Typography>
+          <Typography variant="h4" sx={{ fontWeight: 600, color: '#f44336' }}>
+            {allStudents.filter(s => (s.attendanceRate || 0) < 75).length}
+          </Typography>
+          <Typography variant="caption" color="text.secondary">
+            Below 75% attendance
+          </Typography>
+        </Box>
+      </Box>
+
+      {/* Filters */}
+      <Box sx={{ 
+        mb: 3, 
+        p: 2, 
+        border: '1px solid #e0e0e0', 
+        borderRadius: 1,
+        bgcolor: '#fafafa'
+      }}>
+        <Typography variant="subtitle2" sx={{ mb: 2, fontWeight: 600 }}>
+          Filters
+        </Typography>
+        <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 2 }}>
+          <TextField
+            select
+            size="small"
+            label="Course"
+            value={courseFilter}
+            onChange={(e) => setCourseFilter(e.target.value)}
+            sx={{ bgcolor: 'white' }}
+          >
+            <MenuItem value="all">All Courses</MenuItem>
+            {uniqueCourses.map(course => (
+              <MenuItem key={course.id} value={course.id}>
+                {course.code} - {course.name}
+              </MenuItem>
+            ))}
+          </TextField>
+
+          <TextField
+            select
+            size="small"
+            label="Section"
+            value={sectionFilter}
+            onChange={(e) => setSectionFilter(e.target.value)}
+            sx={{ bgcolor: 'white' }}
+          >
+            <MenuItem value="all">All Sections</MenuItem>
+            {uniqueSections.map(section => (
+              <MenuItem key={section} value={section}>
+                {section}
+              </MenuItem>
+            ))}
+          </TextField>
+
+          <TextField
+            select
+            size="small"
+            label="Program"
+            value={programFilter}
+            onChange={(e) => setProgramFilter(e.target.value)}
+            sx={{ bgcolor: 'white' }}
+          >
+            <MenuItem value="all">All Programs</MenuItem>
+            {uniquePrograms.map(program => (
+              <MenuItem key={program} value={program}>
+                {program}
+              </MenuItem>
+            ))}
+          </TextField>
+
+          <TextField
+            select
+            size="small"
+            label="Attendance Status"
+            value={attendanceFilter}
+            onChange={(e) => setAttendanceFilter(e.target.value)}
+            sx={{ bgcolor: 'white' }}
+          >
+            <MenuItem value="all">All Students</MenuItem>
+            <MenuItem value="good">Good (≥75%)</MenuItem>
+            <MenuItem value="at-risk">At Risk (&lt;75%)</MenuItem>
+          </TextField>
+        </Box>
+
+        {/* Active Filters Display */}
+        {(courseFilter !== 'all' || sectionFilter !== 'all' || programFilter !== 'all' || attendanceFilter !== 'all') && (
+          <Box sx={{ mt: 2, display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
+            <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary' }}>
+              Active Filters:
+            </Typography>
+            {courseFilter !== 'all' && (
+              <Chip
+                size="small"
+                label={`Course: ${uniqueCourses.find(c => c.id === courseFilter)?.code}`}
+                onDelete={() => setCourseFilter('all')}
+              />
+            )}
+            {sectionFilter !== 'all' && (
+              <Chip
+                size="small"
+                label={`Section: ${sectionFilter}`}
+                onDelete={() => setSectionFilter('all')}
+              />
+            )}
+            {programFilter !== 'all' && (
+              <Chip
+                size="small"
+                label={`Program: ${programFilter}`}
+                onDelete={() => setProgramFilter('all')}
+              />
+            )}
+            {attendanceFilter !== 'all' && (
+              <Chip
+                size="small"
+                label={`Attendance: ${attendanceFilter === 'good' ? 'Good' : 'At Risk'}`}
+                onDelete={() => setAttendanceFilter('all')}
+              />
+            )}
+            <Chip
+              size="small"
+              label="Clear All"
+              onClick={() => {
+                setCourseFilter('all')
+                setSectionFilter('all')
+                setProgramFilter('all')
+                setAttendanceFilter('all')
+              }}
+              sx={{ bgcolor: '#000', color: 'white', '&:hover': { bgcolor: '#333' } }}
+            />
+          </Box>
+        )}
+      </Box>
+
+      {/* Students Table */}
+      <DataTable
+        title="All Students"
+        subtitle={`Showing ${filteredStudents.length} of ${allStudents.length} students`}
+        columns={[
+          {
+            key: 'name',
+            label: 'Student',
+            render: (_value: string, student: any) => (
+              <Box>
+                <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                  {student.name}
+                </Typography>
+                <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                  {student.studentId}
+                </Typography>
+              </Box>
+            )
+          },
+          {
+            key: 'courseName',
+            label: 'Course',
+            render: (_value: string, student: any) => (
+              <Box>
+                <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                  {student.courseName}
+                </Typography>
+                <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                  {student.courseCode}
+                </Typography>
+              </Box>
+            )
+          },
+          {
+            key: 'section',
+            label: 'Section & Program',
+            render: (_value: string, student: any) => (
+              <Box>
+                <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                  {student.section}
+                </Typography>
+                <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                  {student.program}
+                </Typography>
+              </Box>
+            )
+          },
+          {
+            key: 'email',
+            label: 'Email',
+            render: (_value: string, student: any) => (
+              <Typography variant="body2">
+                {student.email}
+              </Typography>
+            )
+          },
+          {
+            key: 'attendanceRate',
+            label: 'Attendance',
+            render: (_value: string, student: any) => {
+              const rate = student.attendanceRate || 0
+              return (
+                <Box>
+                  <Typography 
+                    variant="body2" 
+                    sx={{ 
+                      fontWeight: 600,
+                      color: rate < 50 ? '#f44336' : rate < 75 ? '#ff9800' : '#4caf50'
+                    }}
+                  >
+                    {student.attendanceRate !== undefined ? `${rate}%` : 'N/A'}
+                  </Typography>
+                  <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                    {student.sessionsAttended || 0}/{student.totalSessions || 0}
+                  </Typography>
+                </Box>
+              )
+            }
+          },
+          {
+            key: 'enrollmentDate',
+            label: 'Enrolled',
+            render: (_value: string, student: any) => (
+              <Typography variant="body2">
+                {student.enrollmentDate}
+              </Typography>
+            )
+          },
+          {
+            key: 'status',
+            label: 'Status',
+            render: (_value: string, student: any) => (
+              <Box
+                sx={{
+                  px: 1.5,
+                  py: 0.5,
+                  borderRadius: 1,
+                  bgcolor: student.status === 'active' ? '#e8f5e9' : '#ffebee',
+                  display: 'inline-block'
+                }}
+              >
+                <Typography 
+                  variant="caption" 
+                  sx={{ 
+                    fontWeight: 600,
+                    color: student.status === 'active' ? '#2e7d32' : '#c62828'
+                  }}
+                >
+                  {student.status}
+                </Typography>
+              </Box>
+            )
+          }
+        ]}
+        data={filteredStudents}
+      />
+    </Box>
+  )
+})
 
 // ============================================================================
 // TYPES
@@ -316,117 +692,7 @@ export default function LecturerTabs({ details, state }: LecturerTabsProps) {
     {
       label: "Students",
       value: "students",
-      content: (
-        <Box>
-          <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
-            All Students in Lecturer's Sections
-          </Typography>
-          {details.courses?.map((course, courseIndex) => (
-            <Box key={course.id} sx={{ mb: 3 }}>
-              <Typography variant="subtitle1" sx={{ mb: 1, fontWeight: 500, color: '#000000' }}>
-                {course.name} ({course.code}) - {course.students} students
-              </Typography>
-              {course.sections?.map((section, sectionIndex) => (
-                <Box key={`${course.id}-${sectionIndex}`} sx={{ mb: 2, ml: 2 }}>
-                  <Typography variant="body2" sx={{ mb: 1, color: '#666666' }}>
-                    Section: {section.section} | {section.semester} {section.academicYear} | {section.program}
-                    {section.isPrimary && (
-                      <Box component="span" sx={{ 
-                        ml: 1, 
-                        px: 1, 
-                        py: 0.5, 
-                        bgcolor: '#000000', 
-                        color: 'white', 
-                        borderRadius: 1, 
-                        fontSize: '0.75rem',
-                        fontWeight: 500
-                      }}>
-                        Primary
-                      </Box>
-                    )}
-                  </Typography>
-                  {course.studentDetails?.filter(student => student.section === section.section).length > 0 ? (
-                    <DataTable
-                      title=""
-                      subtitle=""
-                      columns={[
-                        {
-                          key: 'student',
-                          label: 'Student',
-                          render: (value: any, student: any) => (
-                            <Box>
-                              <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                                {student.name}
-                              </Typography>
-                              <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                                {student.studentId}
-                              </Typography>
-                            </Box>
-                          )
-                        },
-                        {
-                          key: 'email',
-                          label: 'Email',
-                          render: (value: any, student: any) => (
-                            <Typography variant="body2">
-                              {student.email}
-                            </Typography>
-                          )
-                        },
-                        {
-                          key: 'attendance',
-                          label: 'Attendance',
-                          render: (value: any, student: any) => (
-                            <Box>
-                              <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                                {student.attendanceRate !== undefined ? `${student.attendanceRate}%` : 'N/A'}
-                              </Typography>
-                              <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                                {student.sessionsAttended || 0}/{student.totalSessions || 0} sessions
-                              </Typography>
-                            </Box>
-                          )
-                        },
-                        {
-                          key: 'enrollmentDate',
-                          label: 'Enrolled',
-                          render: (value: any, student: any) => (
-                            <Typography variant="body2">
-                              {student.enrollmentDate}
-                            </Typography>
-                          )
-                        },
-                        {
-                          key: 'status',
-                          label: 'Status',
-                          render: (value: any, student: any) => (
-                            <Box component="span" sx={{ 
-                              px: 1.5, 
-                              py: 0.5, 
-                              bgcolor: student.status === 'active' ? '#00000020' : '#66666620',
-                              color: student.status === 'active' ? '#000000' : '#666666',
-                              borderRadius: 1, 
-                              fontSize: '0.75rem',
-                              fontWeight: 500
-                            }}>
-                              {student.status}
-                            </Box>
-                          )
-                        }
-                      ]}
-                      data={course.studentDetails?.filter(student => student.section === section.section) || []}
-                    />
-                  ) : (
-                    <Typography variant="body2" sx={{ color: 'text.secondary', fontStyle: 'italic', ml: 2 }}>
-                      No students enrolled in this section
-                    </Typography>
-                  )}
-                </Box>
-              ))}
-            </Box>
-          ))}
-        </Box>
-      )
+      content: <StudentsTabContent courses={details.courses || []} />
     },
     {
       label: "Sessions",
@@ -455,110 +721,7 @@ export default function LecturerTabs({ details, state }: LecturerTabsProps) {
     {
       label: "Attendance Management",
       value: "attendance",
-      content: (
-        <Box>
-          <Typography variant="h6" sx={{ mb: 2 }}>
-            Attendance Overview
-          </Typography>
-          <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 2, mb: 3 }}>
-            <Box sx={{ p: 2, border: '1px solid #e0e0e0', borderRadius: 1 }}>
-              <Typography variant="body2" color="text.secondary">
-                Total Sessions
-              </Typography>
-              <Typography variant="h4" sx={{ fontWeight: 600 }}>
-                {details.recentSessions.length}
-              </Typography>
-            </Box>
-            <Box sx={{ p: 2, border: '1px solid #e0e0e0', borderRadius: 1 }}>
-              <Typography variant="body2" color="text.secondary">
-                Average Attendance
-              </Typography>
-              <Typography variant="h4" sx={{ fontWeight: 600 }}>
-                {details.recentSessions.length > 0 
-                  ? Math.round(details.recentSessions.reduce((sum, session) => sum + session.attendance, 0) / details.recentSessions.length)
-                  : 0}%
-              </Typography>
-            </Box>
-            <Box sx={{ p: 2, border: '1px solid #e0e0e0', borderRadius: 1 }}>
-              <Typography variant="body2" color="text.secondary">
-                Total Students
-              </Typography>
-              <Typography variant="h4" sx={{ fontWeight: 600 }}>
-                {details.totalStudents}
-              </Typography>
-            </Box>
-          </Box>
-          <DataTable
-            title="Session Attendance Records"
-            subtitle="Detailed attendance for each session"
-            columns={[
-              {
-                key: "course",
-                label: "Course",
-                render: (session: any) => (
-                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                    {session.course}
-                  </Typography>
-                )
-              },
-              {
-                key: "title",
-                label: "Session Title",
-                render: (session: any) => (
-                  <Typography variant="body2">
-                    {session.title}
-                  </Typography>
-                )
-              },
-              {
-                key: "date",
-                label: "Date",
-                render: (session: any) => (
-                  <Typography variant="body2">
-                    {session.date}
-                  </Typography>
-                )
-              },
-              {
-                key: "attendance",
-                label: "Attendance",
-                render: (session: any) => {
-                  const attendance = session.attendance || 0
-                  const totalStudents = session.totalStudents || 0
-                  const percentage = totalStudents > 0 ? (attendance / totalStudents) * 100 : 0
-                  
-                  return (
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <Typography variant="body2">
-                        {attendance}/{totalStudents}
-                      </Typography>
-                      <Box
-                        sx={{
-                          width: 40,
-                          height: 8,
-                          bgcolor: '#e0e0e0',
-                          borderRadius: 4,
-                          overflow: 'hidden'
-                        }}
-                      >
-                        <Box
-                          sx={{
-                            width: `${percentage}%`,
-                            height: '100%',
-                            bgcolor: percentage > 80 ? '#4caf50' : 
-                                     percentage > 60 ? '#ff9800' : '#f44336'
-                          }}
-                        />
-                      </Box>
-                    </Box>
-                  )
-                }
-              }
-            ]}
-            data={getRecentSessions()}
-          />
-        </Box>
-      )
+      content: <AttendanceManagementTab details={details} />
     }
   ]
 

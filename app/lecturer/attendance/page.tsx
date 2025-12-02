@@ -91,12 +91,7 @@ export default function LecturerAttendancePage() {
   const { state: authState } = auth
   
   // Create legacy state object for compatibility
-  const state = {
-    ...attendanceState,
-    ...coursesState,
-    ...academicState,
-    currentUser: authState.currentUser
-  }
+  // Direct state access - NO STATE MERGING
 
   // Load data on component mount
   useEffect(() => {
@@ -110,7 +105,7 @@ export default function LecturerAttendancePage() {
   // ==========================================================================
   
   // Use all sessions from shared state (no hardcoded lecturer dependency)
-  const sessions = useMemo(() => state.attendanceSessions, [state.attendanceSessions])
+  const sessions = useMemo(() => attendanceState.attendanceSessions, [attendanceState.attendanceSessions])
 
   // Legacy mock data removed - using real data from DataContext
 
@@ -212,7 +207,7 @@ export default function LecturerAttendancePage() {
   const openEditModal = (record: any) => {
     console.log('Opening edit modal for record:', record)
     // Find the full session data from the sessions array
-    const fullSession = state.attendanceSessions.find(s => s.id === record.id)
+    const fullSession = attendanceState.attendanceSessions.find((s: any) => s.id === record.id)
     if (fullSession) {
       console.log('Found full session data:', fullSession)
       setEditingSession(fullSession)
@@ -236,7 +231,7 @@ export default function LecturerAttendancePage() {
 
   // Handler for creating new attendance session
   const handleStartSession = (courseId: string, className: string) => {
-    const course = state.courses.find((c: any) => c.id === courseId)
+    const course = coursesState.courses.find((c: any) => c.id === courseId)
     if (!course) return
 
     createAttendanceSession({
@@ -272,7 +267,7 @@ export default function LecturerAttendancePage() {
       console.log('Deleting session:', sessionId)
       
       // Check if session exists
-      const session = state.attendanceSessions.find(s => s.id === sessionId)
+      const session = attendanceState.attendanceSessions.find((s: any) => s.id === sessionId)
       if (!session) {
         throw new Error('Session not found')
       }
@@ -309,7 +304,7 @@ export default function LecturerAttendancePage() {
     
     try {
       // Check if session exists
-      const session = state.attendanceSessions.find(s => s.id === sessionId)
+      const session = attendanceState.attendanceSessions.find((s: any) => s.id === sessionId)
       if (!session) {
         throw new Error('Session not found')
       }
@@ -1009,7 +1004,7 @@ export default function LecturerAttendancePage() {
       <CreateSessionModal 
         open={editModalOpen}
         onOpenChange={handleEditModalClose}
-        lecturerId={state.currentUser?.id || 'guest'}
+        lecturerId={authState.currentUser?.id || 'guest'}
         onSessionCreated={() => {}} // Not used in edit mode
         editSession={editingSession}
         onSessionUpdated={handleSessionUpdated}

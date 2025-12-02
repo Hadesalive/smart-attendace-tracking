@@ -166,12 +166,18 @@ export default function AttendancePage() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        await Promise.all([
+        const results = await Promise.allSettled([
           attendance.fetchAttendanceSessions(),
           attendance.fetchAttendanceRecords(),
           courses.fetchCourses(),
           academic.fetchLecturerProfiles()
         ])
+        
+        // Log any failures
+        const failures = results.filter(r => r.status === 'rejected')
+        if (failures.length > 0) {
+          console.error('❌ Some data failed to load:', failures)
+        }
       } catch (error: any) {
         console.error('❌ Error fetching attendance data:', error)
       }

@@ -37,3 +37,5 @@ export interface CoursesContextType {
   getCoursesByLecturer: (lecturerId: string) => Course[]
   getStudentsByCourse: (courseId: string) => any[]
 }
+
+export type { Course, LecturerAssignment, Enrollment }

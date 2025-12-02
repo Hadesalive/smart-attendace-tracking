@@ -219,12 +219,21 @@ export default function SessionDetailsPage() {
         setLoading(true)
         setError(null)
         
-        await Promise.all([
+        const results = await Promise.allSettled([
           attendance.fetchAttendanceSessions(),
           attendance.fetchAttendanceRecords(),
           courses.fetchCourses(),
           academic.fetchStudentProfiles()
         ])
+        
+        // Check for failures
+        const failures = results.filter(r => r.status === 'rejected')
+        if (failures.length > 0) {
+          const failedNames = ['attendance sessions', 'attendance records', 'courses', 'student profiles']
+            .filter((_, i) => failures.some(f => results.indexOf(results.find(r => r === f)!) === i))
+          console.error('❌ Some data failed to load:', failures)
+          setError(`Failed to load: ${failedNames.join(', ')}`)
+        }
         
         // Wait for state to be updated
         await new Promise(resolve => setTimeout(resolve, 500))

@@ -24,3 +24,6 @@ export interface AttendanceContextType {
   getAttendanceSessionsByCourse: (courseId: string) => AttendanceSession[]
   getAttendanceRecordsBySession: (sessionId: string) => AttendanceRecord[]
 }
+
+export type { AttendanceSession, AttendanceRecord }
+

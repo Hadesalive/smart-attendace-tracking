@@ -74,36 +74,21 @@ export default function LecturerCourseDetailPage({ params }: CourseDetailProps) 
   const { state: authState } = auth
   const { state: academicState } = academic
   
-  // Create merged state object with academic data
-  const state = {
-    ...attendance.state,
-    ...grades.state,
-    ...academic.state,
-    ...coursesState, // Put coursesState last to ensure courses are not overridden
-    materials: materialsState.materials,
-    currentUser: authState.currentUser,
-    lecturerAssignments: coursesState.lecturerAssignments || [],
-    // Ensure academic data is properly accessible
-    semesters: academic.state.semesters,
-    departments: academic.state.departments,
-    academicYears: academic.state.academicYears,
-    programs: academic.state.programs,
-    sectionEnrollments: academic.state.sectionEnrollments || []
-  }
+  // Direct state access - NO STATE MERGING
 
   const [activeTab, setActiveTab] = useState(0)
   const [isLoading, setIsLoading] = useState(true)
-  const lecturerId = state.currentUser?.id || "user_2"
+  const lecturerId = authState.currentUser?.id || "user_2"
 
   // Function to get enrolled students using inheritance logic
   const getEnrolledStudentsByCourse = useCallback((courseId: string) => {
     // Early return if data is not loaded
-    if (!state.lecturerAssignments || !state.sectionEnrollments) {
+    if (!coursesState.lecturerAssignments || !academicState.sectionEnrollments) {
       return []
     }
     
     // Get course assignments for this specific course
-    const courseAssignments = state.lecturerAssignments?.filter((assignment: any) => 
+    const courseAssignments = coursesState.lecturerAssignments?.filter((assignment: any) => 
       assignment.course_id === courseId && assignment.lecturer_id === lecturerId
     ) || []
     
@@ -115,7 +100,7 @@ export default function LecturerCourseDetailPage({ params }: CourseDetailProps) 
     
     // For each course assignment, find students enrolled in that program/semester/year
     courseAssignments.forEach((assignment: any) => {
-      const studentsInProgram = state.sectionEnrollments?.filter((enrollment: any) => 
+      const studentsInProgram = academicState.sectionEnrollments?.filter((enrollment: any) => 
         enrollment.program_id === assignment.program_id &&
         enrollment.semester_id === assignment.semester_id &&
         enrollment.academic_year_id === assignment.academic_year_id &&
@@ -158,7 +143,7 @@ export default function LecturerCourseDetailPage({ params }: CourseDetailProps) 
     })
     
     return Array.from(inheritedStudents.values())
-  }, [state.lecturerAssignments, state.sectionEnrollments, lecturerId])
+  }, [coursesState.lecturerAssignments, academicState.sectionEnrollments, lecturerId])
 
   // Fetch data on component mount
   useEffect(() => {
@@ -195,17 +180,17 @@ export default function LecturerCourseDetailPage({ params }: CourseDetailProps) 
 
   // Get course details
   const course = useMemo(() => {
-    return state.courses.find((c: Course) => c.id === courseId)
-  }, [state.courses, courseId])
+    return coursesState.courses.find((c: Course) => c.id === courseId)
+  }, [coursesState.courses, courseId])
 
   // Check if lecturer is assigned to this course
   const isAssigned = useMemo(() => {
     if (!course) return false
     // Check if lecturer is assigned to this course through lecturer_assignments
-    return state.lecturerAssignments?.some((assignment: any) => 
+    return coursesState.lecturerAssignments?.some((assignment: any) => 
       assignment.course_id === courseId && assignment.lecturer_id === lecturerId
     ) || false
-  }, [course, courseId, lecturerId, state.lecturerAssignments])
+  }, [course, courseId, lecturerId, coursesState.lecturerAssignments])
 
   // Get enrolled students using inheritance logic
   const enrolledStudents = useMemo(() => {
@@ -238,8 +223,8 @@ export default function LecturerCourseDetailPage({ params }: CourseDetailProps) 
 
   // Get course materials
   const courseMaterials = useMemo(() => {
-    return state.materials.filter((material: any) => material.course_id === courseId)
-  }, [state.materials, courseId])
+    return materialsState.materials.filter((material: any) => material.course_id === courseId)
+  }, [materialsState.materials, courseId])
 
   // Calculate stats
   const stats = useMemo(() => {

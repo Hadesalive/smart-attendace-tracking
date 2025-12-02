@@ -43,10 +43,11 @@ import {
   XMarkIcon
 } from "@heroicons/react/24/outline"
 import { formatDate, formatNumber } from "@/lib/utils"
-import { useGrades, useCourses, useAcademicStructure } from "@/lib/domains"
+import { useGrades, useCourses, useAcademicStructure, useAuth } from "@/lib/domains"
 import { useMockData } from "@/lib/hooks/useMockData"
 import { Course, Student, Assignment, Submission, AttendanceSession } from "@/lib/types/shared"
 import { mapAssignmentStatus, mapSubmissionStatus } from "@/lib/utils/statusMapping"
+import { toast } from "sonner"
 
 // ============================================================================
 // CONSTANTS
@@ -145,6 +146,7 @@ export default function StudentHomeworkPage() {
   const grades = useGrades()
   const coursesHook = useCourses()
   const academic = useAcademicStructure()
+  const auth = useAuth()
   
   // Extract state and methods
   const { 
@@ -161,13 +163,8 @@ export default function StudentHomeworkPage() {
   } = coursesHook
   
   const { state: academicState } = academic
+  const { state: authState } = auth
   
-  // Create legacy state object for compatibility
-  const state = {
-    ...gradesState,
-    ...coursesState,
-    ...academicState
-  }
   const { isInitialized } = useMockData()
 
   const router = useRouter()
@@ -188,26 +185,67 @@ export default function StudentHomeworkPage() {
   // COMPUTED DATA
   // ============================================================================
 
-  const studentId = "user_1" // Assuming current user is student with ID "user_1"
-  
+  // Load data on mount
+  useEffect(() => {
+    const loadData = async () => {
+      const results = await Promise.allSettled([
+        auth.loadCurrentUser(),
+        grades.fetchAssignments(),
+        grades.fetchSubmissions(),
+        coursesHook.fetchCourses(),
+        coursesHook.fetchCourseAssignments(),
+        academic.fetchSectionEnrollments()
+      ])
+
+      results.forEach((result, index) => {
+        if (result.status === 'rejected') {
+          console.error(`Failed to load student homework data (${index}):`, result.reason)
+        }
+      })
+    }
+
+    loadData()
+  }, [auth.loadCurrentUser, grades.fetchAssignments, grades.fetchSubmissions, coursesHook.fetchCourses, coursesHook.fetchCourseAssignments, academic.fetchSectionEnrollments])
+
   // Get student's courses
   const courses = useMemo(() => {
-    return state.courses.filter(course => 
-      state.enrollments.some(enrollment => 
-        enrollment.student_id === studentId && enrollment.course_id === course.id
+    const studentId = authState.currentUser?.id
+    if (!studentId) return []
+
+    const studentSection = academicState.sectionEnrollments.find(
+      (enrollment: any) => enrollment.student_id === studentId
+    ) as any
+
+    if (!studentSection?.sections) return []
+
+    const section = studentSection.sections
+    
+    const relevantAssignments = coursesState.courseAssignments?.filter((assignment: any) => 
+      assignment.program_id === section.program_id &&
+      assignment.academic_year_id === section.academic_year_id &&
+      assignment.semester_id === section.semester_id &&
+      assignment.year === section.year
+    ) || []
+
+    return relevantAssignments
+      .map((assignment: any) => 
+        coursesState.courses.find((course: any) => course?.id === assignment.course_id)
       )
-    )
-  }, [state.courses, state.enrollments, studentId])
+      .filter((course): course is any => Boolean(course))
+  }, [coursesState.courses, coursesState.courseAssignments, academicState.sectionEnrollments, authState.currentUser?.id])
 
   // Get student's assignments from shared data
   const assignments = useMemo(() => {
+    const studentId = authState.currentUser?.id
+    if (!studentId) return []
+
     const allAssignments: StudentAssignment[] = []
     
-    state.courses.forEach(course => {
+    courses.forEach(course => {
       const courseAssignments = getAssignmentsByCourse(course.id)
       courseAssignments.forEach(assignment => {
         const submissions = getSubmissionsByAssignment(assignment.id)
-        const studentSubmission = submissions.find(s => s.student_id === studentId)
+        const studentSubmission = submissions.find((s: any) => s.student_id === studentId)
         
         // Use shared submission status logic for consistency with lecturer view
         let status: "pending" | "submitted" | "graded" = "pending"
@@ -238,7 +276,7 @@ export default function StudentHomeworkPage() {
     })
     
     return allAssignments
-  }, [courses, getAssignmentsByCourse, getSubmissionsByAssignment, studentId])
+  }, [courses, getAssignmentsByCourse, getSubmissionsByAssignment, authState.currentUser?.id])
 
   // Legacy mock data for reference
   const legacyAssignments: StudentAssignment[] = [
@@ -444,18 +482,36 @@ export default function StudentHomeworkPage() {
     setSearchQuery("")
   }
 
-  const handleSaveSubmission = () => {
-    if (!selectedAssignment) return
+  const handleSaveSubmission = async () => {
+    if (!selectedAssignment || !authState.currentUser?.id) return
     
-    // Here you would save the submission to database
-    console.log('Submitting assignment:', {
-      assignmentId: selectedAssignment.id,
-      text: submissionText,
-      files: submissionFiles
-    })
-    
-    setSubmissionDialogOpen(false)
-    setSelectedAssignment(null)
+    try {
+      // Create submission using the grades hook
+      await createSubmission({
+        assignment_id: selectedAssignment.id,
+        student_id: authState.currentUser.id,
+        student_name: authState.currentUser.full_name || '',
+        student_email: authState.currentUser.email || '',
+        submitted_at: new Date().toISOString(),
+        grade: null,
+        max_grade: selectedAssignment.total_points,
+        status: 'submitted',
+        late_penalty_applied: 0,
+        final_grade: null,
+        comments: '',
+        submission_text: submissionText,
+        submission_files: submissionFiles.map(file => file.name)
+      })
+      
+      toast.success('Assignment submitted successfully!')
+      setSubmissionDialogOpen(false)
+      setSelectedAssignment(null)
+      setSubmissionText("")
+      setSubmissionFiles([])
+    } catch (error) {
+      console.error('Error submitting assignment:', error)
+      toast.error('Failed to submit assignment')
+    }
   }
 
   const getStatusBadge = (status: string) => {
@@ -595,7 +651,7 @@ export default function StudentHomeworkPage() {
                 onChange={(e) => setSelectedCourse((e.target as HTMLSelectElement).value)}
               >
                 <option value="">All Courses ({assignments.length} assignments)</option>
-                {state.courses.map(course => {
+                {courses.map((course: any) => {
                   const courseAssignments = assignments.filter(a => a.course_id === course.id)
                   return (
                     <option key={course.id} value={course.id}>
@@ -623,7 +679,7 @@ export default function StudentHomeworkPage() {
                 </Typography>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
                   <Chip 
-                    label={state.courses.find(c => c.id === selectedCourse)?.course_code || ''}
+                    label={courses.find((c: any) => c.id === selectedCourse)?.course_code || ''}
                     size="small"
                     sx={{ 
                       bgcolor: 'hsl(var(--muted))', 
@@ -661,7 +717,7 @@ export default function StudentHomeworkPage() {
         }}>
           <MUICardContent sx={{ p: { xs: 2, sm: 2.5, md: 3 } }}>
             {(() => {
-              const selectedCourseData = state.courses.find(c => c.id === selectedCourse)
+              const selectedCourseData = courses.find((c: any) => c.id === selectedCourse)
               const courseAssignments = filteredAssignments
               const courseStats = {
                 total: courseAssignments.length,

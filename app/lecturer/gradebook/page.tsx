@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useMemo } from "react"
+import React, { useState, useMemo, useEffect } from "react"
 import { motion } from "framer-motion"
 import { useRouter } from "next/navigation"
 import {
@@ -27,6 +27,7 @@ import {
 import StatCard from "@/components/dashboard/stat-card"
 import MonochromeButton from "@/components/admin/MonochromeButton"
 import { useGrades, useCourses, useAcademicStructure, useAuth } from "@/lib/domains"
+import { useMockData } from "@/lib/hooks/useMockData"
 import { GradeCategory } from "@/lib/types/shared"
 
 // ============================================================================
@@ -82,14 +83,32 @@ export default function GradebookPage() {
   const { state: academicState } = academic
   const { state: authState } = auth
   
-  // Create legacy state object for compatibility
-  const state = {
-    ...gradesState,
-    ...coursesState,
-    ...academicState,
-    currentUser: authState.currentUser,
-    classes: coursesState.courses || []
-  }
+  const { isInitialized } = useMockData()
+
+  // Load data on mount
+  useEffect(() => {
+    const loadData = async () => {
+      const results = await Promise.allSettled([
+        auth.loadCurrentUser(),
+        grades.fetchAssignments(),
+        grades.fetchSubmissions(),
+        courses.fetchCourses(),
+        courses.fetchCourseAssignments(),
+        courses.fetchLecturerAssignments(), // ✅ Load lecturer assignments
+        academic.fetchSections(), // ✅ Load sections data
+        academic.fetchSectionEnrollments(),
+        academic.fetchStudentProfiles() // ✅ Load student profiles
+      ])
+
+      results.forEach((result, index) => {
+        if (result.status === 'rejected') {
+          console.error(`Failed to load gradebook data (${index}):`, result.reason)
+        }
+      })
+    }
+
+    loadData()
+  }, []) // Remove dependencies to prevent infinite re-renders
   
   // ============================================================================
   // STATE
@@ -113,50 +132,143 @@ export default function GradebookPage() {
   // COMPUTED DATA
   // ============================================================================
 
-  // Get lecturer's courses using logged-in lecturer id
-  const lecturerId = state.currentUser?.id || ""
-  const lecturerCourses = useMemo(() => (
-    lecturerId ? getCoursesByLecturer(lecturerId) : []
-  ), [lecturerId, getCoursesByLecturer])
+  // Get lecturer's courses - using lecturer_assignments table like courses page
+  const lecturerCourses = useMemo(() => {
+    const lecturerId = authState.currentUser?.id
+    console.log('🔍 Gradebook Debug:', {
+      lecturerId,
+      totalCourses: coursesState.courses.length,
+      lecturerAssignments: coursesState.lecturerAssignments?.length || 0,
+      loading: coursesState.loading
+    })
+    
+    if (!lecturerId) return []
+
+    // Get lecturer's assigned courses from lecturer_assignments table (like courses page)
+    const lecturerAssignments = coursesState.lecturerAssignments?.filter((assignment: any) => 
+      assignment.lecturer_id === lecturerId
+    ) || []
+    
+    console.log('📋 Lecturer assignments found:', lecturerAssignments.length)
+    
+    const lecturerCourses = lecturerAssignments.map((assignment: any) => {
+      const course = coursesState.courses?.find((c: any) => c.id === assignment.course_id)
+      return course
+    }).filter(Boolean)
+    
+    console.log('📚 Lecturer courses found:', lecturerCourses.length)
+    
+    // Fallback: If no lecturer assignments, try direct course assignment
+    if (lecturerCourses.length === 0) {
+      const directCourses = coursesState.courses?.filter((course: any) => course.lecturer_id === lecturerId) || []
+      console.log('🔄 Fallback - Direct courses found:', directCourses.length)
+      return directCourses
+    }
+    
+    return lecturerCourses
+  }, [coursesState.courses, coursesState.lecturerAssignments, authState.currentUser?.id])
 
   // Load grade categories and student grades when course changes
-  React.useEffect(() => {
+  useEffect(() => {
     if (!selectedCourse) return
     fetchGradeCategoriesForCourse(selectedCourse)
     fetchStudentGradesForCourse(selectedCourse)
-  }, [selectedCourse]) // Removed function dependencies
+  }, [selectedCourse, fetchGradeCategoriesForCourse, fetchStudentGradesForCourse])
+  
+  // Get classes/sections that the lecturer is teaching - from lecturer_assignments
+  const classes = useMemo(() => {
+    const lecturerId = authState.currentUser?.id
+    console.log('🔍 Gradebook Classes Debug:', {
+      lecturerId,
+      lecturerAssignmentsCount: coursesState.lecturerAssignments?.length || 0,
+      lecturerAssignments: coursesState.lecturerAssignments?.slice(0, 2),
+      sectionsCount: academicState.sections?.length || 0
+    })
+    
+    if (!lecturerId || !coursesState.lecturerAssignments) return []
 
-  // Ensure courses are loaded for the lecturer when opening gradebook
-  React.useEffect(() => {
-    if (!lecturerId) return
-    // If no courses in state yet, fetch from DB
-    if (!state.courses || state.courses.length === 0) {
-      fetchCourses()
-    }
-  }, [lecturerId, state.courses?.length]) // Removed fetchCourses dependency
+    // Get unique sections from lecturer assignments
+    const lecturerSections = coursesState.lecturerAssignments
+      .filter((assignment: any) => assignment.lecturer_id === lecturerId)
+      .map((assignment: any) => {
+        // Find the section from academic structure
+        const section = academicState.sections.find((s: any) => s.id === assignment.section_id)
+        console.log('🔍 Assignment to section mapping:', {
+          assignmentId: assignment.id,
+          sectionId: assignment.section_id,
+          foundSection: !!section,
+          sectionCode: section?.section_code,
+          programCode: (section as any)?.programs?.program_code,
+          fullCode: section ? `${(section as any).programs?.program_code || 'UNKNOWN'} ${section.section_code}` : undefined
+        })
+        return section
+      })
+      .filter(Boolean) // Remove undefined sections
+      .filter((section: any, index: number, arr: any[]) => 
+        arr.findIndex(s => s.id === section.id) === index // Remove duplicates
+      )
+
+    console.log('🏫 Lecturer sections found:', lecturerSections.length)
+    return lecturerSections
+  }, [coursesState.lecturerAssignments, academicState.sections, authState.currentUser?.id])
   
-  // Get classes from the data context
-  const classes = useMemo(() => (state.classes as any[]) || [], [state.classes])
-  
-  // Get courses available for selected class
+  // Get courses available for selected class/section
   const availableCourses = useMemo(() => {
-    // If no class is selected, show all lecturer courses
     if (!selectedClass) return lecturerCourses
-    // Otherwise, filter by assignments for the selected class
-    const lecturerClassAssignments = state.lecturerAssignments.filter(assignment => 
-      assignment.class_id === selectedClass && assignment.status === 'active'
-    )
-    const courseIds = lecturerClassAssignments.map(assignment => assignment.course_id)
-    const filtered = lecturerCourses.filter(course => courseIds.includes(course.id))
-    // Fallback: if no class-linked courses, still show all lecturer courses
-    return filtered.length > 0 ? filtered : lecturerCourses
-  }, [selectedClass, lecturerCourses, state.lecturerAssignments])
+    
+    // Filter courses by selected section
+    const sectionCourses = lecturerCourses.filter((course: any) => {
+      // Find lecturer assignment for this course and section
+      const assignment = coursesState.lecturerAssignments?.find((assignment: any) => 
+        assignment.course_id === course.id && assignment.section_id === selectedClass
+      )
+      return !!assignment
+    })
+    
+    console.log('📚 Courses for selected section:', sectionCourses.length)
+    return sectionCourses
+  }, [selectedClass, lecturerCourses, coursesState.lecturerAssignments])
 
   // Get students for selected class and course
   const availableStudents = useMemo(() => {
     if (!selectedClass || !selectedCourse) return []
-    return getStudentsByCourse(selectedCourse)
-  }, [selectedClass, selectedCourse, getStudentsByCourse])
+    
+    // Get students enrolled in the selected section
+    const sectionStudents = academicState.sectionEnrollments
+      ?.filter((enrollment: any) => enrollment.section_id === selectedClass)
+      ?.map((enrollment: any) => {
+        // Find the student profile
+        const studentProfile = academicState.studentProfiles?.find((profile: any) => 
+          profile.user_id === enrollment.student_id
+        )
+        
+        // Get user information from the profile
+        if (studentProfile) {
+          return {
+            id: studentProfile.user_id,
+            name: studentProfile.users?.full_name || 'Unknown Student',
+            email: studentProfile.users?.email || '',
+            student_id: studentProfile.student_id || '',
+            profile: studentProfile
+          }
+        }
+        return null
+      })
+      ?.filter(Boolean) || []
+    
+    console.log('👥 Students in selected section:', {
+      selectedClass,
+      selectedCourse,
+      sectionStudentsCount: sectionStudents.length,
+      sectionStudents: sectionStudents.slice(0, 3).map(s => s ? {
+        id: s.id,
+        name: s.name,
+        student_id: s.student_id
+      } : null).filter(Boolean)
+    })
+    
+    return sectionStudents
+  }, [selectedClass, selectedCourse, academicState.sectionEnrollments, academicState.studentProfiles])
 
   // Get current course and class info
   const currentCourse = lecturerCourses.find((c: any) => c.id === selectedCourse)
@@ -164,9 +276,9 @@ export default function GradebookPage() {
 
   // Grade categories for the selected course
   const gradeCategories = useMemo(() => ({
-    categories: state.gradeCategories,
-    totalPercentage: state.gradeCategories.reduce((sum, cat) => sum + cat.percentage, 0)
-  }), [state.gradeCategories])
+    categories: gradesState.gradeCategories,
+    totalPercentage: gradesState.gradeCategories.reduce((sum: number, cat: any) => sum + cat.percentage, 0)
+  }), [gradesState.gradeCategories])
 
   // Grade scale (static for now)
   const gradeScale = useMemo(() => [
@@ -192,7 +304,7 @@ export default function GradebookPage() {
 
   // Calculate total percentage
   const totalPercentage = useMemo(() => {
-    return gradeCategories.categories.reduce((sum, category) => sum + category.percentage, 0)
+    return gradeCategories.categories.reduce((sum: number, category: any) => sum + category.percentage, 0)
   }, [gradeCategories.categories])
 
   // Calculate stats
@@ -235,11 +347,21 @@ export default function GradebookPage() {
   // ============================================================================
 
   const handleOpenGradeManagement = (student: Student) => {
-    router.push(`/lecturer/gradebook/${student.id}`)
+    const queryParams = new URLSearchParams()
+    if (selectedCourse) {
+      queryParams.set('courseId', selectedCourse)
+    }
+    if (selectedClass) {
+      queryParams.set('sectionId', selectedClass)
+    }
+    
+    const queryString = queryParams.toString()
+    const url = `/lecturer/gradebook/${student.id}${queryString ? `?${queryString}` : ''}`
+    router.push(url)
   }
 
   const handleUpdateCategoryPercentage = (categoryId: string, percentage: number) => {
-    const updatedCategories = state.gradeCategories.map(cat => 
+    const updatedCategories = gradesState.gradeCategories.map((cat: any) => 
       cat.id === categoryId ? { ...cat, percentage } : cat
     )
     updateGradeCategory(selectedCourse, updatedCategories)
@@ -258,7 +380,7 @@ export default function GradebookPage() {
         course_id: selectedCourse
       }
       
-      const updatedCategories = [...state.gradeCategories, newCategory]
+      const updatedCategories = [...gradesState.gradeCategories, newCategory]
       updateGradeCategory(selectedCourse, updatedCategories)
       if (selectedCourse) {
         saveGradeCategoriesForCourse(selectedCourse, updatedCategories)
@@ -271,7 +393,7 @@ export default function GradebookPage() {
   }
 
   const handleDeleteCategory = (categoryId: string) => {
-    const updatedCategories = state.gradeCategories.filter(cat => cat.id !== categoryId)
+    const updatedCategories = gradesState.gradeCategories.filter((cat: any) => cat.id !== categoryId)
     updateGradeCategory(selectedCourse, updatedCategories)
     if (selectedCourse) {
       saveGradeCategoriesForCourse(selectedCourse, updatedCategories)
@@ -448,18 +570,40 @@ export default function GradebookPage() {
                       '& .MuiInputLabel-root.Mui-focused': { color: '#000' }
                     }}
                   >
-                    {classes.map((cls: any) => (
-                      <MenuItem key={cls.id} value={cls.id}>
-                        <Box>
-                          <Typography sx={{ fontFamily: "Poppins", fontWeight: 600 }}>
-                            {cls.name}
-                          </Typography>
-                          <Typography variant="caption" color="text.secondary" sx={{ fontFamily: "DM Sans" }}>
-                            {cls.level}
-                          </Typography>
-                        </Box>
+                    {(() => {
+                      console.log('🏫 Gradebook Class Dropdown Debug:', {
+                        classesCount: classes.length,
+                        classes: classes.slice(0, 3),
+                        loading: coursesState.loading
+                      })
+                      return null
+                    })()}
+                    {coursesState.loading ? (
+                      <MenuItem disabled>
+                        <Typography sx={{ fontFamily: "DM Sans", color: "#6b7280" }}>
+                          Loading sections...
+                        </Typography>
                       </MenuItem>
-                    ))}
+                    ) : classes.length === 0 ? (
+                      <MenuItem disabled>
+                        <Typography sx={{ fontFamily: "DM Sans", color: "#6b7280" }}>
+                          No sections assigned
+                        </Typography>
+                      </MenuItem>
+                    ) : (
+                      classes.filter(cls => cls).map((cls: any) => (
+                        <MenuItem key={cls.id} value={cls.id}>
+                          <Box>
+                            <Typography sx={{ fontFamily: "Poppins", fontWeight: 600 }}>
+                              {(cls as any).programs?.program_code || 'UNKNOWN'} {cls.section_code}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary" sx={{ fontFamily: "DM Sans" }}>
+                              {cls.level} • {(cls as any).programs?.program_name || 'Program'}
+                            </Typography>
+                          </Box>
+                        </MenuItem>
+                      ))
+                    )}
                   </Select>
                 </FormControl>
               </Box>
@@ -480,18 +624,40 @@ export default function GradebookPage() {
                       '& .MuiInputLabel-root.Mui-focused': { color: '#000' }
                     }}
                   >
-                     {availableCourses.map((course) => (
-                       <MenuItem key={course.id} value={course.id}>
+                    {(() => {
+                      console.log('🎯 Course Dropdown Debug:', {
+                        availableCoursesCount: availableCourses.length,
+                        availableCourses: availableCourses.slice(0, 2),
+                        loading: coursesState.loading
+                      })
+                      return null
+                    })()}
+                    {coursesState.loading ? (
+                      <MenuItem disabled>
+                        <Typography sx={{ fontFamily: "DM Sans", color: "#6b7280" }}>
+                          Loading courses...
+                        </Typography>
+                      </MenuItem>
+                    ) : availableCourses.length === 0 ? (
+                      <MenuItem disabled>
+                        <Typography sx={{ fontFamily: "DM Sans", color: "#6b7280" }}>
+                          No courses available
+                        </Typography>
+                      </MenuItem>
+                    ) : (
+                      availableCourses.map((course) => (
+                       <MenuItem key={course?.id} value={course?.id}>
                          <Box>
                            <Typography sx={{ fontFamily: "Poppins", fontWeight: 600 }}>
-                             {course.course_code}
+                             {course?.course_code}
                            </Typography>
                            <Typography variant="caption" color="text.secondary" sx={{ fontFamily: "DM Sans" }}>
-                             {course.course_name}
+                             {course?.course_name}
                            </Typography>
                          </Box>
                        </MenuItem>
-                     ))}
+                     ))
+                    )}
                   </Select>
                 </FormControl>
               </Box>
@@ -531,7 +697,7 @@ export default function GradebookPage() {
                     fontFamily: 'Poppins, sans-serif'
                   }}
                 >
-                  Grade Categories - {currentClass?.name} - {currentCourse?.course_code}
+                  Grade Categories - {currentClass?.section_code} - {currentCourse?.course_code}
                 </Typography>
                  <MonochromeButton
                    monoVariant="outlined"
@@ -636,7 +802,7 @@ export default function GradebookPage() {
                     fontFamily: 'Poppins, sans-serif'
                   }}
                 >
-                  Grade Scale - {currentClass?.name} - {currentCourse?.course_code}
+                  Grade Scale - {currentClass?.section_code} - {currentCourse?.course_code}
                 </Typography>
                  <MonochromeButton
                    monoVariant="outlined"
@@ -768,7 +934,7 @@ export default function GradebookPage() {
                   >
                      <Box>
                        <Typography variant="body1" sx={{ fontFamily: "Poppins, sans-serif", fontWeight: 700 }}>
-                         {student.full_name}
+                         {student.name}
                        </Typography>
                        <Typography variant="caption" sx={{ fontFamily: "DM Sans, sans-serif", color: "#6b7280" }}>
                          {student.student_id}

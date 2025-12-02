@@ -193,19 +193,11 @@ export default function LecturerSessionsPage() {
   const academic = useAcademicStructure()
   const auth = useAuth()
   
-  // Extract state and methods
+  // Extract state and methods - NO STATE MERGING
   const { state: attendanceState, fetchAttendanceSessions, deleteAttendanceSessionSupabase, updateAttendanceSessionSupabase } = attendance
   const { state: coursesState } = courses
   const { state: academicState } = academic
   const { state: authState } = auth
-  
-  // Create legacy state object for compatibility
-  const state = {
-    ...attendanceState,
-    ...coursesState,
-    ...academicState,
-    ...authState
-  }
   
   // ============================================================================
   // STATE
@@ -221,13 +213,13 @@ export default function LecturerSessionsPage() {
   const [editModalOpen, setEditModalOpen] = useState(false)
   const [editingSession, setEditingSession] = useState<any>(null)
 
-  // Load all data on component mount (same pattern as lecturer courses page)
+  // Load all data on component mount
   React.useEffect(() => {
     const fetchData = async () => {
       try {
         console.log('Lecturer Sessions Page: Loading all data...')
-        await Promise.all([
-          auth.loadCurrentUser(), // Load the current user first
+        const results = await Promise.allSettled([
+          auth.loadCurrentUser(),
           fetchAttendanceSessions(),
           courses.fetchCourses(),
           courses.fetchLecturerAssignments(),
@@ -239,7 +231,13 @@ export default function LecturerSessionsPage() {
           academic.fetchPrograms(),
           academic.fetchDepartments()
         ])
-        console.log('Lecturer Sessions Page: Data loaded successfully')
+        
+        const failures = results.filter(r => r.status === 'rejected')
+        if (failures.length > 0) {
+          console.error('❌ Some data failed to load:', failures)
+        } else {
+          console.log('✅ Lecturer Sessions Page: Data loaded successfully')
+        }
       } catch (error) {
         console.error('Error loading sessions page data:', error)
       }
@@ -251,16 +249,16 @@ export default function LecturerSessionsPage() {
   // Debug: Log current state
   React.useEffect(() => {
     console.log('Lecturer Sessions Page: Current state:', {
-      currentUser: state.currentUser,
-      currentUserId: state.currentUser?.id,
-      attendanceSessions: state.attendanceSessions,
-      attendanceSessionsCount: state.attendanceSessions.length,
-      coursesCount: state.courses?.length || 0,
-      lecturerAssignmentsCount: state.lecturerAssignments?.length || 0,
-      loading: state.loading,
-      error: state.error
+      currentUser: authState.currentUser,
+      currentUserId: authState.currentUser?.id,
+      attendanceSessions: attendanceState.attendanceSessions,
+      attendanceSessionsCount: attendanceState.attendanceSessions.length,
+      coursesCount: coursesState.courses?.length || 0,
+      lecturerAssignmentsCount: coursesState.lecturerAssignments?.length || 0,
+      loading: attendanceState.loading,
+      error: attendanceState.error
     })
-  }, [state.currentUser, state.attendanceSessions, state.courses, state.lecturerAssignments, state.loading, state.error])
+  }, [authState.currentUser, attendanceState.attendanceSessions, coursesState.courses, coursesState.lecturerAssignments, attendanceState.loading, attendanceState.error])
 
   // Transform attendance sessions to match the Session interface
   const sessions = React.useMemo(() => {
@@ -275,9 +273,9 @@ export default function LecturerSessionsPage() {
       return (s.status as SessionStatus) || 'scheduled'
     }
 
-    return state.attendanceSessions.map(session => {
+    return attendanceState.attendanceSessions.map(session => {
       // ✅ ENHANCED: Calculate real enrolled count from section_enrollments
-      const enrolledCount = state.sectionEnrollments?.filter((enrollment: any) => 
+      const enrolledCount = academicState.sectionEnrollments?.filter((enrollment: any) => 
         enrollment.section_id === session.section_id && 
         enrollment.status === 'active'
       ).length || 0
@@ -304,7 +302,7 @@ export default function LecturerSessionsPage() {
         qrCode: session.qr_code
       }
     })
-  }, [state.attendanceSessions, state.sectionEnrollments])
+  }, [attendanceState.attendanceSessions, academicState.sectionEnrollments])
 
   // Calculate stats from sessions
   const stats: SessionStats = useMemo(() => {
@@ -375,7 +373,7 @@ export default function LecturerSessionsPage() {
   const handleEditSession = (session: Session) => {
     console.log('Edit button clicked for session:', session)
     // Find the original session data from the database (not the transformed UI data)
-    const originalSession = state.attendanceSessions.find(s => s.id === session.id)
+    const originalSession = attendanceState.attendanceSessions.find((s: any) => s.id === session.id)
     if (originalSession) {
       console.log('Found original session data for editing:', originalSession)
       setEditingSession(originalSession)
@@ -406,7 +404,7 @@ export default function LecturerSessionsPage() {
       console.log('Deleting session:', sessionId)
       
       // Check if session exists
-      const session = state.attendanceSessions.find(s => s.id === sessionId)
+      const session = attendanceState.attendanceSessions.find((s: any) => s.id === sessionId)
       if (!session) {
         throw new Error('Session not found')
       }
@@ -588,7 +586,7 @@ export default function LecturerSessionsPage() {
   // ============================================================================
 
   // Show loading state while data is being fetched (but still allow modals to show)
-  const showLoading = state.loading && !showCreateDialog && !editModalOpen
+  const showLoading = attendanceState.loading && !showCreateDialog && !editModalOpen
   if (showLoading) {
     return (
       <Box sx={{ 
@@ -609,7 +607,7 @@ export default function LecturerSessionsPage() {
   }
 
   // Show error state if there's an error
-  if (state.error) {
+  if (attendanceState.error) {
     return (
       <Box sx={{ 
         maxWidth: 1400, 
@@ -622,7 +620,7 @@ export default function LecturerSessionsPage() {
         minHeight: '50vh'
       }}>
         <Typography sx={{ fontSize: '1.2rem', color: 'red' }}>
-          Error loading sessions: {state.error}
+          Error loading sessions: {attendanceState.error}
         </Typography>
       </Box>
     )
@@ -1000,7 +998,7 @@ export default function LecturerSessionsPage() {
       <CreateSessionModal
         open={showCreateDialog}
         onOpenChange={setShowCreateDialog}
-        lecturerId={state.currentUser?.id || 'guest'}
+        lecturerId={authState.currentUser?.id || 'guest'}
         onSessionCreated={(sessionId) => {
             setShowCreateDialog(false)
             fetchAttendanceSessions()
@@ -1027,7 +1025,7 @@ export default function LecturerSessionsPage() {
         <CreateSessionModal 
           open={editModalOpen}
           onOpenChange={handleEditModalClose}
-          lecturerId={state.currentUser?.id || 'guest'}
+          lecturerId={authState.currentUser?.id || 'guest'}
           onSessionCreated={() => {}} // Not used in edit mode
           editSession={editingSession}
           onSessionUpdated={() => {

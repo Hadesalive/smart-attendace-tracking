@@ -390,20 +390,17 @@ export default function LecturerSessionAttendancePage() {
   const { state: coursesState } = courses
   
   // Create legacy state object for compatibility
-  const state = {
-    ...attendanceState,
-    ...coursesState
-  }
+  // Direct state access - NO STATE MERGING
 
   // Ensure data is available
   useEffect(() => {
-    if (!state.attendanceSessions.length) fetchAttendanceSessions()
-    if (!state.attendanceRecords.length) fetchAttendanceRecords()
-  }, [state.attendanceSessions.length, state.attendanceRecords.length, fetchAttendanceSessions, fetchAttendanceRecords])
+    if (!attendanceState.attendanceSessions.length) fetchAttendanceSessions()
+    if (!attendanceState.attendanceRecords.length) fetchAttendanceRecords()
+  }, [attendanceState.attendanceSessions.length, attendanceState.attendanceRecords.length, fetchAttendanceSessions, fetchAttendanceRecords])
 
   // Read session details from shared state
   const session = useMemo(() => {
-    const s = state.attendanceSessions.find((ss: any) => ss.id === sessionId)
+    const s = attendanceState.attendanceSessions.find((ss: any) => ss.id === sessionId)
     if (!s) return null
     return {
       id: s.id,
@@ -417,12 +414,12 @@ export default function LecturerSessionAttendancePage() {
       status: (s.status === 'active' ? 'active' : s.status === 'completed' ? 'closed' : 'scheduled') as LiveStatus,
       qr_code: s.qr_code as string | undefined
     }
-  }, [state.attendanceSessions, sessionId])
+  }, [attendanceState.attendanceSessions, sessionId])
 
   // Build students list from attendance records for this session
   const [students, setStudents] = useState<StudentAttendance[]>([])
   useEffect(() => {
-      const records = state.attendanceRecords.filter((r: any) => r.session_id === sessionId)
+      const records = attendanceState.attendanceRecords.filter((r: any) => r.session_id === sessionId)
     if (records.length) {
       const mapped = records.map((r: any) => ({
         id: r.student_id,
@@ -435,7 +432,7 @@ export default function LecturerSessionAttendancePage() {
     } else {
       setStudents([])
     }
-  }, [state.attendanceRecords, sessionId])
+  }, [attendanceState.attendanceRecords, sessionId])
 
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const allSelected = selected.size > 0 && selected.size === students.length

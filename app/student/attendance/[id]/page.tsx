@@ -102,13 +102,6 @@ export default function StudentAttendanceDetailsPage() {
   const { state: authState } = auth
   const { state: academicState } = academic
 
-  // Create legacy state object for compatibility
-  const state = {
-    ...attendanceState,
-    ...coursesState,
-    ...academicState,
-    currentUser: authState.currentUser
-  }
 
   const [details, setDetails] = useState<StudentAttendanceDetails>({
     session: null,
@@ -138,24 +131,30 @@ export default function StudentAttendanceDetailsPage() {
         await new Promise(resolve => setTimeout(resolve, 300))
         
         // Load all required data with user ID
-        await Promise.all([
+        const results = await Promise.allSettled([
           fetchCourses(),
           fetchEnrollments(),
           // Use section-based session fetching for students (only if user is logged in)
           authState.currentUser?.id ? fetchStudentAttendanceSessions(authState.currentUser.id) : Promise.resolve(),
           fetchAttendanceRecords()
         ])
+
+        results.forEach((result, index) => {
+          if (result.status === 'rejected') {
+            console.error(`Failed to load student attendance detail data (${index}):`, result.reason)
+          }
+        })
         
         // Wait for state to be updated
         await new Promise(resolve => setTimeout(resolve, 500))
         
         console.log('📊 Loaded data:', {
-          currentUser: state.currentUser?.id,
-          sessionsCount: state.attendanceSessions?.length || 0,
-          recordsCount: state.attendanceRecords?.length || 0
+          currentUser: authState.currentUser?.id,
+          sessionsCount: attendanceState.attendanceSessions?.length || 0,
+          recordsCount: attendanceState.attendanceRecords?.length || 0
         })
 
-        const session = state.attendanceSessions.find((s: any) => s.id === sessionId)
+        const session = attendanceState.attendanceSessions.find((s: any) => s.id === sessionId)
         console.log('🔍 Looking for session:', sessionId, 'Found:', !!session)
         
         if (!session) {
@@ -170,13 +169,13 @@ export default function StudentAttendanceDetailsPage() {
 
         const records = getAttendanceRecordsBySession(sessionId)
         const studentRecord = records.find((r: any) =>
-          !!state.currentUser?.id && r.student_id === state.currentUser.id
+          !!authState.currentUser?.id && r.student_id === authState.currentUser.id
         )
 
         console.log('📋 Student record found:', !!studentRecord)
 
         // ✅ ENHANCED: Calculate real enrolled count from section_enrollments
-        const enrolledCount = state.sectionEnrollments?.filter((enrollment: any) =>
+        const enrolledCount = academicState.sectionEnrollments?.filter((enrollment: any) =>
           enrollment.section_id === session.section_id &&
           enrollment.status === 'active'
         ).length || 0
@@ -213,12 +212,12 @@ export default function StudentAttendanceDetailsPage() {
 
   // Separate effect to handle data updates when state changes
   useEffect(() => {
-    if (state.attendanceSessions.length > 0 && sessionId) {
-      const session = state.attendanceSessions.find((s: any) => s.id === sessionId)
+    if (attendanceState.attendanceSessions.length > 0 && sessionId) {
+      const session = attendanceState.attendanceSessions.find((s: any) => s.id === sessionId)
       if (session && session !== details.session) {
         const records = getAttendanceRecordsBySession(sessionId)
         const studentRecord = records.find((r: any) => 
-          !!state.currentUser?.id && r.student_id === state.currentUser.id
+          !!authState.currentUser?.id && r.student_id === authState.currentUser.id
         )
         
         setDetails({
@@ -229,7 +228,7 @@ export default function StudentAttendanceDetailsPage() {
         })
       }
     }
-  }, [state.attendanceSessions, state.currentUser?.id, sessionId, details.session, getAttendanceRecordsBySession])
+  }, [attendanceState.attendanceSessions, authState.currentUser?.id, sessionId, details.session, getAttendanceRecordsBySession])
 
   const statusInfo = useMemo(() => {
     if (!details.studentRecord) return null

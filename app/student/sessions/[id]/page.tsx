@@ -130,13 +130,6 @@ export default function StudentSessionDetailsPage() {
   const { state: authState } = auth
   const { state: academicState } = academic
 
-  // Create legacy state object for compatibility
-  const state = {
-    ...attendanceState,
-    ...coursesState,
-    ...academicState,
-    currentUser: authState.currentUser
-  }
 
   const [session, setSession] = useState<StudentSession | null>(null)
   const [loading, setLoading] = useState(true)
@@ -155,20 +148,26 @@ export default function StudentSessionDetailsPage() {
         await new Promise(resolve => setTimeout(resolve, 300))
         
         // Load all required data with user ID
-        await Promise.all([
+        const results = await Promise.allSettled([
           fetchCourses(),
           fetchEnrollments(),
           // Use section-based session fetching for students (only if user is logged in)
           authState.currentUser?.id ? fetchStudentAttendanceSessions(authState.currentUser.id) : Promise.resolve(),
           fetchAttendanceRecords()
         ])
+
+        results.forEach((result, index) => {
+          if (result.status === 'rejected') {
+            console.error(`Failed to load student session detail data (${index}):`, result.reason)
+          }
+        })
         
         // Wait for state to be updated
         await new Promise(resolve => setTimeout(resolve, 500))
         
         console.log('📊 Student session data loaded:', {
-          currentUser: state.currentUser?.id,
-          sessionsCount: state.attendanceSessions?.length || 0
+          currentUser: authState.currentUser?.id,
+          sessionsCount: attendanceState.attendanceSessions?.length || 0
         })
       } catch (error) {
         console.error('❌ Error loading student session data:', error)
@@ -184,17 +183,17 @@ export default function StudentSessionDetailsPage() {
 
   // Build session view model from store
   useEffect(() => {
-    const source: AttendanceSession | undefined = state.attendanceSessions.find((s: any) => s.id === sessionId)
+    const source: AttendanceSession | undefined = attendanceState.attendanceSessions.find((s: any) => s.id === sessionId)
 
     if (!source) {
       console.log('❌ Session not found in student sessions:', {
         sessionId,
-        availableSessions: state.attendanceSessions.map(s => ({ id: s.id, name: s.session_name })),
-        currentUser: state.currentUser?.id
+        availableSessions: attendanceState.attendanceSessions.map(s => ({ id: s.id, name: s.session_name })),
+        currentUser: authState.currentUser?.id
       })
 
       // Try to fetch the specific session directly if not found in filtered list
-      if (sessionId && state.currentUser?.id) {
+      if (sessionId && authState.currentUser?.id) {
         console.log('🔄 Attempting to fetch specific session:', sessionId)
         fetchSessionById(sessionId)
       }
@@ -218,10 +217,10 @@ export default function StudentSessionDetailsPage() {
 
     // Attendance record for current user
     const records = getAttendanceRecordsBySession(source.id)
-    const studentRecord = records.find((r: any) => !!state.currentUser?.id && r.student_id === state.currentUser.id)
+    const studentRecord = records.find((r: any) => !!authState.currentUser?.id && r.student_id === authState.currentUser.id)
 
     // ✅ ENHANCED: Calculate real enrolled count from section_enrollments
-    const enrolledCount = state.sectionEnrollments?.filter((enrollment: any) =>
+    const enrolledCount = academicState.sectionEnrollments?.filter((enrollment: any) =>
       enrollment.section_id === source.section_id &&
       enrollment.status === 'active'
     ).length || 0
@@ -250,7 +249,7 @@ export default function StudentSessionDetailsPage() {
 
     setSession(view)
     setLoading(false)
-  }, [sessionId, state.attendanceSessions, state.currentUser?.id, getAttendanceRecordsBySession])
+  }, [sessionId, attendanceState.attendanceSessions, authState.currentUser?.id, getAttendanceRecordsBySession])
 
   const sessionTypeInfo = useMemo(() => {
     const types = {

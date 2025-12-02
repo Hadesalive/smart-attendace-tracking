@@ -117,26 +117,25 @@ export default function StudentAttendancePage() {
   const academic = useAcademicStructure()
   const { state: academicState } = academic
   
-  // Create legacy state object for compatibility
-  const state = {
-    ...attendanceState,
-    ...coursesState,
-    ...academicState,
-    currentUser: authState.currentUser
-  }
 
   // Load all data on component mount (same pattern as lecturer sessions page)
   useEffect(() => {
     const fetchData = async () => {
       try {
         console.log('Student Attendance Page: Loading all data...')
-        await Promise.all([
+        const results = await Promise.allSettled([
           auth.loadCurrentUser(), // Load the current user first
           fetchCourses(),
           coursesHook.fetchCourseAssignments(), // Load course assignments for course inheritance
           academic.fetchSectionEnrollments(), // Use section enrollments instead of old enrollments
           fetchAttendanceRecords()
         ])
+
+        results.forEach((result, index) => {
+          if (result.status === 'rejected') {
+            console.error(`Failed to load student attendance data (${index}):`, result.reason)
+          }
+        })
         console.log('Student Attendance Page: Data loaded successfully')
       } catch (error) {
         console.error('Error loading student attendance page data:', error)
@@ -161,17 +160,17 @@ export default function StudentAttendancePage() {
   // Get student's courses (inherited from program/academic year/semester/year level)
   const courses = useMemo(() => {
     console.log('Student Attendance - State data:', {
-      courses: state.courses.length,
-      sectionEnrollments: state.sectionEnrollments.length,
-      courseAssignments: state.courseAssignments?.length || 0,
-      attendanceSessions: state.attendanceSessions.length,
-      attendanceRecords: state.attendanceRecords.length,
-      currentUserId: state.currentUser?.id
+      courses: coursesState.courses.length,
+      sectionEnrollments: academicState.sectionEnrollments.length,
+      courseAssignments: academicState.courseAssignments?.length || 0,
+      attendanceSessions: attendanceState.attendanceSessions.length,
+      attendanceRecords: attendanceState.attendanceRecords.length,
+      currentUserId: authState.currentUser?.id
     })
     
     // Get student's enrolled section
-    const studentSectionEnrollment = state.sectionEnrollments.find(
-      (enrollment: any) => enrollment.student_id === state.currentUser?.id
+    const studentSectionEnrollment = academicState.sectionEnrollments.find(
+      (enrollment: any) => enrollment.student_id === authState.currentUser?.id
     )
     
     console.log('Student Attendance - Student section enrollment:', studentSectionEnrollment)
@@ -185,7 +184,7 @@ export default function StudentAttendancePage() {
     console.log('Student Attendance - Student section details:', section)
     
     // Get course assignments for this student's program/academic year/semester/year level
-    const relevantCourseAssignments = state.courseAssignments?.filter((assignment: any) => 
+    const relevantCourseAssignments = academicState.courseAssignments?.filter((assignment: any) => 
       assignment.program_id === section.program_id &&
       assignment.academic_year_id === section.academic_year_id &&
       assignment.semester_id === section.semester_id &&
@@ -196,13 +195,13 @@ export default function StudentAttendancePage() {
     
     // Get courses from these assignments
     const studentCourses = relevantCourseAssignments
-      .map((assignment: any) => state.courses.find(course => course?.id === assignment.course_id))
+      .map((assignment: any) => coursesState.courses.find(course => course?.id === assignment.course_id))
       .filter((course): course is Course => Boolean(course))
     
     console.log('Student Attendance - Student courses (inherited from program):', studentCourses.length)
     console.log('Student Attendance - Student courses details:', studentCourses)
     return studentCourses
-  }, [state.courses, state.sectionEnrollments, state.courseAssignments, state.currentUser?.id])
+  }, [coursesState.courses, academicState.sectionEnrollments, academicState.courseAssignments, authState.currentUser?.id])
 
   // Get student's attendance records from shared data
   // ✅ FIXED: Iterate through sessions directly (already filtered by fetchStudentAttendanceSessions)
@@ -213,13 +212,13 @@ export default function StudentAttendancePage() {
     console.log('📊 Student attendance records calculation:', {
       studentId,
       coursesCount: courses.length,
-      sessionsCount: state.attendanceSessions.length,
-      recordsCount: state.attendanceRecords.length
+      sessionsCount: attendanceState.attendanceSessions.length,
+      recordsCount: attendanceState.attendanceRecords.length
     })
     
     // Iterate through sessions directly instead of through courses
     // fetchStudentAttendanceSessions already filtered by student's section enrollment
-    state.attendanceSessions.forEach(session => {
+    attendanceState.attendanceSessions.forEach(session => {
       const records = getAttendanceRecordsBySession(session.id)
       const studentRecord = records.find(r => !!studentId && r.student_id === studentId)
       
@@ -246,7 +245,7 @@ export default function StudentAttendancePage() {
     
     console.log('📋 Final attendance records:', allRecords.length)
     return allRecords
-  }, [getAttendanceRecordsBySession, state.currentUser?.id, state.attendanceSessions, state.attendanceRecords])
+  }, [getAttendanceRecordsBySession, authState.currentUser?.id, attendanceState.attendanceSessions, attendanceState.attendanceRecords])
 
   // Computed values
   const filteredRecords = useMemo(() => {
@@ -299,7 +298,7 @@ export default function StudentAttendancePage() {
   const courseStats = useMemo(() => {
     const courseStatsMap = new Map()
     
-    state.courses.forEach(course => {
+    coursesState.courses.forEach(course => {
       if (course) {
         const courseRecords = attendanceRecords.filter(r => r.courseCode === course!.course_code)
         const present = courseRecords.filter(r => {

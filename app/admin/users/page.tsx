@@ -78,6 +78,7 @@ import {
 } from "@heroicons/react/24/outline"
 import { formatDate } from "@/lib/utils"
 import { useAuth, useAcademicStructure, useCourses, useAttendance } from "@/lib/domains"
+import { SectionEnrollmentWithJoins, CourseAssignmentWithJoins } from "@/lib/types/joined-data"
 import { AddUserForm } from "@/components/admin/add-user-form"
 import PageHeader from "@/components/admin/PageHeader"
 import StatsGrid from "@/components/admin/StatsGrid"
@@ -181,18 +182,19 @@ export default function AdminUsersPage() {
 
         // For students, get their courses from section enrollments
         if (user.role === 'student') {
-          const studentEnrollments = academic.state.sectionEnrollments?.filter((e: any) => e.student_id === user.id) || []
+          const studentEnrollments = academic.state.sectionEnrollments?.filter(e => e.student_id === user.id) || []
           // Get courses from course assignments for the student's program/year/semester
-          studentEnrollments.forEach((enrollment: any) => {
-            const assignments = courses.state.courseAssignments?.filter((ca: any) => 
+          studentEnrollments.forEach(enrollment => {
+            const enrollmentWithJoins = enrollment as SectionEnrollmentWithJoins
+            const assignments = courses.state.courseAssignments?.filter(ca => 
               ca.program_id === enrollment.program_id &&
               ca.academic_year_id === enrollment.academic_year_id &&
               ca.semester_id === enrollment.semester_id &&
               ca.year === enrollment.year
             ) || []
             
-            assignments.forEach((assignment: any) => {
-              const course = courses.state.courses?.find((c: any) => c.id === assignment.course_id)
+            assignments.forEach(assignment => {
+              const course = courses.state.courses?.find(c => c.id === assignment.course_id)
               if (course && !userCourses.includes(course.course_code)) {
                 userCourses.push(course.course_code)
               }
@@ -202,8 +204,8 @@ export default function AdminUsersPage() {
 
         // For lecturers, get their assigned courses
         if (user.role === 'lecturer') {
-          const lecturerAssignments = courses.state.lecturerAssignments?.filter((la: any) => la.lecturer_id === user.id) || []
-          userCourses = lecturerAssignments.map((la: any) => la.courses?.course_code || 'Unknown').filter(Boolean)
+          const lecturerAssignments = courses.state.lecturerAssignments?.filter(la => la.lecturer_id === user.id) || []
+          userCourses = lecturerAssignments.map(la => (la as any).courses?.course_code || 'Unknown').filter(Boolean)
         }
 
         return {

@@ -59,6 +59,7 @@ import { useGrades, useCourses, useAcademicStructure, useAuth } from "@/lib/doma
 import { useMockData } from "@/lib/hooks/useMockData"
 import { Assignment, Submission, Class, Course } from "@/lib/types/shared"
 import { mapAssignmentStatus } from "@/lib/utils/statusMapping"
+import { toast } from "sonner"
 
 // ============================================================================
 // TYPES
@@ -95,15 +96,32 @@ export default function HomeworkPage() {
   const { state: academicState } = academic
   const { state: authState } = auth
   
-  // Create legacy state object for compatibility
-  const state = {
-    ...gradesState,
-    ...coursesState,
-    ...academicState,
-    currentUser: authState.currentUser,
-    classes: academicState.sections // Map sections to classes for backward compatibility
-  }
   const { isInitialized } = useMockData()
+
+  // Load data on mount
+  useEffect(() => {
+    const loadData = async () => {
+      const results = await Promise.allSettled([
+        auth.loadCurrentUser(),
+        grades.fetchAssignments(),
+        grades.fetchSubmissions(),
+        courses.fetchCourses(),
+        courses.fetchCourseAssignments(),
+        courses.fetchLecturerAssignments(), // ✅ Load lecturer assignments
+        academic.fetchSections(), // ✅ Load sections data
+        academic.fetchSectionEnrollments(),
+        academic.fetchStudentProfiles() // ✅ Load student profiles
+      ])
+
+      results.forEach((result, index) => {
+        if (result.status === 'rejected') {
+          console.error(`Failed to load lecturer homework data (${index}):`, result.reason)
+        }
+      })
+    }
+
+    loadData()
+  }, [auth.loadCurrentUser, grades.fetchAssignments, grades.fetchSubmissions, courses.fetchCourses, courses.fetchCourseAssignments, academic.fetchSectionEnrollments])
   
   // ============================================================================
   // STATE
@@ -141,21 +159,88 @@ export default function HomeworkPage() {
   // COMPUTED DATA
   // ============================================================================
 
-  // Get lecturer's courses (assuming current user is lecturer with ID "user_2")
-  const lecturerCourses = useMemo(() => getCoursesByLecturer("user_2"), [getCoursesByLecturer])
+  // Get lecturer's courses - using lecturer_assignments table like courses page
+  const lecturerCourses = useMemo(() => {
+    const lecturerId = authState.currentUser?.id
+    console.log('🔍 Homework Debug:', {
+      lecturerId,
+      totalCourses: coursesState.courses.length,
+      lecturerAssignments: coursesState.lecturerAssignments?.length || 0,
+      loading: coursesState.loading
+    })
+    
+    if (!lecturerId) return []
+    
+    // Get lecturer's assigned courses from lecturer_assignments table (like courses page)
+    const lecturerAssignments = coursesState.lecturerAssignments?.filter((assignment: any) => 
+      assignment.lecturer_id === lecturerId
+    ) || []
+    
+    console.log('📋 Homework lecturer assignments found:', lecturerAssignments.length)
+    
+    const lecturerCourses = lecturerAssignments.map((assignment: any) => {
+      const course = coursesState.courses?.find((c: any) => c.id === assignment.course_id)
+      return course
+    }).filter(Boolean)
+    
+    console.log('📚 Homework lecturer courses found:', lecturerCourses.length)
+    
+    // Fallback: If no lecturer assignments, try direct course assignment
+    if (lecturerCourses.length === 0) {
+      const directCourses = coursesState.courses?.filter((course: any) => course.lecturer_id === lecturerId) || []
+      console.log('🔄 Homework fallback - Direct courses found:', directCourses.length)
+      return directCourses
+    }
+    
+    return lecturerCourses
+  }, [coursesState.courses, coursesState.lecturerAssignments, authState.currentUser?.id])
   
-  // Get classes from the data context
-  const classes = useMemo(() => state.classes, [state.classes])
+  // Get classes/sections that the lecturer is teaching - from lecturer_assignments
+  const classes = useMemo(() => {
+    const lecturerId = authState.currentUser?.id
+    if (!lecturerId || !coursesState.lecturerAssignments) return []
+
+    // Get unique sections from lecturer assignments
+    const lecturerSections = coursesState.lecturerAssignments
+      .filter((assignment: any) => assignment.lecturer_id === lecturerId)
+      .map((assignment: any) => {
+        // Find the section from academic structure
+        const section = academicState.sections.find((s: any) => s.id === assignment.section_id)
+        console.log('🔍 Homework Assignment to section mapping:', {
+          assignmentId: assignment.id,
+          sectionId: assignment.section_id,
+          foundSection: !!section,
+          sectionCode: section?.section_code,
+          programCode: (section as any)?.programs?.program_code,
+          fullCode: section ? `${(section as any).programs?.program_code || 'UNKNOWN'} ${section.section_code}` : undefined
+        })
+        return section
+      })
+      .filter(Boolean) // Remove undefined sections
+      .filter((section: any, index: number, arr: any[]) => 
+        arr.findIndex(s => s.id === section.id) === index // Remove duplicates
+      )
+
+    console.log('🏫 Homework lecturer sections found:', lecturerSections.length)
+    return lecturerSections
+  }, [coursesState.lecturerAssignments, academicState.sections, authState.currentUser?.id])
   
-  // Get courses available for selected class
+  // Get courses available for selected class/section
   const availableCourses = useMemo(() => {
-    if (!selectedClass) return []
-    const lecturerAssignments = state.lecturerAssignments.filter(assignment => 
-      assignment.class_id === selectedClass && assignment.status === 'active'
-    )
-    const courseIds = lecturerAssignments.map(assignment => assignment.course_id)
-    return lecturerCourses.filter(course => courseIds.includes(course.id))
-  }, [selectedClass, lecturerCourses, state.lecturerAssignments])
+    if (!selectedClass) return lecturerCourses
+    
+    // Filter courses by selected section
+    const sectionCourses = lecturerCourses.filter((course: any) => {
+      // Find lecturer assignment for this course and section
+      const assignment = coursesState.lecturerAssignments?.find((assignment: any) => 
+        assignment.course_id === course.id && assignment.section_id === selectedClass
+      )
+      return !!assignment
+    })
+    
+    console.log('📚 Homework courses for selected section:', sectionCourses.length)
+    return sectionCourses
+  }, [selectedClass, lecturerCourses, coursesState.lecturerAssignments])
 
   // Get assignments for selected course
   const assignments = useMemo(() => {
@@ -235,8 +320,8 @@ export default function HomeworkPage() {
   // ============================================================================
 
   const handleCreateAssignment = () => {
-    if (!selectedClass || !selectedCourse) {
-      alert("Please select both class and course first")
+    if (!selectedCourse) {
+      toast.error("Please select a course first")
       return
     }
     setAssignmentForm({
@@ -251,38 +336,45 @@ export default function HomeworkPage() {
     setAssignmentDialogOpen(true)
   }
 
-  const handleSaveAssignment = () => {
-    if (!selectedCourse || !selectedClass) return
+  const handleSaveAssignment = async () => {
+    if (!selectedCourse) return
     
-    // Create assignment using shared data context
-    createAssignment({
-      title: assignmentForm.title,
-      description: assignmentForm.description,
-      course_id: selectedCourse,
-      course_code: availableCourses.find(c => c.id === selectedCourse)?.course_code || "",
-      course_name: availableCourses.find(c => c.id === selectedCourse)?.course_name || "",
-      class_id: selectedClass,
-      class_name: classes.find(c => c.id === selectedClass)?.name || "",
-      due_date: assignmentForm.due_date,
-      total_points: assignmentForm.total_points,
-      late_penalty_enabled: assignmentForm.late_penalty_enabled,
-      late_penalty_percent: assignmentForm.late_penalty_percent,
-      late_penalty_interval: assignmentForm.late_penalty_interval,
-      category_id: state.gradeCategories[0]?.id || "category_1", // Default to first category
-      status: "published"
-    })
-    
-    setAssignmentDialogOpen(false)
-    // Reset form
-    setAssignmentForm({
-      title: "",
-      description: "",
-      due_date: "",
-      total_points: 100,
-      late_penalty_enabled: true,
-      late_penalty_percent: 10,
-      late_penalty_interval: "week"
-    })
+    try {
+      const course = availableCourses.find(c => c?.id === selectedCourse)
+      await createAssignment({
+        title: assignmentForm.title,
+        description: assignmentForm.description,
+        course_id: selectedCourse,
+        course_code: course?.course_code || "",
+        course_name: course?.course_name || "",
+        class_id: selectedClass || "",
+        class_name: selectedClass ? classes.find(c => c?.id === selectedClass)?.section_code || "" : "",
+        due_date: assignmentForm.due_date,
+        total_points: assignmentForm.total_points,
+        late_penalty_enabled: assignmentForm.late_penalty_enabled,
+        late_penalty_percent: assignmentForm.late_penalty_percent,
+        late_penalty_interval: assignmentForm.late_penalty_interval,
+        category_id: gradesState.gradeCategories[0]?.id || "category_1", // Default to first category
+        status: "published"
+      })
+      
+      toast.success('Assignment created successfully!')
+      setAssignmentDialogOpen(false)
+      
+      // Reset form
+      setAssignmentForm({
+        title: "",
+        description: "",
+        due_date: "",
+        total_points: 100,
+        late_penalty_enabled: true,
+        late_penalty_percent: 10,
+        late_penalty_interval: "week"
+      })
+    } catch (error) {
+      console.error('Error creating assignment:', error)
+      toast.error('Failed to create assignment')
+    }
   }
 
   const handleGradeSubmission = (submission: Submission) => {
@@ -294,26 +386,31 @@ export default function HomeworkPage() {
     setGradingDialogOpen(true)
   }
 
-  const handleSaveGrade = () => {
+  const handleSaveGrade = async () => {
     if (!selectedSubmission) return
     
-    // Calculate late penalty if applicable
-    const assignment = assignments.find(a => a.id === selectedSubmission.assignment_id)
-    let finalGrade = gradingForm.grade
-    let latePenaltyApplied = 0
-    
-    if (assignment?.late_penalty_enabled && selectedSubmission.status === "late") {
-      const daysLate = Math.ceil((new Date(selectedSubmission.submitted_at).getTime() - new Date(assignment.due_date).getTime()) / (1000 * 60 * 60 * 24))
-      const penaltyIntervals = assignment.late_penalty_interval === "week" ? Math.ceil(daysLate / 7) : daysLate
-      latePenaltyApplied = penaltyIntervals * assignment.late_penalty_percent
-      finalGrade = Math.max(0, gradingForm.grade - latePenaltyApplied)
-    }
+    try {
+      // Calculate late penalty if applicable
+      const assignment = assignments.find(a => a.id === selectedSubmission.assignment_id)
+      let finalGrade = gradingForm.grade
+      let latePenaltyApplied = 0
+      
+      if (assignment?.late_penalty_enabled && selectedSubmission.status === "late") {
+        const daysLate = Math.ceil((new Date(selectedSubmission.submitted_at).getTime() - new Date(assignment.due_date).getTime()) / (1000 * 60 * 60 * 24))
+        const penaltyIntervals = assignment.late_penalty_interval === "week" ? Math.ceil(daysLate / 7) : daysLate
+        latePenaltyApplied = penaltyIntervals * assignment.late_penalty_percent
+        finalGrade = Math.max(0, gradingForm.grade - latePenaltyApplied)
+      }
 
-    // Use shared data context to grade submission and sync to gradebook
-    gradeSubmission(selectedSubmission.id, gradingForm.grade, gradingForm.comments)
-    
-    setGradingDialogOpen(false)
-    setSelectedSubmission(null)
+      await gradeSubmission(selectedSubmission.id, gradingForm.grade, gradingForm.comments)
+      
+      toast.success('Grade saved successfully!')
+      setGradingDialogOpen(false)
+      setSelectedSubmission(null)
+    } catch (error) {
+      console.error('Error saving grade:', error)
+      toast.error('Failed to save grade')
+    }
   }
 
   const handleViewSubmissions = (assignment: Assignment) => {
@@ -442,9 +539,15 @@ export default function HomeworkPage() {
               onChange={(e) => setSelectedClass((e.target as HTMLSelectElement).value)}
             >
               <option value="">All Classes</option>
-              {classes.map(cls => (
-                <option key={cls.id} value={cls.id}>{cls.name}</option>
-              ))}
+              {classes
+                .filter((cls): cls is NonNullable<typeof cls> => 
+                  cls != null && cls.id != null && cls.section_code != null
+                )
+                .map(cls => (
+                  <option key={cls.id} value={cls.id}>
+                    {(cls as any).programs?.program_code || 'UNKNOWN'} {cls.section_code}
+                  </option>
+                ))}
             </Select>
           </FormControl>
           <FormControl size="small" sx={{ 
@@ -481,7 +584,7 @@ export default function HomeworkPage() {
             >
               <option value="">All Courses</option>
               {availableCourses.map(course => (
-                <option key={course.id} value={course.id}>{course.course_code} • {course.course_name}</option>
+                <option key={course?.id} value={course?.id}>{course?.course_code} • {course?.course_name}</option>
               ))}
             </Select>
           </FormControl>
