@@ -11,7 +11,8 @@ import {
   ClipboardDocumentListIcon,
   AcademicCapIcon,
   DocumentTextIcon,
-  StarIcon
+  StarIcon,
+  ChatBubbleLeftRightIcon
 } from "@heroicons/react/24/outline"
 import { cn } from "@/lib/utils"
 
@@ -42,6 +43,8 @@ const STUDENT_NAV_ITEMS: NavigationItem[] = [
   { name: "Homework", icon: AcademicCapIcon, href: "/student/homework" },
   { name: "Grades", icon: StarIcon, href: "/student/grades" },
   { name: "Materials", icon: DocumentTextIcon, href: "/student/materials" },
+  { name: "Reporting", icon: DocumentTextIcon, href: "/student/reporting" },
+  { name: "Community", icon: ChatBubbleLeftRightIcon, href: "/student/community" },
   { name: "Profile", icon: UsersIcon, href: "/student/profile" },
 ]
 

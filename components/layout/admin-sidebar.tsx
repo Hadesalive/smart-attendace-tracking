@@ -42,6 +42,7 @@ const ADMIN_NAV_ITEMS: NavigationItem[] = [
   { name: "Attendance", icon: CalendarDaysIcon, href: "/admin/attendance" },
   { name: "Academic", icon: AcademicCapIcon, href: "/admin/academic" },
   { name: "Timetable", icon: ClipboardDocumentListIcon, href: "/admin/timetable" },
+  { name: "Reputation", icon: ChartPieIcon, href: "/admin/reputation-management" },
   { name: "Reports", icon: ChartPieIcon, href: "/admin/reports" },
   { name: "Settings", icon: Cog6ToothIcon, href: "/admin/settings" },
 ]

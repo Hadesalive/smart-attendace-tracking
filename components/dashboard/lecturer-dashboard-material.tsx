@@ -168,7 +168,7 @@ const useDataFetching = (userId: string) => {
           course_code,
           course_name,
           credits,
-          course_assignments!inner(
+          lecturer_assignments!inner(
             id,
             section_id,
             sections!inner(
@@ -177,7 +177,7 @@ const useDataFetching = (userId: string) => {
             )
           )
         `)
-        .eq('course_assignments.lecturer_id', userId)
+        .eq('lecturer_assignments.lecturer_id', userId)
 
       if (coursesError) {
         console.error('Error fetching courses:', coursesError)
@@ -187,7 +187,7 @@ const useDataFetching = (userId: string) => {
       // Transform courses data
       const courses: Course[] = (coursesData || []).map((course: any) => {
         // Calculate total enrollments across all sections
-        const totalEnrollments = course.course_assignments?.reduce((sum: number, assignment: any) => {
+        const totalEnrollments = course.lecturer_assignments?.reduce((sum: number, assignment: any) => {
           const sectionEnrollments = assignment.sections?.section_enrollments?.[0]?.count || 0
           return sum + sectionEnrollments
         }, 0) || 0
